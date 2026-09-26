@@ -57,6 +57,26 @@ export default function FilterBar({ model, filters, onChange }) {
           <button aria-pressed={filters.channel === 'Account'} onClick={() => set({ channel: 'Account' })} title="Show on-account invoices only">Only these</button>
         </div>
       </div>
+      {model.hasAcc && model.hasPos && (
+        <div className="field">
+          <span>Data source</span>
+          <div className="seg" role="group" aria-label="Data source">
+            <button aria-pressed={filters.source === 'acc'} onClick={() => set({ source: 'acc' })}
+              title="Accounting books (Invoices.DB). Most complete. Cash-register history fills dates before the books start.">Accounting</button>
+            <button aria-pressed={filters.source === 'pos'} onClick={() => set({ source: 'pos' })}
+              title="Cash-register history only (CROldInvoices.DB), as the POS reports show it">Cash register</button>
+          </div>
+        </div>
+      )}
+      <div className="field">
+        <span>Day ends at</span>
+        <div className="seg" role="group" aria-label="Day ends at">
+          <button aria-pressed={filters.day === 'business'} onClick={() => set({ day: 'business' })}
+            title="Sales after midnight (until 05:00) count toward the previous working day">Closing</button>
+          <button aria-pressed={filters.day === 'calendar'} onClick={() => set({ day: 'calendar' })}
+            title="Each day runs midnight to midnight">Midnight</button>
+        </div>
+      </div>
       <div className="field">
         <span>Sales amounts</span>
         <div className="seg" role="group" aria-label="Sales amounts">

@@ -21,6 +21,13 @@ processed in the browser tab.
 - **Reconciliation**: daily and monthly proof that product totals = invoice totals,
   invoices whose lines don't add up, POS vs accounting per day, open tables.
 
+## Saved data (Cloudflare)
+The site opens with the last saved dataset for everyone. To replace it, click **Update data**,
+choose the files and enter the upload password. The Worker (`worker/index.js`) stores the sales
+tables as one ZIP in Workers KV (binding `DATA`, created automatically on first deploy).
+The password is checked against `UPLOAD_PASSWORD_SHA256` in `wrangler.jsonc`; set the secret
+`UPLOAD_PASSWORD` in the Cloudflare dashboard to change it without a code change.
+
 ## Data rules
 - Business day = the working date the system books (after-midnight sales → previous day).
 - Gross = sum of product lines; Net = Gross − invoice discounts; returns are negative.
@@ -36,5 +43,6 @@ npm run build:single   # dist-single/index.html: one self-contained file
 npm test -- "<folder with .DB files>"   # prints monthly totals + reconciliation checks
 ```
 
-## Deploy (Cloudflare Pages)
-Build command `npm run build`, output directory `dist`, Node 20+.
+## Deploy (Cloudflare Workers)
+Workers Builds runs `npx wrangler deploy`, which builds the app (`npm run build`) and deploys
+the Worker plus the static files in `dist/`.

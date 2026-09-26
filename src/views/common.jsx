@@ -30,3 +30,18 @@ export function ChangeCell({ v }) {
 export const amountFilter = (basis) => ({ orders: 'orders', amount: 'amount', amountLabel: basis === 'net' ? 'Sales (after discount)' : 'Sales (before discount)' });
 export const amountLabel = (basis) => (basis === 'net' ? 'Sales (after discount)' : 'Sales (before discount)');
 export { money };
+
+export const PAY_SERIES = [
+  { key: 'card', label: 'Credit card', color: 'var(--series-1)' },
+  { key: 'cash', label: 'Cash', color: 'var(--series-2)' },
+  { key: 'account', label: 'On account', color: 'var(--series-3)' },
+];
+// split the bar amount by how it was paid (payments are after discount; scaled to the chosen basis)
+export function payParts(r) {
+  if (!r || !r.net) return { card: 0, cash: 0, account: 0 };
+  const f = r.amount / r.net;
+  return { card: Math.max(0, r.card * f), cash: Math.max(0, r.cash * f), account: Math.max(0, r.account * f) };
+}
+export function payRows(pp, total) {
+  return PAY_SERIES.filter((sr) => pp[sr.key] > 0.5).map((sr) => [sr.label, `${money(pp[sr.key])} · ${pct(total ? pp[sr.key] / total : 0, 0)}`, sr.color]);
+}

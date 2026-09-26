@@ -92,8 +92,8 @@ export async function buildModel(entries, progress = () => {}) {
     }
   }
 
-  const acc = { invoices: [], lines: [] };
-  const pos = { invoices: [], lines: [] };
+  const acc = { invoices: [] };
+  const pos = { invoices: [] };
   const recon = { headerLineMismatches: [], orphanLines: { count: 0, amount: 0 }, openTickets: [] };
   const accSeen = new Set();
   const posSeen = new Set();
@@ -115,27 +115,27 @@ export async function buildModel(entries, progress = () => {}) {
     if (!accMin || inv.date < accMin) accMin = inv.date;
     if (!accMax || inv.date > accMax) accMax = inv.date;
   }
-  const invoices = [...acc.invoices];
+  const merged = [...acc.invoices];
   const posUsed = new Set();
   for (const inv of pos.invoices) {
-    if (!accMin || inv.date < accMin || inv.date > accMax) { invoices.push(inv); posUsed.add(inv.key); }
+    if (!accMin || inv.date < accMin || inv.date > accMax) { merged.push(inv); posUsed.add(inv.key); }
   }
-  const lines = [...acc.lines];
-  for (const l of pos.lines) if (posUsed.has(l.inv.key)) lines.push(l);
-
-  invoices.sort((a, b) => (a.date === b.date ? a.minute - b.minute : a.date < b.date ? -1 : 1));
-  invoices.forEach((inv, i) => { inv.id = i; });
+  const byTime = (a, b) => (a.date === b.date ? a.minute - b.minute : a.date < b.date ? -1 : 1);
+  merged.sort(byTime);
+  const posAll = [...pos.invoices].sort(byTime);
 
   // product dictionary
   const products = new Map();
-  for (const l of lines) {
-    let p = products.get(l.item);
-    if (!p) {
-      p = { id: l.item, name: l.item === UNALLOCATED ? 'Unallocated (no line detail)' : itemNames.get(l.item) || l.name || `Item ${l.item}` };
-      products.set(l.item, p);
+  for (const inv of [...acc.invoices, ...pos.invoices]) {
+    for (const l of inv.lines) {
+      let p = products.get(l.item);
+      if (!p) {
+        p = { id: l.item, name: l.item === UNALLOCATED ? 'Unallocated (no line detail)' : itemNames.get(l.item) || l.name || `Item ${l.item}` };
+        products.set(l.item, p);
+      }
+      // prefer latest line name if Items.DB is missing
+      if (!itemNames.has(l.item) && l.name && l.item !== UNALLOCATED) p.name = l.name;
     }
-    // prefer latest line name if Items.DB is missing
-    if (!itemNames.has(l.item) && l.name && l.item !== UNALLOCATED) p.name = l.name;
   }
 
   progress('Reconciling…', 0.96);
@@ -160,10 +160,28 @@ export async function buildModel(entries, progress = () => {}) {
     posVsAcc.sort((a, b) => (a.date < b.date ? -1 : 1));
   }
 
+  const sets = { acc: merged, pos: posAll };
+  const views = new Map();
   const result = {
-    invoices,
-    lines,
     products,
+    hasAcc: acc.invoices.length > 0,
+    hasPos: pos.invoices.length > 0,
+    /**
+     * source: 'acc' (accounting books, POS history for other dates) | 'pos' (cash register only)
+     * day: 'business' (after-midnight sales belong to the previous day) | 'calendar' (midnight to midnight)
+     */
+    view(source = 'acc', day = 'business') {
+      if (!sets[source]?.length) source = sets.acc.length ? 'acc' : 'pos';
+      const k = source + '|' + day;
+      if (!views.has(k)) {
+        let list = sets[source];
+        if (day === 'calendar') {
+          list = list.map((i) => (i.calDate === i.date ? i : withDate(i, i.calDate))).sort(byTime);
+        }
+        views.set(k, { invoices: list, minDate: list.length ? list[0].date : null, maxDate: list.length ? list[list.length - 1].date : null, source, day });
+      }
+      return views.get(k);
+    },
     sources: {
       acc: acc.invoices.length ? { from: accMin, to: accMax, invoices: acc.invoices.length } : null,
       pos: pos.invoices.length ? {
@@ -174,21 +192,35 @@ export async function buildModel(entries, progress = () => {}) {
       } : null,
     },
     recon: { ...recon, posVsAcc },
-    minDate: invoices.length ? invoices[0].date : null,
-    maxDate: invoices.length ? invoices[invoices.length - 1].date : null,
   };
-  result.recon.dailyCheck = dailyProductCheck(result);
+  const def = result.view();
+  result.minDate = def.minDate;
+  result.maxDate = def.maxDate;
+  result.lineCount = merged.reduce((s2, i) => s2 + i.lines.length, 0);
+  result.recon.dailyCheck = dailyProductCheck(def.invoices);
   progress('Done', 1);
   return result;
 }
 
 function tick() { return new Promise((r) => setTimeout(r, 0)); }
 
+const DAY_START_MIN = 5 * 60; // orders before 05:00 belong to the previous business day
+
+function nextDay(iso) {
+  const t = new Date(iso + 'T00:00:00Z');
+  t.setUTCDate(t.getUTCDate() + 1);
+  return t.toISOString().slice(0, 10);
+}
+
+function withDate(inv, date) {
+  return { ...inv, date, month: date.slice(0, 7), dow: new Date(date + 'T00:00:00Z').getUTCDay() };
+}
+
 function makeInvoice(o) {
   const minute = o.time != null ? Math.floor(o.time / 60000) : 0;
-  const date = o.date;
-  const dow = new Date(date + 'T00:00:00Z').getUTCDay();
-  return { ...o, minute, hour: Math.floor(minute / 60) % 24, dow, month: date.slice(0, 7) };
+  // calendar date: the system's own date when known, else derived from the business day
+  const calDate = o.calDate || (minute < DAY_START_MIN ? nextDay(o.date) : o.date);
+  return { ...withDate(o, o.date), minute, hour: Math.floor(minute / 60) % 24, calDate };
 }
 
 // Attach lines to invoice, add Unallocated gap line, allocate discount.
@@ -209,9 +241,8 @@ function finishInvoice(inv, rawLines, out, recon, sourceLabel, ref) {
     let net = i === rawLines.length - 1 ? l.gross - (disc - allocated) : round2(l.gross - disc * share);
     if (i !== rawLines.length - 1) allocated += l.gross - net;
     l.net = round2(net);
-    l.inv = inv;
-    out.lines.push(l);
   });
+  inv.lines = rawLines;
   inv.qty = rawLines.reduce((s, l) => s + (l.item === UNALLOCATED ? 0 : l.qty), 0);
   inv.lineCount = rawLines.length;
   out.invoices.push(inv);
@@ -277,7 +308,7 @@ function buildPos(t, folder, out, seen, recon) {
     const card = sign * (n(r.CreditCardPayment) + n(r.ChequePayment));
     const account = sign * n(r.AmountOnDealer);
     const inv = makeInvoice({
-      key, src: 'POS', ref: r.UNo, receipt: r.No, date, time: r.Time, sign,
+      key, src: 'POS', ref: r.UNo, receipt: r.No, date, calDate: r.Date || date, time: r.Time, sign,
       channel: account && Math.abs(account) >= Math.abs(net) - EPS && net ? 'Account' : 'POS',
       dealer: r.Dealer || '',
       gross, net, disc: round2(gross - net),
@@ -295,11 +326,14 @@ function buildPos(t, folder, out, seen, recon) {
 }
 
 // Per business day: sum of product lines must equal sum of invoices (gross and net).
-export function dailyProductCheck(model) {
+export function dailyProductCheck(invoices) {
   const days = new Map();
   const get = (d) => days.get(d) || days.set(d, { date: d, invGross: 0, invNet: 0, lineGross: 0, lineNet: 0 }).get(d);
-  for (const inv of model.invoices) { const r = get(inv.date); r.invGross += inv.gross; r.invNet += inv.net; }
-  for (const l of model.lines) { const r = get(l.inv.date); r.lineGross += l.gross; r.lineNet += l.net; }
+  for (const inv of invoices) {
+    const r = get(inv.date);
+    r.invGross += inv.gross; r.invNet += inv.net;
+    for (const l of inv.lines) { r.lineGross += l.gross; r.lineNet += l.net; }
+  }
   let failed = 0;
   const rows = [];
   for (const r of days.values()) {

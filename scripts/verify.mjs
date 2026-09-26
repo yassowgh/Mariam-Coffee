@@ -15,6 +15,10 @@ const entries = readdirSync(dir)
 
 const t0 = Date.now();
 const m = await buildModel(entries);
+const source = process.argv[3] || 'acc';
+const day = process.argv[4] || 'business';
+m.invoices = m.view(source, day).invoices;
+console.log('view', source, day);
 console.log(`parsed in ${Date.now() - t0} ms`);
 console.log('sources', m.sources);
 const months = new Map();

@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { DOW, dailyRows } from '../lib/aggregate.js';
 import DataTable from '../components/DataTable.jsx';
 import { BarLineChart } from '../components/charts.jsx';
+import { ChangeCell, PAY_SERIES, amountFilter, amountLabel, payParts, payRows, salesColumns } from './common.jsx';
 import { int, longDate, money, money2, shortDate, signedPct, timeLabel } from '../format.js';
-import { ChangeCell, amountFilter, amountLabel, salesColumns } from './common.jsx';
 
 export default function Daily({ ctx }) {
   const { invs, basis } = ctx;
@@ -27,15 +27,18 @@ export default function Daily({ ctx }) {
     { key: 'first', label: 'First order', align: 'r', fmt: (v) => (v == null ? '–' : timeLabel(v)), csv: (r) => timeLabel(r.first) },
     { key: 'last', label: 'Last order', align: 'r', fmt: (v) => (v == null ? '–' : timeLabel(v)), csv: (r) => timeLabel(r.last), title: 'Times after midnight belong to this business day' },
   ];
-  const chart = [...rows].map((r) => ({
-    key: r.key, label: shortDate(r.key), value: r.amount, title: `${DOW[r.dow]} ${longDate(r.key)}`,
-    rows: [['Sales', money(r.amount)], ['Orders', int(r.orders)], ['Avg ticket', money2(r.avgTicket)], ['vs last week', signedPct(r.vsLastWeek)]],
-  }));
+  const chart = [...rows].map((r) => {
+    const pp = payParts(r);
+    return {
+      key: r.key, label: shortDate(r.key), value: r.amount, parts: pp, title: `${DOW[r.dow]} ${longDate(r.key)}`,
+      rows: [['Sales', money(r.amount)], ...payRows(pp, r.amount), ['Orders', int(r.orders)], ['Avg ticket', money2(r.avgTicket)], ['vs last week', signedPct(r.vsLastWeek)]],
+    };
+  });
   return (
     <div className="stack">
       <div className="card">
         <div className="card-head"><div><h2>Sales per day</h2><p>{amountLabel(basis)} per business day. Sales after midnight count toward the previous day.</p></div></div>
-        <BarLineChart height={240} data={chart} />
+        <BarLineChart height={240} data={chart} series={PAY_SERIES} />
       </div>
       <div className="card">
         <DataTable columns={columns} rows={rows} defaultSort={{ key: 'key', dir: 'desc' }} filters={amountFilter(basis)} exportName="sales-per-day" />

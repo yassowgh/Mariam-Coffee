@@ -16,8 +16,7 @@ export default function ProductDrawer({ ctx, id, onClose }) {
     const val = (l) => (basis === 'net' ? l.net : l.gross);
     const months = new Map(), days = new Map(), hours = new Map(), wd = new Map();
     let amount = 0, qty = 0, orders = 0, totalPeriod = 0;
-    for (const l of model.lines) {
-      const inv = l.inv;
+    for (const inv of model.invoices) for (const l of inv.lines) {
       if (filters.channel !== 'all' && inv.channel !== filters.channel) continue;
       if (inRange.has(inv)) totalPeriod += val(l);
       if (l.item !== id) continue;

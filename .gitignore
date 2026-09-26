@@ -5,3 +5,4 @@ dist-single
 *.rar
 *.zip
 .DS_Store
+.wrangler

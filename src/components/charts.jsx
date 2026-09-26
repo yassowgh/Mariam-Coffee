@@ -38,15 +38,18 @@ function Tooltip({ x, y, title, rows }) {
 
 /**
  * Bars (value) with an optional line (avg) on the same scale.
- * data: [{ key, label, value, line?, title, rows: [[k,v]] }]
+ * data: [{ key, label, value, line?, ghost?, parts?: {seriesKey: v}, title, rows: [[k,v]] }]
+ * series: optional [{ key, label, color }] -> bars are stacked from `parts` in this order
+ * ghost: a lighter bar behind the value (e.g. run rate of an unfinished month)
  */
-export function BarLineChart({ data, height = 240, lineLabel, barLabel, yFmt = compact, onBarClick, highlightKey }) {
+export function BarLineChart({ data, height = 240, lineLabel, barLabel, ghostLabel, series, yFmt = compact, onBarClick, highlightKey }) {
+  const lineColor = series ? 'var(--text)' : 'var(--series-2)';
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
   const pad = { l: 48, r: 12, t: 12, b: 28 };
   const iw = width - pad.l - pad.r;
   const ih = height - pad.t - pad.b;
-  const maxV = Math.max(0, ...data.map((d) => Math.max(d.value, d.line ?? 0)));
+  const maxV = Math.max(0, ...data.map((d) => Math.max(d.value, d.line ?? 0, d.ghost ?? 0)));
   const minV = Math.min(0, ...data.map((d) => d.value));
   const stepV = niceStep(maxV - minV);
   const max = Math.max(stepV, Math.ceil(maxV / stepV) * stepV);
@@ -71,10 +74,13 @@ export function BarLineChart({ data, height = 240, lineLabel, barLabel, yFmt = c
   const h = hover != null ? data[hover] : null;
   return (
     <div className="chart" ref={ref}>
-      {(lineLabel || barLabel) && (
+      {(lineLabel || barLabel || series || ghostLabel) && (
         <div className="legend" style={{ marginBottom: 6 }}>
-          {barLabel && <span><i className="bar" style={{ background: 'var(--series-1)' }} />{barLabel}</span>}
-          {lineLabel && <span><i style={{ background: 'var(--series-2)' }} />{lineLabel}</span>}
+          {series
+            ? series.map((sr) => <span key={sr.key}><i className="bar" style={{ background: sr.color }} />{sr.label}</span>)
+            : barLabel && <span><i className="bar" style={{ background: 'var(--series-1)' }} />{barLabel}</span>}
+          {ghostLabel && <span><i className="bar" style={{ background: 'var(--series-1-soft)' }} />{ghostLabel}</span>}
+          {lineLabel && <span><i style={{ background: lineColor }} />{lineLabel}</span>}
         </div>
       )}
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={barLabel || 'chart'}
@@ -95,20 +101,39 @@ export function BarLineChart({ data, height = 240, lineLabel, barLabel, yFmt = c
           const r = Math.min(4, bw / 2, hgt);
           const neg = d.value < 0;
           const active = hover === i || highlightKey === d.key;
+          const op = hover == null || active ? 1 : 0.55;
+          const ghost = d.ghost != null && d.ghost > d.value ? (
+            <path d={roundedBar(x, y(d.ghost), bw, y(0) - y(d.ghost), Math.min(4, bw / 2), false)} fill="var(--series-1-soft)" opacity={op} />
+          ) : null;
+          if (series && d.parts && !neg) {
+            // stacked segments, bottom-up, 2px surface gap between them, rounded top only
+            const segs = [];
+            let base = 0;
+            const visible = series.filter((sr) => (d.parts[sr.key] || 0) > 0);
+            visible.forEach((sr, si) => {
+              const v = d.parts[sr.key];
+              const y0 = y(base), y1 = y(base + v);
+              const isTop = si === visible.length - 1;
+              const hh = Math.max(0, y0 - y1 - (isTop ? 0 : 2));
+              segs.push(<path key={sr.key} d={isTop ? roundedBar(x, y1, bw, hh, Math.min(4, bw / 2, hh), false) : `M${x},${y1 + 2}h${bw}v${hh}h${-bw}z`} fill={sr.color} opacity={op} />);
+              base += v;
+            });
+            return <g key={d.key}>{ghost}{segs}</g>;
+          }
           const fill = neg ? 'var(--bad)' : 'var(--series-1)';
           return (
-            <path key={d.key}
-              d={roundedBar(x, top, bw, hgt, r, neg)}
-              fill={fill} opacity={hover == null || active ? 1 : 0.55} />
+            <g key={d.key}>{ghost}
+              <path d={roundedBar(x, top, bw, hgt, r, neg)} fill={fill} opacity={op} />
+            </g>
           );
         })}
         <line className="axis" x1={pad.l} x2={width - pad.r} y1={y(0)} y2={y(0)} />
-        {path && <path d={path} fill="none" stroke="var(--series-2)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+        {path && <path d={path} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
         {data.map((d, i) => (i % labelEvery === 0 ? (
           <text key={'l' + d.key} x={pad.l + i * step + step / 2} y={height - 8} textAnchor="middle">{d.label}</text>
         ) : null))}
         {h && <line x1={pad.l + hover * step + step / 2} x2={pad.l + hover * step + step / 2} y1={pad.t} y2={pad.t + ih} stroke="var(--text-3)" strokeWidth="1" />}
-        {h && linePts[hover] && <circle cx={linePts[hover][0]} cy={linePts[hover][1]} r="4" fill="var(--series-2)" stroke="var(--surface)" strokeWidth="2" />}
+        {h && linePts[hover] && <circle cx={linePts[hover][0]} cy={linePts[hover][1]} r="4" fill={lineColor} stroke="var(--surface)" strokeWidth="2" />}
       </svg>
       {h && (
         <Tooltip x={Math.min(Math.max(((pad.l + hover * step + step / 2) / width) * 100, 12), 88) + '%'}

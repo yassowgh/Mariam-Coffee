@@ -14,6 +14,7 @@
   --series-1: #2a78d6;
   --series-1-soft: #9ec5f4;
   --series-2: #eb6834;
+  --series-3: #1baf7a;
   --good: #0ca30c;
   --good-text: #006300;
   --bad: #d03b3b;
@@ -48,6 +49,7 @@
     --series-1: #3987e5;
     --series-1-soft: #184f95;
     --series-2: #d95926;
+    --series-3: #199e70;
     --good-text: #4cc94c;
     --bad-text: #ee7a7a;
     --seq-0: #232321;
@@ -77,6 +79,7 @@
   --series-1: #3987e5;
   --series-1-soft: #184f95;
   --series-2: #d95926;
+  --series-3: #199e70;
   --good-text: #4cc94c;
   --bad-text: #ee7a7a;
   --seq-0: #232321;
@@ -290,3 +293,12 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
   .field input[type="date"] { width: 150px; }
   .brand small { max-width: 160px; }
 }
+
+.periods { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 6px; font-size: 12.5px; background: var(--surface-2); border-radius: 8px; padding: 6px 10px; }
+.banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 10px; padding: 8px 8px 8px 14px; margin-bottom: 12px; font-size: 13.5px; border: 1px solid var(--border); background: var(--surface); }
+.banner.ok { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
+.banner.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--surface)); }
+.save-box { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.save-box label.check { display: flex; gap: 8px; align-items: center; min-height: 44px; cursor: pointer; }
+.save-box input[type="checkbox"] { width: 18px; height: 18px; }
+.save-box .field { width: min(280px, 100%); text-align: left; }

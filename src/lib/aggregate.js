@@ -127,21 +127,22 @@ export function weekdayRows(invs, basis) {
   });
 }
 
-/** Product stats for invoices passing `test`. */
-export function productStats(model, invSet, basis) {
+/** Product stats over a list of invoices. */
+export function productStats(model, invs, basis) {
   const m = new Map();
   let total = 0;
-  for (const l of model.lines) {
-    if (!invSet.has(l.inv)) continue;
-    let p = m.get(l.item);
-    if (!p) {
-      p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, qty: 0, gross: 0, net: 0, orders: new Set(), lastDate: '' };
-      m.set(l.item, p);
+  for (const inv of invs) {
+    for (const l of inv.lines) {
+      let p = m.get(l.item);
+      if (!p) {
+        p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, qty: 0, gross: 0, net: 0, orders: new Set(), lastDate: '' };
+        m.set(l.item, p);
+      }
+      p.qty += l.qty; p.gross += l.gross; p.net += l.net;
+      if (inv.sign > 0) p.orders.add(inv.key);
+      if (inv.date > p.lastDate) p.lastDate = inv.date;
+      total += basis === 'gross' ? l.gross : l.net;
     }
-    p.qty += l.qty; p.gross += l.gross; p.net += l.net;
-    if (l.inv.sign > 0) p.orders.add(l.inv);
-    if (l.inv.date > p.lastDate) p.lastDate = l.inv.date;
-    total += basis === 'gross' ? l.gross : l.net;
   }
   for (const p of m.values()) {
     p.amount = basis === 'gross' ? p.gross : p.net;
@@ -155,8 +156,8 @@ export function productStats(model, invSet, basis) {
 }
 
 export function productRows(model, invs, prevInvs, basis) {
-  const cur = productStats(model, new Set(invs), basis);
-  const prev = prevInvs ? productStats(model, new Set(prevInvs), basis) : null;
+  const cur = productStats(model, invs, basis);
+  const prev = prevInvs ? productStats(model, prevInvs, basis) : null;
   const rows = [...cur.map.values()];
   if (prev) {
     for (const p of rows) {
@@ -181,17 +182,17 @@ export function productRows(model, invs, prevInvs, basis) {
 
 /** Product x month pivot (like the owner's Excel). */
 export function productMonthPivot(model, invs, basis) {
-  const set = new Set(invs);
   const months = [...new Set(invs.map((i) => i.month))].sort();
   const m = new Map();
-  for (const l of model.lines) {
-    if (!set.has(l.inv)) continue;
-    let p = m.get(l.item);
-    if (!p) { p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, total: 0, totalQty: 0 }; m.set(l.item, p); }
-    const v = basis === 'gross' ? l.gross : l.net;
-    p[l.inv.month] = (p[l.inv.month] || 0) + v;
-    p['q' + l.inv.month] = (p['q' + l.inv.month] || 0) + l.qty;
-    p.total += v; p.totalQty += l.qty;
+  for (const inv of invs) {
+    for (const l of inv.lines) {
+      let p = m.get(l.item);
+      if (!p) { p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, total: 0, totalQty: 0 }; m.set(l.item, p); }
+      const v = basis === 'gross' ? l.gross : l.net;
+      p[inv.month] = (p[inv.month] || 0) + v;
+      p['q' + inv.month] = (p['q' + inv.month] || 0) + l.qty;
+      p.total += v; p.totalQty += l.qty;
+    }
   }
   return { months, rows: [...m.values()].sort((a, b) => b.total - a.total) };
 }
@@ -212,5 +213,15 @@ export function monthProjection(model, lastDate, basis, channel) {
     const iso = `${month}-${String(d).padStart(2, '0')}`;
     rest += avg.get(new Date(iso + 'T00:00:00Z').getUTCDay()) || 0;
   }
-  return { month, mtd, projected: mtd + rest, remainingDays: dim - Number(lastDate.slice(8, 10)) };
+  const elapsed = Number(lastDate.slice(8, 10));
+  return { month, mtd, projected: mtd + rest, runRate: (mtd / elapsed) * dim, elapsed, days: dim, remainingDays: dim - elapsed, finished: elapsed === dim };
+}
+
+/** Run rate for the month containing `lastDate` if it is not finished: amount / days elapsed × days in month. */
+export function runRateFor(monthKey, amount, lastDate) {
+  if (!lastDate || lastDate.slice(0, 7) !== monthKey) return null;
+  const dim = monthDays(monthKey);
+  const elapsed = Number(lastDate.slice(8, 10));
+  if (elapsed >= dim) return null;
+  return { value: (amount / elapsed) * dim, elapsed, days: dim };
 }

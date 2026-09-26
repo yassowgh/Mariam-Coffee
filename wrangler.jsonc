@@ -1,14 +1,26 @@
-// Cloudflare Workers config: serves the built static app (dist/) as a Worker.
+// Cloudflare Workers config.
 // Workers Builds runs `npx wrangler deploy`, which runs the build command below first.
+// The KV namespace "DATA" has no id: wrangler creates it automatically on the first deploy.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mariam-coffee-db-reader",
+  "main": "worker/index.js",
   "compatibility_date": "2026-09-01",
   "build": {
     "command": "npm run build"
   },
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [
+    { "binding": "DATA" }
+  ],
+  "vars": {
+    // SHA-256 of the upload password. Set the secret UPLOAD_PASSWORD in the
+    // Cloudflare dashboard to change the password without touching the code.
+    "UPLOAD_PASSWORD_SHA256": "2d56d09035fc177a2960be607f0ce4d851389e84410d92c5fbd1bc063ce8e7b4"
   }
 }

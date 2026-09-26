@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import {
   DOW, addDays, dailyRows, filterInvoices, heatmap, hourOrder, hourlyRows, monthProjection,
-  monthlyRows, productRows, summarize, weekdayRows, DAY_START_HOUR,
+  monthlyRows, productRows, runRateFor, summarize, weekdayRows, DAY_START_HOUR,
 } from '../lib/aggregate.js';
 import { BarLineChart, Heatmap } from '../components/charts.jsx';
+import { PAY_SERIES, payParts, payRows } from './common.jsx';
 import {
   compact, dec1, hourRange, timeLabel, int, longDate, money, money2, monthLabel, pct, shortDate, signedMoney, signedPct,
 } from '../format.js';
@@ -55,10 +56,11 @@ export default function Dashboard({ ctx }) {
         if (day < filters.from) continue;
         const win = vals.slice(-7);
         const ma = win.reduce((s, v) => s + v, 0) / win.length;
+        const pp = payParts(r);
         trend.push({
-          key: day, label: shortDate(day), value: r ? r.amount : 0, line: ma,
+          key: day, label: shortDate(day), value: r ? r.amount : 0, line: ma, parts: pp,
           title: `${DOW[new Date(day + 'T00:00:00Z').getUTCDay()]} ${longDate(day)}`,
-          rows: [['Sales', money(r ? r.amount : 0)], ['Orders', int(r ? r.orders : 0)], ['Avg ticket', money2(r ? r.avgTicket : 0)], ['7-day avg', money(ma)]],
+          rows: [['Sales', money(r ? r.amount : 0)], ...payRows(pp, r ? r.amount : 0), ['Orders', int(r ? r.orders : 0)], ['Avg ticket', money2(r ? r.avgTicket : 0)], ['7-day avg', money(ma)]],
         });
       }
     } else {
@@ -67,13 +69,15 @@ export default function Dashboard({ ctx }) {
         if (r.key < filters.from) continue;
         const dow = (new Date(r.key + 'T00:00:00Z').getUTCDay() + 6) % 7;
         const wk = addDays(r.key, -dow);
-        const w = weeks.get(wk) || { amount: 0, orders: 0, days: 0 };
+        const w = weeks.get(wk) || { amount: 0, orders: 0, days: 0, net: 0, card: 0, cash: 0, account: 0 };
         w.amount += r.amount; w.orders += r.orders; w.days++;
+        w.net += r.net; w.card += r.card; w.cash += r.cash; w.account += r.account;
         weeks.set(wk, w);
       }
       for (const [wk, w] of [...weeks].sort()) {
-        trend.push({ key: wk, label: shortDate(wk), value: w.amount, title: `Week of ${longDate(wk)}`,
-          rows: [['Sales', money(w.amount)], ['Orders', int(w.orders)], ['Trading days', w.days]] });
+        const pp = payParts(w);
+        trend.push({ key: wk, label: shortDate(wk), value: w.amount, parts: pp, title: `Week of ${longDate(wk)}`,
+          rows: [['Sales', money(w.amount)], ...payRows(pp, w.amount), ['Orders', int(w.orders)], ['Trading days', w.days]] });
       }
     }
 
@@ -132,7 +136,9 @@ export default function Dashboard({ ctx }) {
           <Kpi label="Avg ticket · last 7 days" value={money2(d.last7.avgTicket)} delta={change(d.last7.avgTicket, d.prev7.avgTicket)} sub={`${dec1(d.last7.itemsPerOrder)} items / order`} />
           <Kpi label={`Latest day · ${DOW[new Date(L + 'T00:00:00Z').getUTCDay()]} ${shortDate(L)}`} value={money(d.lastDay.amount)} delta={change(d.lastDay.amount, d.lastWeekSameDay.amount)} sub={d.partial ? `vs same day last week · partial day (to ${d.lastOrderClock})` : 'vs same day last week'} />
           <Kpi label={`Month to date · ${monthLabel(d.proj.month)}`} value={money(d.proj.mtd)}
-            sub={<>Projected <b>{compact(d.proj.projected)}</b> · last month {compact(d.lastMonth.amount)} <Delta v={change(d.proj.projected, d.lastMonth.amount)} /></>} />
+            sub={d.proj.finished ? <>Month complete · last month {compact(d.lastMonth.amount)} <Delta v={change(d.proj.mtd, d.lastMonth.amount)} /></> : <>
+              Run rate <b>{compact(d.proj.runRate)}</b> <span className="faint">({d.proj.elapsed} of {d.proj.days} days)</span>
+              {' '}· last month {compact(d.lastMonth.amount)} <Delta v={change(d.proj.runRate, d.lastMonth.amount)} /></>} />
           <Kpi label="Discounts · selected period" value={pct(d.cur.discPct)} delta={d.prev.discPct ? d.cur.discPct - d.prev.discPct : null} invert
             sub={`${money(d.cur.disc)} given`} />
         </div>
@@ -148,12 +154,12 @@ export default function Dashboard({ ctx }) {
             </p>
           </div>
         </div>
-        <BarLineChart data={d.trend} height={260} barLabel={ctx.len > 190 ? 'Weekly sales' : 'Daily sales'} lineLabel={ctx.len > 190 ? null : '7-day average'} />
+        <BarLineChart data={d.trend} height={260} series={PAY_SERIES} lineLabel={ctx.len > 190 ? null : '7-day average (total)'} />
       </div>
 
       <div className="grid two">
-        <MoverCard title="Top increasing products" subtitle={`Change in ${basisWord} sales vs ${shortDate(prevFrom)} – ${shortDate(prevTo)}`} items={d.rising} up openProduct={openProduct} />
-        <MoverCard title="Top declining products" subtitle={`Change in ${basisWord} sales vs ${shortDate(prevFrom)} – ${shortDate(prevTo)}`} items={d.falling} openProduct={openProduct} />
+        <MoverCard title="Top increasing products" periods={{ from: filters.from, to: filters.to, prevFrom, prevTo }} basisWord={basisWord} items={d.rising} up openProduct={openProduct} />
+        <MoverCard title="Top declining products" periods={{ from: filters.from, to: filters.to, prevFrom, prevTo }} basisWord={basisWord} items={d.falling} openProduct={openProduct} />
       </div>
 
       <div className="grid three">
@@ -206,10 +212,16 @@ export default function Dashboard({ ctx }) {
 
       <div className="grid two">
         <div className="card">
-          <div className="card-head"><div><h2>Monthly trend</h2><p>Last 13 months, {basisWord} sales. The current month is partial.</p></div></div>
+          <div className="card-head"><div><h2>Monthly trend</h2><p>Last 13 months, {basisWord} sales. A light bar shows the run rate of an unfinished month.</p></div></div>
           <BarLineChart height={220}
-            data={d.months.map((m) => ({ key: m.key, label: monthLabel(m.key).slice(0, 3) + ' ' + m.key.slice(2, 4), value: m.amount, title: monthLabel(m.key),
-              rows: [['Sales', money(m.amount)], ['Orders', int(m.orders)], ['Avg per day', money(m.avgPerDay)], ['vs prev month', signedPct(m.change)]] }))} />
+            barLabel="Sales" ghostLabel={d.months.some((m) => runRateFor(m.key, m.amount, L)) ? 'Run rate (unfinished month)' : null}
+            data={d.months.map((m, mi) => {
+              const rr = runRateFor(m.key, m.amount, L);
+              const prevM = d.months[mi - 1];
+              const mom = rr ? (prevM?.amount ? rr.value / prevM.amount - 1 : null) : m.change;
+              return { key: m.key, label: monthLabel(m.key).slice(0, 3) + ' ' + m.key.slice(2, 4), value: m.amount, ghost: rr?.value, title: monthLabel(m.key) + (rr ? ` (${rr.elapsed} of ${rr.days} days)` : ''),
+                rows: [['Sales', money(m.amount)], ...(rr ? [['Run rate', money(rr.value)]] : []), ['Orders', int(m.orders)], ['Avg per day', money(m.avgPerDay)], [rr ? 'Run rate vs prev month' : 'vs prev month', signedPct(mom)]] };
+            })} />
         </div>
         <div className="card">
           <div className="card-head"><div><h2>How customers pay</h2><p>Selected period, share of net sales</p></div></div>
@@ -220,11 +232,21 @@ export default function Dashboard({ ctx }) {
   );
 }
 
-function MoverCard({ title, subtitle, items, up, openProduct }) {
+function MoverCard({ title, periods, basisWord, items, up, openProduct }) {
   const max = Math.max(1, ...items.map((p) => Math.abs(p.delta)));
   return (
     <div className="card">
-      <div className="card-head"><div><h2>{up ? '▲' : '▼'} {title}</h2><p>{subtitle}</p></div></div>
+      <div className="card-head">
+        <div>
+          <h2>{up ? '▲' : '▼'} {title}</h2>
+          <p>Change in {basisWord} sales between two periods of equal length:</p>
+          <div className="periods">
+            <span><span className="faint">Before</span> <b>{longDate(periods.prevFrom)} – {longDate(periods.prevTo)}</b></span>
+            <span aria-hidden="true">→</span>
+            <span><span className="faint">Now</span> <b>{longDate(periods.from)} – {longDate(periods.to)}</b></span>
+          </div>
+        </div>
+      </div>
       {!items.length && <p className="muted">No products {up ? 'increased' : 'declined'} in this period.</p>}
       <ul className="barlist">
         {items.map((p) => (
@@ -236,7 +258,7 @@ function MoverCard({ title, subtitle, items, up, openProduct }) {
             </span>
             <div className="track"><div className="fill" style={{ width: (Math.abs(p.delta) / max) * 100 + '%', background: up ? 'var(--good)' : 'var(--bad)' }} /></div>
             <span className="faint" style={{ gridColumn: '1 / -1', fontSize: 11.5 }}>
-              {money(p.prevAmount)} → {money(p.amount)} · qty {int(p.prevQty)} → {int(p.qty)}
+              Before {money(p.prevAmount)} → now {money(p.amount)} · qty {int(p.prevQty)} → {int(p.qty)}
             </span>
           </li>
         ))}
@@ -304,7 +326,9 @@ function buildInsights(d, ctx) {
   if (d.dormant.length) {
     out.push({ icon: '⚠️', text: <>{d.dormant.length} product{d.dormant.length > 1 ? 's' : ''} sold in the previous period but not at all in this one, e.g. {d.dormant.slice(0, 3).map((p) => `${p.name} (${money(p.prevAmount)} before)`).join(', ')}.</> });
   }
-  out.push({ icon: '📈', text: <>At the current pace, {monthLabel(d.proj.month)} is projected to close at <b>{money(d.proj.projected)}</b> vs {money(d.lastMonth.amount)} last month (projection = actual so far + each remaining day at its weekday average over the last 4 weeks).</> });
+  if (!d.proj.finished) {
+    out.push({ icon: '📈', text: <>{monthLabel(d.proj.month)} run rate: <b>{money(d.proj.runRate)}</b> ({money(d.proj.mtd)} in {d.proj.elapsed} days ÷ {d.proj.elapsed} × {d.proj.days}) vs {money(d.lastMonth.amount)} last month. A weekday-aware projection (remaining days at their weekday average of the last 4 weeks) gives {money(d.proj.projected)}.</> });
+  }
   if (ctx.filters.channel === 'all' && d.cur.net) {
     out.push({ icon: '💳', text: <>{pct(d.cur.card / d.cur.net, 0)} of sales were paid by card, {pct(d.cur.cash / d.cur.net, 0)} in cash and {pct(d.cur.account / d.cur.net, 0)} on account.</> });
   }
