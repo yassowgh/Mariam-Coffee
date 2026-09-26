@@ -1,0 +1,27 @@
+{
+  "name": "mariam-coffee-sales",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node scripts/verify.mjs",
+    "build:single": "vite build --mode single"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "node-unrar-js": "^2.0.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.3.1",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

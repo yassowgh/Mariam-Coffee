@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-single
+*.DB
+*.rar
+*.zip
+.DS_Store
