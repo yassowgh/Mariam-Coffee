@@ -49,19 +49,19 @@ export default function FilterBar({ model, filters, onChange }) {
         <input type="date" value={filters.to} min={filters.from} max={model.maxDate}
           onChange={(e) => e.target.value && set({ to: e.target.value, preset: '' })} />
       </label>
-      <label className="field">
-        <span>Sales channel</span>
-        <select value={filters.channel} onChange={(e) => set({ channel: e.target.value })}>
-          <option value="all">All sales</option>
-          <option value="POS">Cash register (POS)</option>
-          <option value="Account">On-account invoices</option>
-        </select>
-      </label>
       <div className="field">
-        <span>Amounts</span>
-        <div className="seg" role="group" aria-label="Amount basis">
-          <button aria-pressed={filters.basis === 'net'} onClick={() => set({ basis: 'net' })} title="After invoice discounts: the money actually charged">Net</button>
-          <button aria-pressed={filters.basis === 'gross'} onClick={() => set({ basis: 'gross' })} title="Menu price before invoice discounts">Gross</button>
+        <span>On-account invoices <span className="faint">(YemekSepeti, staff, loyalty…)</span></span>
+        <div className="seg" role="group" aria-label="On-account invoices">
+          <button aria-pressed={filters.channel === 'all'} onClick={() => set({ channel: 'all' })} title="Cash-register sales plus on-account invoices">Include</button>
+          <button aria-pressed={filters.channel === 'POS'} onClick={() => set({ channel: 'POS' })} title="Cash-register sales only">Exclude</button>
+          <button aria-pressed={filters.channel === 'Account'} onClick={() => set({ channel: 'Account' })} title="Show on-account invoices only">Only these</button>
+        </div>
+      </div>
+      <div className="field">
+        <span>Sales amounts</span>
+        <div className="seg" role="group" aria-label="Sales amounts">
+          <button aria-pressed={filters.basis === 'net'} onClick={() => set({ basis: 'net' })} title="Net: the money actually charged, after invoice discounts">After discount</button>
+          <button aria-pressed={filters.basis === 'gross'} onClick={() => set({ basis: 'gross' })} title="Gross: menu price × quantity, before invoice discounts (same as your Excel report)">Before discount</button>
         </div>
       </div>
     </section>

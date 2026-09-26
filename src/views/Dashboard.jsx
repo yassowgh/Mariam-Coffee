@@ -117,7 +117,7 @@ export default function Dashboard({ ctx }) {
     : [];
   const dowOrder = [1, 2, 3, 4, 5, 6, 0];
   const insights = buildInsights(d, ctx);
-  const basisWord = basis === 'net' ? 'net' : 'gross';
+  const basisWord = basis === 'net' ? 'after-discount' : 'before-discount';
 
   return (
     <div className="stack">

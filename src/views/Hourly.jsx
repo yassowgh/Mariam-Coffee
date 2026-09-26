@@ -47,7 +47,7 @@ export default function Hourly({ ctx }) {
         <DataTable columns={columns} rows={rows} defaultSort={{ key: 'key', dir: 'asc' }} filters={amountFilter(basis)} exportName="sales-per-hour" />
       </div>
       <div className="card">
-        <div className="card-head"><div><h2>Weekday × hour</h2><p>Average {basis} sales per occurrence of each weekday and hour.</p></div></div>
+        <div className="card-head"><div><h2>Weekday × hour</h2><p>Average {basis === 'net' ? 'after-discount' : 'before-discount'} sales per occurrence of each weekday and hour.</p></div></div>
         <Heatmap cells={heat} dows={dows} dowLabels={dows.map((d) => DOW[d])} hours={hours} fmt={money} subFmt={dec1} />
       </div>
     </div>

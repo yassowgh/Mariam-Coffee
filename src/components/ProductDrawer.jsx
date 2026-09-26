@@ -60,7 +60,7 @@ export default function ProductDrawer({ ctx, id, onClose }) {
           <button className="btn icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="kpis" style={{ gridTemplateColumns: 'repeat(2, minmax(0,1fr))' }}>
-          <div className="card kpi"><div className="label">{basis === 'net' ? 'Net' : 'Gross'} sales</div><div className="value">{money(d.amount)}</div><div className="sub">{pct(d.share)} of all sales</div></div>
+          <div className="card kpi"><div className="label">Sales ({basis === 'net' ? 'after' : 'before'} discount)</div><div className="value">{money(d.amount)}</div><div className="sub">{pct(d.share)} of all sales</div></div>
           <div className="card kpi"><div className="label">Quantity</div><div className="value">{dec1(d.qty)}</div><div className="sub">{int(d.orders)} order lines · avg {money2(d.qty ? d.amount / d.qty : 0)}</div></div>
         </div>
         <div className="stack">

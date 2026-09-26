@@ -2,7 +2,7 @@ import { dec1, int, money, money2, pct, signedPct } from '../format.js';
 
 // Columns shared by the month / day / hour tables.
 export function salesColumns(basis) {
-  const amtLabel = basis === 'net' ? 'Net sales' : 'Gross sales';
+  const amtLabel = basis === 'net' ? 'Sales (after discount)' : 'Sales (before discount)';
   return [
     { key: 'orders', label: 'Orders', align: 'r', fmt: int, total: 'sum' },
     { key: 'qty', label: 'Items', align: 'r', fmt: int, total: 'sum', title: 'Number of items sold' },
@@ -27,6 +27,6 @@ export function ChangeCell({ v }) {
   return <span className={v > 0 ? 'up' : v < 0 ? 'down' : 'faint'}>{v > 0 ? '▲' : v < 0 ? '▼' : ''} {signedPct(v)}</span>;
 }
 
-export const amountFilter = (basis) => ({ orders: 'orders', amount: 'amount', amountLabel: basis === 'net' ? 'Net sales' : 'Gross sales' });
-export const amountLabel = (basis) => (basis === 'net' ? 'Net sales' : 'Gross sales');
+export const amountFilter = (basis) => ({ orders: 'orders', amount: 'amount', amountLabel: basis === 'net' ? 'Sales (after discount)' : 'Sales (before discount)' });
+export const amountLabel = (basis) => (basis === 'net' ? 'Sales (after discount)' : 'Sales (before discount)');
 export { money };

@@ -31,7 +31,7 @@ export default function Orders({ ctx }) {
     <div className="card">
       <div className="card-head"><div><h2>Orders</h2><p>Every invoice in the selected period. Filter by items per order or order value to find large or unusual tickets.</p></div></div>
       <DataTable columns={columns} rows={rows} defaultSort={{ key: 'date', dir: 'desc' }}
-        filters={{ search: 'dealer', orders: 'qty', ordersLabel: 'Items', amount: 'amount', amountLabel: basis === 'net' ? 'Net value' : 'Gross value' }}
+        filters={{ search: 'dealer', orders: 'qty', ordersLabel: 'Items', amount: 'amount', amountLabel: basis === 'net' ? 'Value after discount' : 'Value before discount' }}
         exportName="orders" />
     </div>
   );
