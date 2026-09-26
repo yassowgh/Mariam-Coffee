@@ -1,0 +1,14 @@
+// Cloudflare Workers config: serves the built static app (dist/) as a Worker.
+// Workers Builds runs `npx wrangler deploy`, which runs the build command below first.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mariam-coffee-db-reader",
+  "compatibility_date": "2026-09-01",
+  "build": {
+    "command": "npm run build"
+  },
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
