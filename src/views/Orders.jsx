@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { DOW } from '../lib/aggregate.js';
+import { DOW, discLabel } from '../lib/aggregate.js';
 import DataTable from '../components/DataTable.jsx';
 import { dec1, longDate, money2, timeLabel } from '../format.js';
 
@@ -8,7 +8,7 @@ export default function Orders({ ctx }) {
   const rows = useMemo(() => invs.map((i) => ({
     key: i.key, date: i.date, minute: i.minute, dow: i.dow, receipt: i.receipt, channel: i.channel,
     src: i.src === 'ACC' ? 'Accounting' : 'POS history', dealer: i.dealer, qty: i.qty, gross: i.gross, disc: i.disc, net: i.net,
-    amount: basis === 'net' ? i.net : i.gross, card: i.card, cash: i.cash, account: i.account, type: i.sign > 0 ? 'Sale' : 'Return',
+    amount: basis === 'net' ? i.net : i.gross, discType: discLabel(i), card: i.card, cash: i.cash, account: i.account, type: i.sign > 0 ? 'Sale' : 'Return',
     one: 1,
   })), [invs, basis]);
   const columns = [
@@ -21,6 +21,7 @@ export default function Orders({ ctx }) {
     { key: 'qty', label: 'Items', align: 'r', fmt: dec1, total: 'sum' },
     { key: 'gross', label: 'Gross', align: 'r', fmt: money2, total: 'sum' },
     { key: 'disc', label: 'Discount', align: 'r', fmt: money2, total: 'sum' },
+    { key: 'discType', label: 'Discount type', fmt: (v) => v || '–' },
     { key: 'net', label: 'Net', align: 'r', fmt: money2, total: 'sum' },
     { key: 'card', label: 'Card', align: 'r', fmt: money2, total: 'sum' },
     { key: 'cash', label: 'Cash', align: 'r', fmt: money2, total: 'sum' },

@@ -26,11 +26,11 @@ export const UNALLOCATED = -1;
 const round2 = (v) => Math.round(v * 100) / 100;
 
 const INV_FIELDS = ['IUNo', 'Type', 'MIOType', 'Date', 'Time', 'No', 'Dealer', 'Total',
-  'DiscountValue', 'CalculatedDiscountValue', 'NetTotal', 'CashPayment', 'ChequePayment',
+  'DiscountValue', 'DiscountPercent', 'CalculatedDiscountValue', 'NetTotal', 'CashPayment', 'ChequePayment',
   'AccountAmount', 'Canceled'];
 const STD_FIELDS = ['IUNo', 'ItemNo', 'Quantity', 'EntryUnitPrice', 'Name', 'Source'];
 const CRI_FIELDS = ['UNo', 'Type', 'Date', 'Time', 'WorkingDate', 'No', 'Dealer', 'Total',
-  'DiscountValue', 'CalculatedDiscountValue', 'NetTotal', 'CashPayment', 'CreditCardPayment',
+  'DiscountValue', 'DiscountPercent', 'CalculatedDiscountValue', 'NetTotal', 'CashPayment', 'CreditCardPayment',
   'ChequePayment', 'AmountOnDealer', 'CashBack'];
 const CRD_FIELDS = ['UNo', 'ItemNo', 'Quantity', 'UnitPrice', 'QuantityPrice', 'Name'];
 const OPEN_FIELDS = ['UNo', 'TableName', 'Total', 'NetTotal'];
@@ -216,6 +216,15 @@ function withDate(inv, date) {
   return { ...inv, date, month: date.slice(0, 7), dow: new Date(date + 'T00:00:00Z').getUTCDay() };
 }
 
+// How the discount was given on the till: 'p15' = 15 %, 'fixed' = an amount, '' = none.
+function discountKind(r, gross, net) {
+  if (Math.abs(gross - net) < 0.005) return '';
+  const p = n(r.DiscountPercent);
+  if (p >= 99) return 'p100'; // 99.99 % is used on the till as "free"
+  if (p > 0) return 'p' + Math.round(p * 100) / 100;
+  return 'fixed';
+}
+
 function makeInvoice(o) {
   const minute = o.time != null ? Math.floor(o.time / 60000) : 0;
   // calendar date: the system's own date when known, else derived from the business day
@@ -272,7 +281,7 @@ function buildAcc(t, folder, out, seen, recon) {
     const inv = makeInvoice({
       key, src: 'ACC', ref: r.IUNo, receipt: r.No, date: r.Date, time: r.Time, sign,
       channel: r.MIOType === 0 ? 'Account' : 'POS', dealer: r.Dealer || '',
-      gross, net, disc: round2(gross - net),
+      gross, net, disc: round2(gross - net), discKind: discountKind(r, gross, net),
       card: round2(card), account: round2(account), cash: round2(net - card - account),
     });
     const raw = (linesByInv.get(r.IUNo) || []).map((l) => ({
@@ -311,7 +320,7 @@ function buildPos(t, folder, out, seen, recon) {
       key, src: 'POS', ref: r.UNo, receipt: r.No, date, calDate: r.Date || date, time: r.Time, sign,
       channel: account && Math.abs(account) >= Math.abs(net) - EPS && net ? 'Account' : 'POS',
       dealer: r.Dealer || '',
-      gross, net, disc: round2(gross - net),
+      gross, net, disc: round2(gross - net), discKind: discountKind(r, gross, net),
       card: round2(Math.min(Math.abs(card), Math.abs(net)) * sign),
       account: round2(account),
       cash: 0,

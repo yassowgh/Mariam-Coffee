@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { collectTables } from './lib/archive.js';
 import { buildModel } from './lib/model.js';
 import { checkPassword, loadSaved, saveRemote } from './lib/remote.js';
-import { addDays, daysBetween, filterInvoices } from './lib/aggregate.js';
+import { addDays, daysBetween, filterInvoices, mainDiscountKinds, promoTest } from './lib/aggregate.js';
 import { longDate } from './format.js';
 import Upload from './components/Upload.jsx';
 import FilterBar from './components/FilterBar.jsx';
@@ -91,7 +91,7 @@ export default function App() {
       }
       m.loadMs = Math.round(performance.now() - t0);
       setModel(m);
-      setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business' });
+      setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all' });
       setFileLabel(label);
       setTab('dashboard');
       setStage('ready');
@@ -108,8 +108,10 @@ export default function App() {
   const vm = useMemo(() => {
     if (!model || !filters) return null;
     const v = model.view(filters.source, filters.day);
-    return { ...model, invoices: v.invoices, minDate: v.minDate, maxDate: v.maxDate, source: v.source, day: v.day };
-  }, [model, filters?.source, filters?.day]);
+    const mainKinds = mainDiscountKinds(v.invoices);
+    const invoices = v.invoices.filter(promoTest(filters.promo, mainKinds));
+    return { ...model, invoices, allInvoices: v.invoices, mainKinds, minDate: v.minDate, maxDate: v.maxDate, source: v.source, day: v.day };
+  }, [model, filters?.source, filters?.day, filters?.promo]);
   const deferredVm = useDeferredValue(vm);
   const busy = deferred !== filters || deferredVm !== vm;
 
@@ -162,6 +164,15 @@ export default function App() {
           </div>
         )}
         <FilterBar model={vm} filters={filters} onChange={setFilters} />
+        {filters.promo && filters.promo !== 'all' && (
+          <div className="banner info" role="status">
+            <span>
+              Showing <b>{filters.promo === 'disc' ? 'discounted orders only' : filters.promo === 'full' ? 'full-price orders only' : filters.promo === 'fixed' ? 'orders with a fixed-amount discount only' : filters.promo === 'other' ? 'orders with other (rarely used) discount rates only' : filters.promo === 'p100' ? 'free (100% discount) orders only' : `orders with a ${filters.promo.slice(1)}% discount only`}</b>
+              {' '}({vm.invoices.length.toLocaleString()} of {vm.allInvoices.length.toLocaleString()} orders in all loaded data). All reports follow this filter.
+            </span>
+            <button className="btn small" onClick={() => setFilters({ ...filters, promo: 'all' })}>Show all orders</button>
+          </div>
+        )}
         {ctx && <View ctx={ctx} />}
       </main>
       {product != null && ctx && <ProductDrawer ctx={ctx} id={product} onClose={() => setProduct(null)} />}

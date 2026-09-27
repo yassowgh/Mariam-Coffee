@@ -20,6 +20,36 @@ export function monthDays(ym) {
 }
 export const hourOrder = (h) => (h - DAY_START_HOUR + 24) % 24;
 
+/** Discount as set on the till: '15%', 'Fixed amount' or '' (full price). */
+export const discLabel = (i) => (!i.discKind ? '' : i.discKind === 'fixed' ? 'Fixed amount' : i.discKind.slice(1) + '%');
+
+/**
+ * promo: 'all' | 'disc' (discounted orders) | 'full' (full price) | a discKind ('p15', 'fixed')
+ * | 'other' (discounts not in `main`, the list of common kinds)
+ */
+export function promoTest(promo, main) {
+  if (!promo || promo === 'all') return () => true;
+  if (promo === 'disc') return (i) => !!i.discKind;
+  if (promo === 'full') return (i) => !i.discKind;
+  if (promo === 'other') return (i) => !!i.discKind && !main?.has(i.discKind);
+  return (i) => i.discKind === promo;
+}
+
+/** Discount kinds used on at least `min` orders get their own filter option. */
+export const MIN_ORDERS_FOR_OPTION = 10;
+export function mainDiscountKinds(invoices) {
+  return new Set(discountRates(invoices).filter((r) => r.orders >= MIN_ORDERS_FOR_OPTION).map((r) => r.kind));
+}
+
+/** Discount kinds used, most common first: [{ kind, label, orders }] */
+export function discountRates(invoices) {
+  const m = new Map();
+  for (const i of invoices) if (i.sign > 0 && i.discKind) m.set(i.discKind, (m.get(i.discKind) || 0) + 1);
+  return [...m].map(([kind, orders]) => ({
+    kind, orders, label: kind === 'fixed' ? 'Fixed-amount discount' : kind === 'p100' ? '100% (free)' : `${kind.slice(1)}% discount`,
+  })).sort((a, b) => b.orders - a.orders);
+}
+
 export function filterInvoices(model, { from, to, channel }) {
   return model.invoices.filter((i) =>
     (!from || i.date >= from) && (!to || i.date <= to) && (channel === 'all' || !channel || i.channel === channel));

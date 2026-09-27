@@ -1,4 +1,5 @@
-import { addDays } from '../lib/aggregate.js';
+import { useMemo } from 'react';
+import { MIN_ORDERS_FOR_OPTION, addDays, discountRates } from '../lib/aggregate.js';
 
 export function presetRange(key, maxDate, minDate) {
   const m = maxDate.slice(0, 7);
@@ -24,6 +25,9 @@ const PRESETS = [
 ];
 
 export default function FilterBar({ model, filters, onChange }) {
+  const rates = useMemo(() => discountRates(model.allInvoices || model.invoices), [model.allInvoices, model.invoices]);
+  const main = rates.filter((r) => r.orders >= MIN_ORDERS_FOR_OPTION);
+  const otherOrders = rates.filter((r) => r.orders < MIN_ORDERS_FOR_OPTION).reduce((s2, r) => s2 + r.orders, 0);
   const set = (patch) => onChange({ ...filters, ...patch });
   const clamp = (d) => (d < model.minDate ? model.minDate : d > model.maxDate ? model.maxDate : d);
   return (
@@ -77,6 +81,20 @@ export default function FilterBar({ model, filters, onChange }) {
             title="Each day runs midnight to midnight">Midnight</button>
         </div>
       </div>
+      <label className="field">
+        <span>Discount</span>
+        <select id="promo-filter" value={filters.promo || 'all'} onChange={(e) => set({ promo: e.target.value })}>
+          <option value="all">All orders</option>
+          <option value="disc">Discounted orders only</option>
+          <option value="full">Full-price orders only</option>
+          <optgroup label="By discount type">
+            {main.map((r) => (
+              <option key={r.kind} value={r.kind}>{r.label} · {r.orders.toLocaleString()} orders</option>
+            ))}
+            {otherOrders > 0 && <option value="other">Other rates · {otherOrders.toLocaleString()} orders</option>}
+          </optgroup>
+        </select>
+      </label>
       <div className="field">
         <span>Sales amounts</span>
         <div className="seg" role="group" aria-label="Sales amounts">

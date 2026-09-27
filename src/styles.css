@@ -302,3 +302,4 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .save-box label.check { display: flex; gap: 8px; align-items: center; min-height: 44px; cursor: pointer; }
 .save-box input[type="checkbox"] { width: 18px; height: 18px; }
 .save-box .field { width: min(280px, 100%); text-align: left; }
+.banner.info { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, var(--surface)); }
