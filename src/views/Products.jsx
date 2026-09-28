@@ -46,7 +46,7 @@ function Summary({ ctx }) {
       { key: 'margin', label: 'Margin %', align: 'r', fmt: marginFmt, csv: (r) => (r.margin == null ? '' : (r.margin * 100).toFixed(2)) },
     ] : []),
     { key: 'prevAmount', label: `Prev (${shortDate(prevFrom)}–${shortDate(prevTo)})`, align: 'r', fmt: money, total: 'sum', csv: (r) => (r.prevAmount ?? 0).toFixed(2) },
-    { key: 'delta', label: 'Change ₺', align: 'r', fmt: signedMoney, total: 'sum', cls: (r) => (r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''), csv: (r) => (r.delta ?? 0).toFixed(2) },
+    { key: 'delta', label: 'Change TL', align: 'r', fmt: signedMoney, total: 'sum', cls: (r) => (r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''), csv: (r) => (r.delta ?? 0).toFixed(2) },
     { key: 'change', label: 'Change %', align: 'r', render: (r) => (r.prevAmount ? <ChangeCell v={r.change} /> : <span className="faint">new</span>), csv: (r) => (r.change == null ? '' : (r.change * 100).toFixed(2)) },
     { key: 'lastDate', label: 'Last sold', fmt: (v) => (v ? longDate(v) : '–') },
   ];

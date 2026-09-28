@@ -95,9 +95,9 @@ export default function DataTable({
         )}
         {filters?.amount && (
           <>
-            <label className="field"><span>{filters.amountLabel || 'Amount'} ≥ (₺)</span>
+            <label className="field"><span>{filters.amountLabel || 'Amount'} ≥ (TL)</span>
               <input type="number" inputMode="decimal" value={f.aMin} onChange={(e) => setF({ ...f, aMin: e.target.value })} /></label>
-            <label className="field"><span>{filters.amountLabel || 'Amount'} ≤ (₺)</span>
+            <label className="field"><span>{filters.amountLabel || 'Amount'} ≤ (TL)</span>
               <input type="number" inputMode="decimal" value={f.aMax} onChange={(e) => setF({ ...f, aMax: e.target.value })} /></label>
           </>
         )}

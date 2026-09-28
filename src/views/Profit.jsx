@@ -303,7 +303,7 @@ function CostSetup({ ctx }) {
                 )),
               },
               {
-                key: 'manual', label: 'Your cost (₺)', sortValue: (r) => cfg.manual?.[r.key] ?? null,
+                key: 'manual', label: 'Your cost (TL)', sortValue: (r) => cfg.manual?.[r.key] ?? null,
                 render: (r) => (
                   <input type="number" inputMode="decimal" min="0" step="0.01" aria-label={`Cost of ${r.name}`}
                     defaultValue={cfg.manual?.[r.key] ?? ''} placeholder="–" style={{ width: 90, minHeight: 32 }}

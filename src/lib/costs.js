@@ -170,16 +170,31 @@ export const DEFAULT_LINKS = {
   839: [I('Red Bull 250ml')],
 };
 
+// Costs (TL) for items the sheet does not cover, given by the owner.
+export const DEFAULT_MANUAL = {
+  54: 6, // WATER SMALL
+  55: 10, 61: 10, 503: 10, 504: 10, 506: 10, 507: 10, // cardamom packs
+  508: 40, // trendyol 1 kilo cardamom = 4 packs
+};
+const DEFAULTS_VERSION = 2;
+
 /** Build a cost config from a parsed workbook, keeping the owner's manual costs and edited links. */
 export function makeCostConfig(parsed, previous) {
-  return {
+  return withDefaults({
     recipes: parsed.recipes.map(({ id, name, type, cost, price }) => ({ id, name, type, cost, price })),
     ingredients: parsed.ingredients,
     links: previous?.links ? { ...DEFAULT_LINKS, ...previous.links } : { ...DEFAULT_LINKS },
     manual: previous?.manual ? { ...previous.manual } : {},
+    defaultsVersion: previous?.defaultsVersion,
     sheetName: parsed.sheetName,
     updatedAt: new Date().toISOString(),
-  };
+  });
+}
+
+/** Add the built-in manual costs once to an older config (never overrides a cost the owner typed). */
+export function withDefaults(cfg) {
+  if (!cfg || (cfg.defaultsVersion || 0) >= DEFAULTS_VERSION) return cfg;
+  return { ...cfg, manual: { ...DEFAULT_MANUAL, ...(cfg.manual || {}) }, defaultsVersion: DEFAULTS_VERSION };
 }
 
 /** itemNo -> { cost, via: 'manual' | 'sheet', label, type } for items with a known cost. */

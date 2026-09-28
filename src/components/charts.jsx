@@ -46,7 +46,7 @@ export function BarLineChart({ data, height = 240, lineLabel, barLabel, ghostLab
   const lineColor = series ? 'var(--text)' : 'var(--series-2)';
   const [ref, width] = useWidth();
   const [hover, setHover] = useState(null);
-  const pad = { l: 48, r: 12, t: 12, b: 28 };
+  const pad = { l: 60, r: 12, t: 12, b: 28 };
   const iw = width - pad.l - pad.r;
   const ih = height - pad.t - pad.b;
   const maxV = Math.max(0, ...data.map((d) => Math.max(d.value, d.line ?? 0, d.ghost ?? 0)));

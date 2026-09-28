@@ -2,7 +2,8 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { collectTables } from './lib/archive.js';
 import { buildModel } from './lib/model.js';
 import { checkPassword, loadCosts, loadSaved, saveCosts, saveRemote } from './lib/remote.js';
-import { applyCosts, makeCostConfig, parseCostWorkbook } from './lib/costs.js';
+import { applyCosts, makeCostConfig, parseCostWorkbook, withDefaults } from './lib/costs.js';
+import costSheet from './data/costSheet.json';
 import { addDays, daysBetween, filterInvoices, mainDiscountKinds, promoTest } from './lib/aggregate.js';
 import { longDate } from './format.js';
 import Upload from './components/Upload.jsx';
@@ -76,7 +77,8 @@ export default function App() {
       if (cancelled) return;
       let localCosts = null;
       try { localCosts = JSON.parse(localStorage.getItem('mc-costs') || 'null'); } catch { /* ignore */ }
-      if (costs || localCosts) setCostCfg(costs || localCosts);
+      // saved settings first, then this browser's copy, then the cost sheet bundled with the app
+      setCostCfg(withDefaults(costs || localCosts) || makeCostConfig(costSheet));
       setServerOk(got.available);
       if (!got.file) { setStage('upload'); return; }
       setSaved(got.meta);

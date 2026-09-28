@@ -1,0 +1,782 @@
+{
+ "sheetName": "Mariam_Coffee_Master_Drink_Costs_20260928.xlsx",
+ "recipes": [
+  {
+   "id": "r:Turkish Tea",
+   "name": "Turkish Tea",
+   "type": "HOT",
+   "cost": 4.66,
+   "price": 80
+  },
+  {
+   "id": "r:Single Espresso",
+   "name": "Single Espresso",
+   "type": "HOT",
+   "cost": 6.08,
+   "price": 145
+  },
+  {
+   "id": "r:Double Espresso",
+   "name": "Double Espresso",
+   "type": "HOT",
+   "cost": 12.17,
+   "price": 165
+  },
+  {
+   "id": "r:Americano",
+   "name": "Americano",
+   "type": "HOT",
+   "cost": 12.17,
+   "price": 190
+  },
+  {
+   "id": "r:Filtered Coffee",
+   "name": "Filtered Coffee",
+   "type": "HOT",
+   "cost": 14.2,
+   "price": 190
+  },
+  {
+   "id": "r:Mariam Coffee Single",
+   "name": "Mariam Coffee Single",
+   "type": "HOT",
+   "cost": 6.55,
+   "price": 200
+  },
+  {
+   "id": "r:Mariam Coffee Double",
+   "name": "Mariam Coffee Double",
+   "type": "HOT",
+   "cost": 13.11,
+   "price": 220
+  },
+  {
+   "id": "r:Turkish Coffee Single",
+   "name": "Turkish Coffee Single",
+   "type": "HOT",
+   "cost": 6.02,
+   "price": 160
+  },
+  {
+   "id": "r:Turkish Coffee Double",
+   "name": "Turkish Coffee Double",
+   "type": "HOT",
+   "cost": 12.03,
+   "price": 180
+  },
+  {
+   "id": "r:Espresso Macchiato",
+   "name": "Espresso Macchiato",
+   "type": "HOT",
+   "cost": 13.01,
+   "price": 185
+  },
+  {
+   "id": "r:Cortado",
+   "name": "Cortado",
+   "type": "HOT",
+   "cost": 16.37,
+   "price": 185
+  },
+  {
+   "id": "r:Flat White",
+   "name": "Flat White",
+   "type": "HOT",
+   "cost": 18.47,
+   "price": 200
+  },
+  {
+   "id": "r:Café Latte",
+   "name": "Café Latte",
+   "type": "HOT",
+   "cost": 22.67,
+   "price": 200
+  },
+  {
+   "id": "r:Cappuccino",
+   "name": "Cappuccino",
+   "type": "HOT",
+   "cost": 22.67,
+   "price": 220
+  },
+  {
+   "id": "r:Caramel Latte",
+   "name": "Caramel Latte",
+   "type": "HOT",
+   "cost": 38.27,
+   "price": 250
+  },
+  {
+   "id": "r:Dark Mocha",
+   "name": "Dark Mocha",
+   "type": "HOT",
+   "cost": 41.07,
+   "price": 250
+  },
+  {
+   "id": "r:White Mocha",
+   "name": "White Mocha",
+   "type": "HOT",
+   "cost": 38.27,
+   "price": 250
+  },
+  {
+   "id": "r:Café Latte + Syrup",
+   "name": "Café Latte + Syrup",
+   "type": "HOT",
+   "cost": 45.24,
+   "price": 250
+  },
+  {
+   "id": "r:Cold Brew",
+   "name": "Cold Brew",
+   "type": "COLD",
+   "cost": 14.2,
+   "price": 190
+  },
+  {
+   "id": "r:Iced Americano",
+   "name": "Iced Americano",
+   "type": "COLD",
+   "cost": 12.17,
+   "price": 190
+  },
+  {
+   "id": "r:Iced Filtered Coffee",
+   "name": "Iced Filtered Coffee",
+   "type": "COLD",
+   "cost": 14.2,
+   "price": 190
+  },
+  {
+   "id": "r:Iced Café Latte",
+   "name": "Iced Café Latte",
+   "type": "COLD",
+   "cost": 23.72,
+   "price": 230
+  },
+  {
+   "id": "r:Iced Caramel Latte",
+   "name": "Iced Caramel Latte",
+   "type": "COLD",
+   "cost": 39.32,
+   "price": 250
+  },
+  {
+   "id": "r:Iced Dark Cafe Mocha",
+   "name": "Iced Dark Cafe Mocha",
+   "type": "COLD",
+   "cost": 42.12,
+   "price": 250
+  },
+  {
+   "id": "r:Iced Cafe White Mocha",
+   "name": "Iced Cafe White Mocha",
+   "type": "COLD",
+   "cost": 39.32,
+   "price": 250
+  },
+  {
+   "id": "r:Iced Latte + Syrup",
+   "name": "Iced Latte + Syrup",
+   "type": "COLD",
+   "cost": 46.29,
+   "price": 250
+  },
+  {
+   "id": "r:Smoothie",
+   "name": "Smoothie",
+   "type": "COLD",
+   "cost": 27.6,
+   "price": 240
+  },
+  {
+   "id": "r:Mango Juice",
+   "name": "Mango Juice",
+   "type": "COLD",
+   "cost": 35.58,
+   "price": 265
+  },
+  {
+   "id": "r:Guava Juice",
+   "name": "Guava Juice",
+   "type": "COLD",
+   "cost": 16.08,
+   "price": 265
+  },
+  {
+   "id": "r:Guava Juice With Milk",
+   "name": "Guava Juice With Milk",
+   "type": "COLD",
+   "cost": 22.38,
+   "price": 290
+  },
+  {
+   "id": "r:Italian Soda",
+   "name": "Italian Soda",
+   "type": "COLD",
+   "cost": 24.53,
+   "price": 210
+  },
+  {
+   "id": "r:Soda Mojito",
+   "name": "Soda Mojito",
+   "type": "COLD",
+   "cost": 44.86,
+   "price": 230
+  },
+  {
+   "id": "r:Red Bull Mojito",
+   "name": "Red Bull Mojito",
+   "type": "COLD",
+   "cost": 85.86,
+   "price": 290
+  },
+  {
+   "id": "r:Sparkling Boba",
+   "name": "Sparkling Boba",
+   "type": "COLD",
+   "cost": 46.82,
+   "price": 240
+  },
+  {
+   "id": "r:Boba Milk Tea / Latte",
+   "name": "Boba Milk Tea / Latte",
+   "type": "COLD",
+   "cost": 56.35,
+   "price": 260
+  },
+  {
+   "id": "r:Standard Milkshake",
+   "name": "Standard Milkshake",
+   "type": "COLD",
+   "cost": 27.5,
+   "price": 240
+  },
+  {
+   "id": "r:Specialty Milkshake (Lotus/Cookies)",
+   "name": "Specialty Milkshake (Lotus/Cookies)",
+   "type": "COLD",
+   "cost": 28.7,
+   "price": 265
+  },
+  {
+   "id": "r:Frappe",
+   "name": "Frappe",
+   "type": "COLD",
+   "cost": 42.37,
+   "price": 240
+  },
+  {
+   "id": "r:Hot Chocolate (Premium)",
+   "name": "Hot Chocolate (Premium)",
+   "type": "HOT",
+   "cost": 23.55,
+   "price": 220
+  },
+  {
+   "id": "r:Sahlep (Plain)",
+   "name": "Sahlep (Plain)",
+   "type": "HOT",
+   "cost": 22.05,
+   "price": 210
+  },
+  {
+   "id": "r:Chai Tea Latte",
+   "name": "Chai Tea Latte",
+   "type": "HOT",
+   "cost": 24.75,
+   "price": 220
+  },
+  {
+   "id": "r:Iced Chocolate Mocha",
+   "name": "Iced Chocolate Mocha",
+   "type": "COLD",
+   "cost": 44.47,
+   "price": 250
+  },
+  {
+   "id": "r:Matcha Latte",
+   "name": "Matcha Latte",
+   "type": "COLD",
+   "cost": 18.5,
+   "price": 240
+  },
+  {
+   "id": "r:Iced Matcha Latte",
+   "name": "Iced Matcha Latte",
+   "type": "COLD",
+   "cost": 19.55,
+   "price": 260
+  },
+  {
+   "id": "r:Fresh Lemonade",
+   "name": "Fresh Lemonade",
+   "type": "COLD",
+   "cost": 14.08,
+   "price": 230
+  },
+  {
+   "id": "r:Strawberry Juice",
+   "name": "Strawberry Juice",
+   "type": "COLD",
+   "cost": 16.08,
+   "price": 265
+  },
+  {
+   "id": "r:Strawberry Juice With Milk",
+   "name": "Strawberry Juice With Milk",
+   "type": "COLD",
+   "cost": 22.38,
+   "price": 285
+  },
+  {
+   "id": "r:Mastic Dibek Turkish Coffee",
+   "name": "Mastic Dibek Turkish Coffee",
+   "type": "HOT",
+   "cost": 22,
+   "price": 220
+  },
+  {
+   "id": "r:Hazelnut Dibek Turkish Coffee",
+   "name": "Hazelnut Dibek Turkish Coffee",
+   "type": "HOT",
+   "cost": 22,
+   "price": 220
+  },
+  {
+   "id": "r:Iced Turkish Coffee",
+   "name": "Iced Turkish Coffee",
+   "type": "COLD",
+   "cost": 16.83,
+   "price": 220
+  },
+  {
+   "id": "r:Karak Tea",
+   "name": "Karak Tea",
+   "type": "HOT",
+   "cost": 7.56,
+   "price": 210
+  },
+  {
+   "id": "r:Hot Chocolate Topped",
+   "name": "Hot Chocolate Topped",
+   "type": "HOT",
+   "cost": 45.75,
+   "price": 240
+  },
+  {
+   "id": "r:Frappe with Ice Cream",
+   "name": "Frappe with Ice Cream",
+   "type": "COLD",
+   "cost": 54.37,
+   "price": 290
+  },
+  {
+   "id": "r:SAN SEBASTIAN",
+   "name": "SAN SEBASTIAN",
+   "type": "SWEETS",
+   "cost": 160,
+   "price": 290
+  },
+  {
+   "id": "r:BROWNIES",
+   "name": "BROWNIES",
+   "type": "SWEETS",
+   "cost": 85,
+   "price": 240
+  },
+  {
+   "id": "r:DATES CAKE",
+   "name": "DATES CAKE",
+   "type": "SWEETS",
+   "cost": 85,
+   "price": 265
+  },
+  {
+   "id": "r:APPLE CINNAMON CAKE",
+   "name": "APPLE CINNAMON CAKE",
+   "type": "SWEETS",
+   "cost": 100,
+   "price": 260
+  },
+  {
+   "id": "r:BLUEBERRY CHEESECAKE",
+   "name": "BLUEBERRY CHEESECAKE",
+   "type": "SWEETS",
+   "cost": 140,
+   "price": 260
+  },
+  {
+   "id": "r:TIRAMISU",
+   "name": "TIRAMISU",
+   "type": "SWEETS",
+   "cost": 125,
+   "price": 260
+  },
+  {
+   "id": "r:COOKIES",
+   "name": "COOKIES",
+   "type": "SWEETS",
+   "cost": 70,
+   "price": 140
+  },
+  {
+   "id": "r:MUFFINS - CUP CAKE",
+   "name": "MUFFINS - CUP CAKE",
+   "type": "SWEETS",
+   "cost": 75,
+   "price": 170
+  },
+  {
+   "id": "r:CHOCOLATE CAKE with Almond",
+   "name": "CHOCOLATE CAKE with Almond",
+   "type": "SWEETS",
+   "cost": 100,
+   "price": 240
+  },
+  {
+   "id": "r:CHEESECAKE LOTUS - CUP",
+   "name": "CHEESECAKE LOTUS - CUP",
+   "type": "SWEETS",
+   "cost": 120,
+   "price": 260
+  },
+  {
+   "id": "r:CHEESECAKE MANGO - CUP",
+   "name": "CHEESECAKE MANGO - CUP",
+   "type": "SWEETS",
+   "cost": 120,
+   "price": 260
+  },
+  {
+   "id": "r:LIMON CAKE",
+   "name": "LIMON CAKE",
+   "type": "SWEETS",
+   "cost": 80,
+   "price": 240
+  }
+ ],
+ "ingredients": [
+  {
+   "id": "i:Apple Cinnamon 1pc",
+   "name": "Apple Cinnamon 1pc",
+   "cost": 100
+  },
+  {
+   "id": "i:Black Tea 8gr",
+   "name": "Black Tea 8gr",
+   "cost": 4.66
+  },
+  {
+   "id": "i:Black Tea Ezberbozan 5gr",
+   "name": "Black Tea Ezberbozan 5gr",
+   "cost": 2.91
+  },
+  {
+   "id": "i:Blueberry Cheesecake 1pc",
+   "name": "Blueberry Cheesecake 1pc",
+   "cost": 140
+  },
+  {
+   "id": "i:Bobajoy Pearls 40gr",
+   "name": "Bobajoy Pearls 40gr",
+   "cost": 14.75
+  },
+  {
+   "id": "i:Bobajoy Straw 1pc",
+   "name": "Bobajoy Straw 1pc",
+   "cost": 2
+  },
+  {
+   "id": "i:Brown Sugar 10gr",
+   "name": "Brown Sugar 10gr",
+   "cost": 0.5
+  },
+  {
+   "id": "i:Brownies 1pc",
+   "name": "Brownies 1pc",
+   "cost": 85
+  },
+  {
+   "id": "i:Cardamom Coffee Blend 18gr",
+   "name": "Cardamom Coffee Blend 18gr",
+   "cost": 13.11
+  },
+  {
+   "id": "i:Cardamom Coffee Blend 9gr",
+   "name": "Cardamom Coffee Blend 9gr",
+   "cost": 6.55
+  },
+  {
+   "id": "i:Chai Tea Latte Powder 30gr",
+   "name": "Chai Tea Latte Powder 30gr",
+   "cost": 14.25
+  },
+  {
+   "id": "i:Cheesecake Lotus - Cup 1pc",
+   "name": "Cheesecake Lotus - Cup 1pc",
+   "cost": 120
+  },
+  {
+   "id": "i:Cheesecake Mango - Cup 1pc",
+   "name": "Cheesecake Mango - Cup 1pc",
+   "cost": 120
+  },
+  {
+   "id": "i:Chocolate Cake w/ Almond 1pc",
+   "name": "Chocolate Cake w/ Almond 1pc",
+   "cost": 100
+  },
+  {
+   "id": "i:Cloves 2gr",
+   "name": "Cloves 2gr",
+   "cost": 0.65
+  },
+  {
+   "id": "i:Cookies 1pc",
+   "name": "Cookies 1pc",
+   "cost": 70
+  },
+  {
+   "id": "i:Dates Cake 1pc",
+   "name": "Dates Cake 1pc",
+   "cost": 85
+  },
+  {
+   "id": "i:Dibek / Mastic Coffee Blend 15gr",
+   "name": "Dibek / Mastic Coffee Blend 15gr",
+   "cost": 20
+  },
+  {
+   "id": "i:Espresso Blend 18gr",
+   "name": "Espresso Blend 18gr",
+   "cost": 12.17
+  },
+  {
+   "id": "i:Espresso Blend 9gr",
+   "name": "Espresso Blend 9gr",
+   "cost": 6.08
+  },
+  {
+   "id": "i:Filtered Ground Coffee 21gr",
+   "name": "Filtered Ground Coffee 21gr",
+   "cost": 14.2
+  },
+  {
+   "id": "i:FO Caramel Sauce 40gr",
+   "name": "FO Caramel Sauce 40gr",
+   "cost": 15.6
+  },
+  {
+   "id": "i:FO Dark Choc Sauce 40gr",
+   "name": "FO Dark Choc Sauce 40gr",
+   "cost": 18.4
+  },
+  {
+   "id": "i:FO Lemon Juice/Syrup 30ml",
+   "name": "FO Lemon Juice/Syrup 30ml",
+   "cost": 16.93
+  },
+  {
+   "id": "i:FO Lime Syrup 20ml",
+   "name": "FO Lime Syrup 20ml",
+   "cost": 11.29
+  },
+  {
+   "id": "i:FO Syrup (Any Flavor) 30ml",
+   "name": "FO Syrup (Any Flavor) 30ml",
+   "cost": 16.93
+  },
+  {
+   "id": "i:FO Syrup (Any Flavor) 40ml",
+   "name": "FO Syrup (Any Flavor) 40ml",
+   "cost": 22.57
+  },
+  {
+   "id": "i:FO White Choc Sauce 40gr",
+   "name": "FO White Choc Sauce 40gr",
+   "cost": 15.6
+  },
+  {
+   "id": "i:Frappe Powder 40gr",
+   "name": "Frappe Powder 40gr",
+   "cost": 21.8
+  },
+  {
+   "id": "i:Fresh Lemons 100gr",
+   "name": "Fresh Lemons 100gr",
+   "cost": 10
+  },
+  {
+   "id": "i:Fresh Peppermint (Nane) 1portion",
+   "name": "Fresh Peppermint (Nane) 1portion",
+   "cost": 2.5
+  },
+  {
+   "id": "i:Frozen Guava 200gr",
+   "name": "Frozen Guava 200gr",
+   "cost": 14.5
+  },
+  {
+   "id": "i:Frozen Mangoes 200gr",
+   "name": "Frozen Mangoes 200gr",
+   "cost": 34
+  },
+  {
+   "id": "i:Frozen Strawberries 200gr",
+   "name": "Frozen Strawberries 200gr",
+   "cost": 14.5
+  },
+  {
+   "id": "i:Hazelnut Dibek Coffee Blend 15gr",
+   "name": "Hazelnut Dibek Coffee Blend 15gr",
+   "cost": 20
+  },
+  {
+   "id": "i:Hot Chocolate Premium Powder 30gr",
+   "name": "Hot Chocolate Premium Powder 30gr",
+   "cost": 13.05
+  },
+  {
+   "id": "i:Iced Chocolate Mocha Powder 40gr",
+   "name": "Iced Chocolate Mocha Powder 40gr",
+   "cost": 21.8
+  },
+  {
+   "id": "i:Lemon Soda 200ml",
+   "name": "Lemon Soda 200ml",
+   "cost": 11
+  },
+  {
+   "id": "i:Limon Cake 1pc",
+   "name": "Limon Cake 1pc",
+   "cost": 80
+  },
+  {
+   "id": "i:Matcha Powder 10gr",
+   "name": "Matcha Powder 10gr",
+   "cost": 8
+  },
+  {
+   "id": "i:Milk 100ml",
+   "name": "Milk 100ml",
+   "cost": 4.2
+  },
+  {
+   "id": "i:Milk 150ml",
+   "name": "Milk 150ml",
+   "cost": 6.3
+  },
+  {
+   "id": "i:Milk 200ml",
+   "name": "Milk 200ml",
+   "cost": 8.4
+  },
+  {
+   "id": "i:Milk 250ml",
+   "name": "Milk 250ml",
+   "cost": 10.5
+  },
+  {
+   "id": "i:Milk 275ml",
+   "name": "Milk 275ml",
+   "cost": 11.55
+  },
+  {
+   "id": "i:Milk Foam 20ml",
+   "name": "Milk Foam 20ml",
+   "cost": 0.84
+  },
+  {
+   "id": "i:Milkshake Powder (Vanilla/Choc/Berry) 40gr",
+   "name": "Milkshake Powder (Vanilla/Choc/Berry) 40gr",
+   "cost": 17
+  },
+  {
+   "id": "i:Muffins 1pc",
+   "name": "Muffins 1pc",
+   "cost": 75
+  },
+  {
+   "id": "i:Plain Soda 200ml",
+   "name": "Plain Soda 200ml",
+   "cost": 7.5
+  },
+  {
+   "id": "i:Powdered Milk 10gr",
+   "name": "Powdered Milk 10gr",
+   "cost": 4
+  },
+  {
+   "id": "i:Red Bull 250ml",
+   "name": "Red Bull 250ml",
+   "cost": 52
+  },
+  {
+   "id": "i:Sahlep Powder 30gr",
+   "name": "Sahlep Powder 30gr",
+   "cost": 11.55
+  },
+  {
+   "id": "i:Salt 10gr",
+   "name": "Salt 10gr",
+   "cost": 0.1
+  },
+  {
+   "id": "i:San Sebastian Sweet 1pc",
+   "name": "San Sebastian Sweet 1pc",
+   "cost": 160
+  },
+  {
+   "id": "i:Smoothie Puree 60gr",
+   "name": "Smoothie Puree 60gr",
+   "cost": 27.6
+  },
+  {
+   "id": "i:Specialty Milkshake Powder 40gr",
+   "name": "Specialty Milkshake Powder 40gr",
+   "cost": 18.2
+  },
+  {
+   "id": "i:Tiramisu 1pc",
+   "name": "Tiramisu 1pc",
+   "cost": 125
+  },
+  {
+   "id": "i:Turkish Coffee 15gr",
+   "name": "Turkish Coffee 15gr",
+   "cost": 10.03
+  },
+  {
+   "id": "i:Turkish Coffee Blend 18gr",
+   "name": "Turkish Coffee Blend 18gr",
+   "cost": 12.03
+  },
+  {
+   "id": "i:Turkish Coffee Blend 9gr",
+   "name": "Turkish Coffee Blend 9gr",
+   "cost": 6.02
+  },
+  {
+   "id": "i:Vanilla Ice Cream 50gr",
+   "name": "Vanilla Ice Cream 50gr",
+   "cost": 12
+  },
+  {
+   "id": "i:Water 70ml",
+   "name": "Water 70ml",
+   "cost": 2
+  },
+  {
+   "id": "i:Whipped Cream 30gr",
+   "name": "Whipped Cream 30gr",
+   "cost": 22.2
+  },
+  {
+   "id": "i:White Sugar 45gr",
+   "name": "White Sugar 45gr",
+   "cost": 1.58
+  }
+ ]
+}
