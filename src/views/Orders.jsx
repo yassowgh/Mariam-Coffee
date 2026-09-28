@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { DOW, discLabel } from '../lib/aggregate.js';
+import { DOW, discLabel, invValue } from '../lib/aggregate.js';
 import DataTable from '../components/DataTable.jsx';
 import { dec1, longDate, money2, timeLabel } from '../format.js';
 
@@ -8,7 +8,7 @@ export default function Orders({ ctx }) {
   const rows = useMemo(() => invs.map((i) => ({
     key: i.key, date: i.date, minute: i.minute, dow: i.dow, receipt: i.receipt, channel: i.channel,
     src: i.src === 'ACC' ? 'Accounting' : 'POS history', dealer: i.dealer, qty: i.qty, gross: i.gross, disc: i.disc, net: i.net,
-    amount: basis === 'net' ? i.net : i.gross, discType: discLabel(i), card: i.card, cash: i.cash, account: i.account, type: i.sign > 0 ? 'Sale' : 'Return',
+    amount: invValue(i, basis), cogs: i.cogs, profit: i.profit, margin: i.costedNet ? i.profit / i.costedNet : null, discType: discLabel(i), card: i.card, cash: i.cash, account: i.account, type: i.sign > 0 ? 'Sale' : 'Return',
     one: 1,
   })), [invs, basis]);
   const columns = [
@@ -23,6 +23,11 @@ export default function Orders({ ctx }) {
     { key: 'disc', label: 'Discount', align: 'r', fmt: money2, total: 'sum' },
     { key: 'discType', label: 'Discount type', fmt: (v) => v || '–' },
     { key: 'net', label: 'Net', align: 'r', fmt: money2, total: 'sum' },
+    ...(ctx.model.hasCosts ? [
+      { key: 'cogs', label: 'COGS', align: 'r', fmt: money2, total: 'sum', title: 'Cost of items with a known cost' },
+      { key: 'profit', label: 'Gross profit', align: 'r', fmt: money2, total: 'sum' },
+      { key: 'margin', label: 'Margin %', align: 'r', fmt: (v) => (v == null ? '–' : (v * 100).toFixed(1) + '%') },
+    ] : []),
     { key: 'card', label: 'Card', align: 'r', fmt: money2, total: 'sum' },
     { key: 'cash', label: 'Cash', align: 'r', fmt: money2, total: 'sum' },
     { key: 'account', label: 'On account', align: 'r', fmt: money2, total: 'sum' },
@@ -32,7 +37,7 @@ export default function Orders({ ctx }) {
     <div className="card">
       <div className="card-head"><div><h2>Orders</h2><p>Every invoice in the selected period. Filter by items per order or order value to find large or unusual tickets.</p></div></div>
       <DataTable columns={columns} rows={rows} defaultSort={{ key: 'date', dir: 'desc' }}
-        filters={{ search: 'dealer', orders: 'qty', ordersLabel: 'Items', amount: 'amount', amountLabel: basis === 'net' ? 'Value after discount' : 'Value before discount' }}
+        filters={{ search: 'dealer', orders: 'qty', ordersLabel: 'Items', amount: 'amount', amountLabel: basis === 'profit' ? 'Gross profit' : basis === 'net' ? 'Value after discount' : 'Value before discount' }}
         exportName="orders" />
     </div>
   );

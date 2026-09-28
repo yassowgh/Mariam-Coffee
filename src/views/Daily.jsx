@@ -23,7 +23,7 @@ export default function Daily({ ctx }) {
     { key: 'dow', label: 'Day', fmt: (v) => DOW[v], sortValue: (r) => (r.dow + 6) % 7, csv: (r) => DOW[r.dow] },
     { key: 'amount', label: amountLabel(basis), align: 'r', fmt: money, total: 'sum', csv: (r) => r.amount.toFixed(2) },
     { key: 'vsLastWeek', label: 'vs same day last week', align: 'r', render: (r) => <ChangeCell v={r.vsLastWeek} />, csv: (r) => (r.vsLastWeek == null ? '' : (r.vsLastWeek * 100).toFixed(2)) },
-    ...salesColumns(basis),
+    ...salesColumns(basis, ctx.model.hasCosts),
     { key: 'first', label: 'First order', align: 'r', fmt: (v) => (v == null ? '–' : timeLabel(v)), csv: (r) => timeLabel(r.first) },
     { key: 'last', label: 'Last order', align: 'r', fmt: (v) => (v == null ? '–' : timeLabel(v)), csv: (r) => timeLabel(r.last), title: 'Times after midnight belong to this business day' },
   ];

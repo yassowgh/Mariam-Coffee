@@ -3,7 +3,7 @@ import { DOW, heatmap, hourOrder, hourlyRows } from '../lib/aggregate.js';
 import DataTable from '../components/DataTable.jsx';
 import { BarLineChart, Heatmap } from '../components/charts.jsx';
 import { dec1, hourRange, int, money, pct } from '../format.js';
-import { amountFilter, amountLabel, salesColumns } from './common.jsx';
+import { amountFilter, amountLabel, basisWord, salesColumns } from './common.jsx';
 
 export default function Hourly({ ctx }) {
   const { invs, basis } = ctx;
@@ -23,7 +23,7 @@ export default function Hourly({ ctx }) {
     { key: 'share', label: 'Share', align: 'r', fmt: (v) => pct(v), total: 'sum', csv: (r) => (r.share * 100).toFixed(2) },
     { key: 'avgPerDay', label: 'Avg sales / day', align: 'r', fmt: money, csv: (r) => r.avgPerDay.toFixed(2), title: 'Hour total ÷ number of trading days in the selection' },
     { key: 'ordersPerDay', label: 'Orders / day', align: 'r', fmt: dec1, csv: (r) => r.ordersPerDay.toFixed(2) },
-    ...salesColumns(basis),
+    ...salesColumns(basis, ctx.model.hasCosts),
   ];
   return (
     <div className="stack">
@@ -47,7 +47,7 @@ export default function Hourly({ ctx }) {
         <DataTable columns={columns} rows={rows} defaultSort={{ key: 'key', dir: 'asc' }} filters={amountFilter(basis)} exportName="sales-per-hour" />
       </div>
       <div className="card">
-        <div className="card-head"><div><h2>Weekday × hour</h2><p>Average {basis === 'net' ? 'after-discount' : 'before-discount'} sales per occurrence of each weekday and hour.</p></div></div>
+        <div className="card-head"><div><h2>Weekday × hour</h2><p>Average {basisWord(basis)} {basis === 'profit' ? '' : 'sales '}per occurrence of each weekday and hour.</p></div></div>
         <Heatmap cells={heat} dows={dows} dowLabels={dows.map((d) => DOW[d])} hours={hours} fmt={money} subFmt={dec1} />
       </div>
     </div>

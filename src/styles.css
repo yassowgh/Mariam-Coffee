@@ -187,7 +187,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 .grid { display: grid; gap: 16px; }
 .kpis { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
 @media (min-width: 720px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 1100px) { .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } }
 .two { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .three { grid-template-columns: minmax(0, 1fr); }
@@ -303,3 +303,21 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .save-box input[type="checkbox"] { width: 18px; height: 18px; }
 .save-box .field { width: min(280px, 100%); text-align: left; }
 .banner.info { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, var(--surface)); }
+.seg button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- profit ---------- */
+.linklike { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.linklike:hover { text-decoration: underline; }
+.menu-grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 800px) { .menu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.menu-cell { border: 1px solid var(--border); border-radius: 10px; padding: 12px; border-top-width: 4px; }
+.menu-cell-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.menu-cell ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; }
+.menu-cell.mc-star { border-top-color: var(--good); }
+.menu-cell.mc-workhorse { border-top-color: var(--series-1); }
+.menu-cell.mc-puzzle { border-top-color: var(--warn); }
+.menu-cell.mc-dog { border-top-color: var(--bad); }
+.pill.mc-star { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good-text); }
+.pill.mc-workhorse { background: color-mix(in srgb, var(--series-1) 15%, transparent); color: var(--text); }
+.pill.mc-puzzle { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); }
+.pill.mc-dog { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }

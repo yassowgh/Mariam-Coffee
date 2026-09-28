@@ -65,3 +65,31 @@ export async function saveRemote(entries, meta, password) {
   if (!res.ok) throw new Error(body.error || `Saving failed (HTTP ${res.status}).`);
   return body.metadata;
 }
+
+/** Saved cost settings, or null. */
+export async function loadCosts() {
+  try {
+    const res = await fetch('/api/costs', { cache: 'no-store' });
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) return null;
+    const cfg = await res.json();
+    return cfg && Array.isArray(cfg.recipes) ? cfg : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCosts(cfg, password) {
+  let res;
+  try {
+    res = await fetch('/api/costs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-upload-password': password },
+      body: JSON.stringify(cfg),
+    });
+  } catch {
+    throw new Error('Could not reach the server.');
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || (res.status === 404 ? 'Saving is only available on the published website.' : `Saving failed (HTTP ${res.status}).`));
+  return body;
+}

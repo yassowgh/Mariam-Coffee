@@ -96,10 +96,12 @@ export default function FilterBar({ model, filters, onChange }) {
         </select>
       </label>
       <div className="field">
-        <span>Sales amounts</span>
+        <span>Show</span>
         <div className="seg" role="group" aria-label="Sales amounts">
           <button aria-pressed={filters.basis === 'net'} onClick={() => set({ basis: 'net' })} title="Net: the money actually charged, after invoice discounts">After discount</button>
           <button aria-pressed={filters.basis === 'gross'} onClick={() => set({ basis: 'gross' })} title="Gross: menu price × quantity, before invoice discounts (same as your Excel report)">Before discount</button>
+          <button aria-pressed={filters.basis === 'profit' && model.hasCosts} disabled={!model.hasCosts} onClick={() => set({ basis: 'profit' })}
+            title={model.hasCosts ? 'Sales after discount minus the cost of goods (items with a known cost only)' : 'Load the cost sheet first (Profit & costs tab)'}>Gross profit</button>
         </div>
       </div>
     </section>

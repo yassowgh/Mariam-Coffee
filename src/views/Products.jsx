@@ -3,7 +3,7 @@ import { monthDays, productMonthPivot, productRows } from '../lib/aggregate.js';
 import DataTable from '../components/DataTable.jsx';
 import ItemPicker from '../components/ItemPicker.jsx';
 import { dec1, int, longDate, money, money2, monthLabel, pct, shortDate, signedMoney } from '../format.js';
-import { ChangeCell, amountLabel } from './common.jsx';
+import { ChangeCell, amountLabel, marginFmt } from './common.jsx';
 
 export default function Products({ ctx }) {
   const [mode, setMode] = useState('summary');
@@ -40,6 +40,11 @@ function Summary({ ctx }) {
     { key: 'disc', label: 'Discount share', align: 'r', fmt: money, total: 'sum', csv: (r) => r.disc.toFixed(2) },
     { key: 'net', label: 'Net', align: 'r', fmt: money, total: 'sum', csv: (r) => r.net.toFixed(2) },
     { key: 'avgPrice', label: 'Avg price', align: 'r', fmt: money2, csv: (r) => r.avgPrice.toFixed(2) },
+    ...(model.hasCosts ? [
+      { key: 'unitCost', label: 'Unit cost', align: 'r', fmt: (v) => (v == null ? '–' : money2(v)), title: 'From the cost sheet or your own entry' },
+      { key: 'profit', label: 'Gross profit', align: 'r', fmt: (v) => (v == null ? '–' : money(v)), total: 'sum', csv: (r) => (r.profit == null ? '' : r.profit.toFixed(2)) },
+      { key: 'margin', label: 'Margin %', align: 'r', fmt: marginFmt, csv: (r) => (r.margin == null ? '' : (r.margin * 100).toFixed(2)) },
+    ] : []),
     { key: 'prevAmount', label: `Prev (${shortDate(prevFrom)}–${shortDate(prevTo)})`, align: 'r', fmt: money, total: 'sum', csv: (r) => (r.prevAmount ?? 0).toFixed(2) },
     { key: 'delta', label: 'Change ₺', align: 'r', fmt: signedMoney, total: 'sum', cls: (r) => (r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''), csv: (r) => (r.delta ?? 0).toFixed(2) },
     { key: 'change', label: 'Change %', align: 'r', render: (r) => (r.prevAmount ? <ChangeCell v={r.change} /> : <span className="faint">new</span>), csv: (r) => (r.change == null ? '' : (r.change * 100).toFixed(2)) },

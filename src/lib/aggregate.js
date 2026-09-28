@@ -55,17 +55,26 @@ export function filterInvoices(model, { from, to, channel }) {
     (!from || i.date >= from) && (!to || i.date <= to) && (channel === 'all' || !channel || i.channel === channel));
 }
 
+/** Value of an invoice in the chosen basis: 'net' | 'gross' | 'profit' (gross profit of lines with a known cost). */
+export const invValue = (i, basis) => (basis === 'gross' ? i.gross : basis === 'profit' ? (i.profit || 0) : i.net);
+/** Value of a sold line in the chosen basis; profit is 0 when the line's cost is unknown. */
+export const lineValue = (l, basis) => (basis === 'gross' ? l.gross : basis === 'profit' ? (l.cost == null ? 0 : l.net - l.cost) : l.net);
+
 function empty() {
-  return { orders: 0, returns: 0, gross: 0, disc: 0, net: 0, qty: 0, cash: 0, card: 0, account: 0, days: new Set() };
+  return { orders: 0, returns: 0, gross: 0, disc: 0, net: 0, qty: 0, cash: 0, card: 0, account: 0, cogs: 0, profit: 0, costedNet: 0, days: new Set() };
 }
 function add(s, i) {
   if (i.sign > 0) s.orders++; else s.returns++;
   s.gross += i.gross; s.disc += i.disc; s.net += i.net; s.qty += i.qty;
   s.cash += i.cash; s.card += i.card; s.account += i.account;
+  s.cogs += i.cogs || 0; s.profit += i.profit || 0; s.costedNet += i.costedNet || 0;
   s.days.add(i.date);
 }
 function finish(s, basis) {
-  s.amount = basis === 'gross' ? s.gross : s.net;
+  s.amount = basis === 'gross' ? s.gross : basis === 'profit' ? s.profit : s.net;
+  // margin is measured only on sales whose cost is known; coverage says how much that is
+  s.margin = s.costedNet ? s.profit / s.costedNet : null;
+  s.coverage = s.net ? s.costedNet / s.net : 0;
   s.avgTicket = s.orders ? s.amount / s.orders : 0;
   s.dayCount = s.days.size;
   s.avgPerDay = s.dayCount ? s.amount / s.dayCount : 0;
@@ -134,7 +143,7 @@ export function heatmap(invs, basis) {
     dowDays[i.dow].add(i.date);
     const k = i.dow * 24 + i.hour;
     const c = cells.get(k) || { amount: 0, orders: 0 };
-    c.amount += basis === 'gross' ? i.gross : i.net;
+    c.amount += invValue(i, basis);
     if (i.sign > 0) c.orders++;
     cells.set(k, c);
   }
@@ -165,17 +174,22 @@ export function productStats(model, invs, basis) {
     for (const l of inv.lines) {
       let p = m.get(l.item);
       if (!p) {
-        p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, qty: 0, gross: 0, net: 0, orders: new Set(), lastDate: '' };
+        p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, qty: 0, gross: 0, net: 0, cogs: 0, costed: false, orders: new Set(), lastDate: '' };
         m.set(l.item, p);
       }
       p.qty += l.qty; p.gross += l.gross; p.net += l.net;
+      if (l.cost != null) { p.cogs += l.cost; p.costed = true; }
       if (inv.sign > 0) p.orders.add(inv.key);
       if (inv.date > p.lastDate) p.lastDate = inv.date;
-      total += basis === 'gross' ? l.gross : l.net;
+      total += lineValue(l, basis);
     }
   }
   for (const p of m.values()) {
-    p.amount = basis === 'gross' ? p.gross : p.net;
+    p.profit = p.costed ? p.net - p.cogs : null;
+    p.margin = p.costed && p.net ? p.profit / p.net : null;
+    p.unitCost = p.costed && p.qty ? p.cogs / p.qty : null;
+    p.unitProfit = p.costed && p.qty ? p.profit / p.qty : null;
+    p.amount = basis === 'gross' ? p.gross : basis === 'profit' ? (p.profit ?? 0) : p.net;
     p.disc = p.gross - p.net;
     p.orderCount = p.orders.size;
     p.share = total ? p.amount / total : 0;
@@ -201,6 +215,7 @@ export function productRows(model, invs, prevInvs, basis) {
     for (const q of prev.map.values()) {
       if (!cur.map.has(q.key)) {
         rows.push({ key: q.key, name: q.name, qty: 0, gross: 0, net: 0, amount: 0, disc: 0, orderCount: 0, share: 0, avgPrice: 0,
+          cogs: 0, profit: q.costed ? 0 : null, margin: null, unitCost: q.unitCost, unitProfit: null, costed: q.costed,
           prevAmount: q.amount, prevQty: q.qty, delta: -q.amount, change: -1, lastDate: q.lastDate, unallocated: q.unallocated });
       }
     }
@@ -218,7 +233,7 @@ export function productMonthPivot(model, invs, basis) {
     for (const l of inv.lines) {
       let p = m.get(l.item);
       if (!p) { p = { key: l.item, name: model.products.get(l.item)?.name ?? `Item ${l.item}`, total: 0, totalQty: 0 }; m.set(l.item, p); }
-      const v = basis === 'gross' ? l.gross : l.net;
+      const v = lineValue(l, basis);
       p[inv.month] = (p[inv.month] || 0) + v;
       p['q' + inv.month] = (p['q' + inv.month] || 0) + l.qty;
       p.total += v; p.totalQty += l.qty;

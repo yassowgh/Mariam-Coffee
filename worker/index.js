@@ -4,6 +4,7 @@
 //   GET /api/data  -> the saved ZIP of the Paradox tables (404 if none)
 //   PUT /api/data  -> replace it; requires the upload password in X-Upload-Password
 //   POST /api/auth -> 204 if X-Upload-Password is right, 401 otherwise
+//   GET/PUT /api/costs -> product cost settings (JSON); PUT requires the password
 //
 // Password: set the secret UPLOAD_PASSWORD (Settings -> Variables and Secrets) to
 // override; otherwise it is checked against UPLOAD_PASSWORD_SHA256 from wrangler.jsonc.
@@ -73,10 +74,37 @@ async function handleData(request, env) {
   return json({ error: 'Method not allowed' }, 405);
 }
 
+const COSTS_KEY = 'costs';
+const MAX_COSTS_BYTES = 2 * 1024 * 1024;
+
+async function handleCosts(request, env) {
+  if (!env.DATA) return json({ error: 'Storage is not configured on this deployment.' }, 503);
+  if (request.method === 'GET') {
+    const value = await env.DATA.get(COSTS_KEY);
+    if (!value) return json({ error: 'No cost settings saved yet.' }, 404);
+    return new Response(value, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+  }
+  if (request.method === 'PUT') {
+    if (!(await passwordOk(env, request.headers.get('x-upload-password')))) {
+      return json({ error: 'Wrong password. Costs were not saved.' }, 401);
+    }
+    const text = await request.text();
+    if (text.length > MAX_COSTS_BYTES) return json({ error: 'Cost settings are too large.' }, 413);
+    let cfg;
+    try { cfg = JSON.parse(text); } catch { return json({ error: 'Invalid JSON.' }, 400); }
+    if (!cfg || !Array.isArray(cfg.recipes) || typeof cfg.links !== 'object') return json({ error: 'Not a cost settings file.' }, 400);
+    cfg.savedAt = new Date().toISOString();
+    await env.DATA.put(COSTS_KEY, JSON.stringify(cfg));
+    return json({ ok: true, savedAt: cfg.savedAt });
+  }
+  return json({ error: 'Method not allowed' }, 405);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/api/data') return handleData(request, env);
+    if (url.pathname === '/api/costs') return handleCosts(request, env);
     if (url.pathname === '/api/auth' && request.method === 'POST') {
       return (await passwordOk(env, request.headers.get('x-upload-password')))
         ? new Response(null, { status: 204 })

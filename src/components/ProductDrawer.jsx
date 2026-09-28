@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DOW, addDays, hourOrder, runRateFor } from '../lib/aggregate.js';
+import { DOW, addDays, hourOrder, lineValue, runRateFor } from '../lib/aggregate.js';
 import { BarLineChart } from './charts.jsx';
 import DataTable from './DataTable.jsx';
 import ItemPicker from './ItemPicker.jsx';
 import { dec1, hourRange, int, longDate, money, money2, monthLabel, pct, shortDate, signedPct } from '../format.js';
-import { ChangeCell } from '../views/common.jsx';
+import { ChangeCell, amountLabel, marginFmt } from '../views/common.jsx';
 
 const nextMonth = (ym) => {
   const [y, m] = ym.split('-').map(Number);
@@ -22,7 +22,7 @@ export default function ProductDrawer({ ctx, id, onClose }) {
 
   const d = useMemo(() => {
     const inRange = new Set(invs);
-    const val = (l) => (basis === 'net' ? l.net : l.gross);
+    const val = (l) => lineValue(l, basis);
     const months = new Map(), days = new Map(), hours = new Map(), wd = new Map(), monthTotal = new Map();
     let amount = 0, qty = 0, totalPeriod = 0;
     const orderSet = new Set();
@@ -31,8 +31,9 @@ export default function ProductDrawer({ ctx, id, onClose }) {
       if (inRange.has(inv)) totalPeriod += val(l);
       monthTotal.set(inv.month, (monthTotal.get(inv.month) || 0) + val(l));
       if (l.item !== id) continue;
-      const m = months.get(inv.month) || { amount: 0, qty: 0, gross: 0, orderKeys: new Set() };
+      const m = months.get(inv.month) || { amount: 0, qty: 0, gross: 0, profit: 0, costedNet: 0, orderKeys: new Set() };
       m.amount += val(l); m.qty += l.qty; m.gross += l.gross; if (inv.sign > 0) m.orderKeys.add(inv.key);
+      if (l.cost != null) { m.profit += l.net - l.cost; m.costedNet += l.net; }
       months.set(inv.month, m);
       if (!inRange.has(inv)) continue;
       amount += val(l); qty += l.qty; if (inv.sign > 0) orderSet.add(inv.key);
@@ -55,13 +56,14 @@ export default function ProductDrawer({ ctx, id, onClose }) {
     const firstMonth = [...months.keys()].sort()[0];
     if (firstMonth) {
       for (let m = firstMonth; m <= lastMonth; m = nextMonth(m)) {
-        const v = months.get(m) || { amount: 0, qty: 0, gross: 0, orderKeys: new Set() };
+        const v = months.get(m) || { amount: 0, qty: 0, gross: 0, profit: 0, costedNet: 0, orderKeys: new Set() };
         v.orders = v.orderKeys.size;
         const prev = track[track.length - 1];
         const rrV = runRateFor(m, v.amount, model.maxDate);
         const rrQ = runRateFor(m, v.qty, model.maxDate);
         const r = {
           key: m, qty: v.qty, value: v.amount, orders: v.orders,
+          profit: v.costedNet ? v.profit : null, margin: v.costedNet ? v.profit / v.costedNet : null,
           avgPrice: v.qty ? v.gross / v.qty : null,
           share: monthTotal.get(m) ? v.amount / monthTotal.get(m) : 0,
           rrQty: rrQ ? rrQ.value : null, rrValue: rrV ? rrV.value : null,
@@ -101,7 +103,7 @@ export default function ProductDrawer({ ctx, id, onClose }) {
           </div>
         </div>
         <div className="kpis" style={{ gridTemplateColumns: 'repeat(2, minmax(0,1fr))' }}>
-          <div className="card kpi"><div className="label">Sales ({basis === 'net' ? 'after' : 'before'} discount)</div><div className="value">{money(d.amount)}</div><div className="sub">{pct(d.share)} of all sales</div></div>
+          <div className="card kpi"><div className="label">{amountLabel(basis)}</div><div className="value">{money(d.amount)}</div><div className="sub">{pct(d.share)} of all sales</div></div>
           <div className="card kpi"><div className="label">Quantity</div><div className="value">{dec1(d.qty)}</div><div className="sub">{int(d.orders)} orders · avg {money2(d.qty ? d.amount / d.qty : 0)}</div></div>
         </div>
         <div className="stack">
@@ -109,7 +111,7 @@ export default function ProductDrawer({ ctx, id, onClose }) {
             <div className="card-head">
               <div>
                 <h2>Month-by-month tracking</h2>
-                <p>All months in the data, not only the selected period. Value = sales {basis === 'net' ? 'after' : 'before'} discount.</p>
+                <p>All months in the data, not only the selected period. Value = {amountLabel(basis).toLowerCase()}.</p>
               </div>
               <div className="seg" role="group" aria-label="Chart shows">
                 <button aria-pressed={metric === 'qty'} onClick={() => setMetric('qty')}>Quantity</button>
@@ -130,6 +132,7 @@ export default function ProductDrawer({ ctx, id, onClose }) {
                   ['Quantity', dec1(r.qty)], ['Value', money(r.value)],
                   ...(r.rrQty != null ? [['Run rate qty', dec1(r.rrQty)], ['Run rate value', money(r.rrValue)]] : []),
                   ['Avg price', r.avgPrice == null ? '–' : money2(r.avgPrice)],
+                  ...(r.margin != null ? [['Gross profit', money(r.profit)], ['Margin', marginFmt(r.margin)]] : []),
                   ['Qty vs prev', signedPct(r.qtyChange)], ['Value vs prev', signedPct(r.valueChange)],
                 ],
               }))} />
@@ -143,6 +146,10 @@ export default function ProductDrawer({ ctx, id, onClose }) {
                   { key: 'valueChange', label: 'Value vs prev', align: 'r', render: (r) => <ChangeCell v={r.valueChange} />, csv: (r) => (r.valueChange == null ? '' : (r.valueChange * 100).toFixed(2)) },
                   { key: 'avgPrice', label: 'Avg price', align: 'r', fmt: (v) => (v == null ? '–' : money2(v)), title: 'Menu price per unit (before discount)' },
                   { key: 'orders', label: 'Orders', align: 'r', fmt: int, total: 'sum' },
+                  ...(model.hasCosts ? [
+                    { key: 'profit', label: 'Gross profit', align: 'r', fmt: (v) => (v == null ? '–' : money(v)), total: 'sum', csv: (r) => (r.profit == null ? '' : r.profit.toFixed(2)) },
+                    { key: 'margin', label: 'Margin %', align: 'r', fmt: marginFmt, csv: (r) => (r.margin == null ? '' : (r.margin * 100).toFixed(2)) },
+                  ] : []),
                   { key: 'share', label: 'Share of month', align: 'r', fmt: (v) => pct(v), title: 'Share of all sales that month', csv: (r) => (r.share * 100).toFixed(2) },
                   { key: 'rrQty', label: 'Run rate qty', align: 'r', fmt: (v) => (v == null ? '–' : dec1(v)), title: 'Unfinished month: so far ÷ days elapsed × days in month' },
                   { key: 'rrValue', label: 'Run rate value', align: 'r', fmt: (v) => (v == null ? '–' : money(v)) },

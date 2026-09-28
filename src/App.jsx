@@ -1,7 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { collectTables } from './lib/archive.js';
 import { buildModel } from './lib/model.js';
-import { checkPassword, loadSaved, saveRemote } from './lib/remote.js';
+import { checkPassword, loadCosts, loadSaved, saveCosts, saveRemote } from './lib/remote.js';
+import { applyCosts, makeCostConfig, parseCostWorkbook } from './lib/costs.js';
 import { addDays, daysBetween, filterInvoices, mainDiscountKinds, promoTest } from './lib/aggregate.js';
 import { longDate } from './format.js';
 import Upload from './components/Upload.jsx';
@@ -14,6 +15,7 @@ import Hourly from './views/Hourly.jsx';
 import Products from './views/Products.jsx';
 import Orders from './views/Orders.jsx';
 import Reconciliation from './views/Reconciliation.jsx';
+import Profit from './views/Profit.jsx';
 
 const TABS = [
   ['dashboard', 'Dashboard'],
@@ -22,6 +24,7 @@ const TABS = [
   ['hourly', 'Sales per hour'],
   ['products', 'Products'],
   ['orders', 'Orders'],
+  ['profit', 'Profit & costs'],
   ['recon', 'Reconciliation'],
 ];
 
@@ -38,6 +41,27 @@ export default function App() {
   const [saved, setSaved] = useState(null); // metadata of the dataset stored on the server
   const [notice, setNotice] = useState(null); // { kind: 'ok' | 'bad' | 'info', text }
   const [serverOk, setServerOk] = useState(false); // the site has server storage
+  const [costCfg, setCostCfg] = useState(null); // product cost settings (see lib/costs.js)
+  const [costVersion, setCostVersion] = useState(0);
+
+  function updateCosts(cfg) {
+    setCostCfg(cfg);
+    try { localStorage.setItem('mc-costs', JSON.stringify(cfg)); } catch { /* storage unavailable */ }
+  }
+
+  // Put unit costs on every sold line whenever the data or the cost settings change.
+  useEffect(() => {
+    if (!model) return;
+    if (costCfg) {
+      model.costInfo = { ...applyCosts(model.baseSets, costCfg), cfg: costCfg };
+      model.hasCosts = true;
+    } else {
+      model.hasCosts = false;
+      model.costInfo = null;
+    }
+    model.clearViews();
+    setCostVersion((v) => v + 1);
+  }, [model, costCfg]);
 
   // On first open: load the dataset saved on the server, if there is one.
   useEffect(() => {
@@ -45,8 +69,14 @@ export default function App() {
     (async () => {
       setStage('loading');
       setProgress({ msg: 'Looking for saved data…', frac: 0 });
-      const got = await loadSaved((msg, frac) => !cancelled && setProgress({ msg, frac: frac * 0.1 }));
+      const [got, costs] = await Promise.all([
+        loadSaved((msg, frac) => !cancelled && setProgress({ msg, frac: frac * 0.1 })),
+        loadCosts(),
+      ]);
       if (cancelled) return;
+      let localCosts = null;
+      try { localCosts = JSON.parse(localStorage.getItem('mc-costs') || 'null'); } catch { /* ignore */ }
+      if (costs || localCosts) setCostCfg(costs || localCosts);
       setServerOk(got.available);
       if (!got.file) { setStage('upload'); return; }
       setSaved(got.meta);
@@ -70,6 +100,24 @@ export default function App() {
         setProgress({ msg: 'Checking password…', frac: 0.1 });
         await checkPassword(opts.password);
       }
+      // a cost sheet (.xlsx) can be dropped together with the database files, or on its own
+      const sheets = files.filter((f) => /\.xlsx$/i.test(f.name));
+      files = files.filter((f) => !/\.xlsx$/i.test(f.name));
+      let costMsg = '';
+      if (sheets.length) {
+        setProgress({ msg: 'Reading cost sheet…', frac: 0.1 });
+        const cfg = makeCostConfig(parseCostWorkbook(new Uint8Array(await sheets[0].arrayBuffer()), sheets[0].name), costCfg);
+        updateCosts(cfg);
+        costMsg = `Costs loaded from ${sheets[0].name} (${cfg.recipes.length} recipes).`;
+        if (opts.save) {
+          try { await saveCosts(cfg, opts.password); costMsg += ' Saved for everyone.'; } catch (e) { costMsg += ` NOT saved: ${e.message}`; }
+        }
+        if (!files.length && model) {
+          setNotice({ kind: 'ok', text: costMsg + ' Open “Profit & costs” to review which products are linked.' });
+          setStage('ready');
+          return;
+        }
+      }
       const entries = await collectTables(files, (msg, frac) => setProgress({ msg, frac: 0.1 + frac * 0.1 }));
       if (!entries.length) {
         throw new Error('None of the expected tables (Invoices.DB, StockTransDetails.DB, CROldInvoices.DB, CROldDetails.DB) were found in what you uploaded.');
@@ -89,6 +137,7 @@ export default function App() {
       } else if (!opts.fromServer) {
         setNotice({ kind: 'info', text: 'Viewing these files only in this browser. They were not saved.' });
       }
+      if (costMsg) setNotice((n) => ({ kind: n?.kind || 'ok', text: [n?.text, costMsg].filter(Boolean).join(' ') }));
       m.loadMs = Math.round(performance.now() - t0);
       setModel(m);
       setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all' });
@@ -111,7 +160,7 @@ export default function App() {
     const mainKinds = mainDiscountKinds(v.invoices);
     const invoices = v.invoices.filter(promoTest(filters.promo, mainKinds));
     return { ...model, invoices, allInvoices: v.invoices, mainKinds, minDate: v.minDate, maxDate: v.maxDate, source: v.source, day: v.day };
-  }, [model, filters?.source, filters?.day, filters?.promo]);
+  }, [model, filters?.source, filters?.day, filters?.promo, costVersion]);
   const deferredVm = useDeferredValue(vm);
   const busy = deferred !== filters || deferredVm !== vm;
 
@@ -123,8 +172,14 @@ export default function App() {
     const prevTo = addDays(deferred.from, -1);
     const prevFrom = addDays(prevTo, -(len - 1));
     const prevInvs = filterInvoices(model, { ...deferred, from: prevFrom, to: prevTo });
-    return { model, filters: deferred, basis: deferred.basis, invs, prevInvs, prevFrom, prevTo, len, openProduct: setProduct };
-  }, [deferredVm, deferred]);
+    // "Gross profit" needs costs; fall back to sales after discount without them
+    const basis = deferred.basis === 'profit' && !model.hasCosts ? 'net' : deferred.basis;
+    const f = basis === deferred.basis ? deferred : { ...deferred, basis };
+    return {
+      model, filters: f, basis, invs, prevInvs, prevFrom, prevTo, len, openProduct: setProduct,
+      costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, info: model.costInfo },
+    };
+  }, [deferredVm, deferred, costCfg, serverOk]);
 
   if (stage !== 'ready') {
     return (
@@ -139,7 +194,7 @@ export default function App() {
     );
   }
 
-  const View = { dashboard: Dashboard, monthly: Monthly, daily: Daily, hourly: Hourly, products: Products, orders: Orders, recon: Reconciliation }[tab];
+  const View = { dashboard: Dashboard, monthly: Monthly, daily: Daily, hourly: Hourly, products: Products, orders: Orders, profit: Profit, recon: Reconciliation }[tab];
   return (
     <>
       <Header

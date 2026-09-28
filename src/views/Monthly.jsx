@@ -33,7 +33,7 @@ export default function Monthly({ ctx }) {
       render: (r) => (r.runRate == null ? <span className="faint">–</span> : <span title={r.rrDays}>{money(r.runRate)}</span>), csv: (r) => (r.runRate == null ? '' : r.runRate.toFixed(2)) },
     { key: 'avgPerDay', label: 'Avg per day', align: 'r', fmt: money, csv: (r) => r.avgPerDay.toFixed(2) },
     { key: 'change', label: 'vs prev month', align: 'r', title: 'Only between complete months. An unfinished month uses its run rate.', render: (r) => <><ChangeCell v={r.change} />{r.changeIsRunRate && r.change != null && <span className="faint"> (run rate)</span>}</>, csv: (r) => (r.change == null ? '' : (r.change * 100).toFixed(2)) },
-    ...salesColumns(basis),
+    ...salesColumns(basis, ctx.model.hasCosts),
   ];
   return (
     <div className="stack">

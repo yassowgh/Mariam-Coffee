@@ -164,6 +164,10 @@ export async function buildModel(entries, progress = () => {}) {
   const views = new Map();
   const result = {
     products,
+    /** Every invoice list, for applying costs. */
+    baseSets: [merged, posAll],
+    /** Forget cached views (e.g. after costs change, so calendar copies pick up new figures). */
+    clearViews() { views.clear(); },
     hasAcc: acc.invoices.length > 0,
     hasPos: pos.invoices.length > 0,
     /**

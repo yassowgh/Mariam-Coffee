@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildModel } from '../src/lib/model.js';
 import { TABLES } from '../src/lib/tables.js';
+import { applyCosts, makeCostConfig, parseCostWorkbook, unitCosts } from '../src/lib/costs.js';
 
 const dir = process.argv[2];
 if (!dir) { console.error('usage: node scripts/verify.mjs <folder>'); process.exit(1); }
@@ -35,4 +36,26 @@ console.log('daily product check: days', m.recon.dailyCheck.days, 'failed', m.re
 const diffDays = m.recon.posVsAcc.filter((r) => Math.abs(r.diff) > 0.01);
 console.log('POS vs ACC days with difference', diffDays.length, 'of', m.recon.posVsAcc.length);
 console.log('open tickets', m.recon.openTickets.length);
+// optional: COSTS=<cost sheet .xlsx> checks profit figures
+if (process.env.COSTS) {
+  const cfg = makeCostConfig(parseCostWorkbook(readFileSync(process.env.COSTS), 'costs.xlsx'));
+  const info = applyCosts(m.baseSets, cfg);
+  m.clearViews();
+  const invs = m.view(source, day).invoices;
+  console.log('costs: linked items', info.items, 'coverage of all sales', (info.coverage * 100).toFixed(1) + '%');
+  const byDay = new Map();
+  let bad = 0;
+  for (const i of invs) {
+    const lineProfit = i.lines.reduce((s, l) => s + (l.cost == null ? 0 : l.net - l.cost), 0);
+    if (Math.abs(lineProfit - i.profit) > 0.02) bad++;
+    byDay.set(i.date, (byDay.get(i.date) || 0) + i.profit);
+  }
+  console.log('invoices whose line profit != invoice profit:', bad);
+  const y = invs.filter((i) => i.date >= '2026-01-01');
+  const P = y.reduce((s, i) => s + i.profit, 0), CN = y.reduce((s, i) => s + i.costedNet, 0), N = y.reduce((s, i) => s + i.net, 0);
+  console.log('2026: sales', N.toFixed(0), 'costed sales', CN.toFixed(0), 'profit', P.toFixed(0), 'margin', (P / CN * 100).toFixed(1) + '%');
+  const uc = unitCosts(cfg);
+  for (const id of [33, 19, 15, 115]) console.log('  unit cost', id, m.products.get(id)?.name, uc.get(id)?.cost.toFixed(2), uc.get(id)?.label);
+  if (bad) process.exit(3);
+}
 if (m.recon.dailyCheck.failed) process.exit(2);

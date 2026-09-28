@@ -4,7 +4,8 @@ import {
   monthlyRows, productRows, runRateFor, summarize, weekdayRows, DAY_START_HOUR,
 } from '../lib/aggregate.js';
 import { BarLineChart, Heatmap } from '../components/charts.jsx';
-import { PAY_SERIES, payParts, payRows } from './common.jsx';
+import { PAY_SERIES, basisWord as basisWordOf, marginFmt, payParts, payRows } from './common.jsx';
+import { MENU_CLASSES, menuEngineering, profitRanking } from './Profit.jsx';
 import {
   compact, dec1, hourRange, timeLabel, int, longDate, money, money2, monthLabel, pct, shortDate, signedMoney, signedPct,
 } from '../format.js';
@@ -112,7 +113,15 @@ export default function Dashboard({ ctx }) {
     const partial = usualClose != null && lastOrder != null && lastOrder < usualClose - 60;
     const toClock = (m) => timeLabel((m + DAY_START_HOUR * 60) % 1440);
 
-    return { partial, lastOrderClock: lastOrder != null ? toClock(lastOrder) : null, usualCloseClock: usualClose != null ? toClock(usualClose) : null, last7, prev7, lastDay, lastWeekSameDay, proj, lastMonth, cur, prev, trend, rising, falling, top, pareto, soldCount: sold.length, dormant, hours, wd, heat, dayRows, months };
+    // profit (only when a cost sheet is loaded)
+    let profit = null;
+    if (model.hasCosts) {
+      const rank = profitRanking(model, invs, prevInvs);
+      const me = menuEngineering(rank.rows);
+      profit = { rank, me, cur: summarize(invs, 'profit'), prev: summarize(prevInvs, 'profit') };
+    }
+
+    return { profit, partial, lastOrderClock: lastOrder != null ? toClock(lastOrder) : null, usualCloseClock: usualClose != null ? toClock(usualClose) : null, last7, prev7, lastDay, lastWeekSameDay, proj, lastMonth, cur, prev, trend, rising, falling, top, pareto, soldCount: sold.length, dormant, hours, wd, heat, dayRows, months };
   }, [model, invs, prevInvs, basis, ch, L, filters.from, filters.to, ctx.len]);
 
   const activeHours = d.hours.filter((h) => h.orders > 0).map((h) => h.key).sort((a, b) => hourOrder(a) - hourOrder(b));
@@ -121,7 +130,7 @@ export default function Dashboard({ ctx }) {
     : [];
   const dowOrder = [1, 2, 3, 4, 5, 6, 0];
   const insights = buildInsights(d, ctx);
-  const basisWord = basis === 'net' ? 'after-discount' : 'before-discount';
+  const basisWord = basisWordOf(basis);
 
   return (
     <div className="stack">
@@ -139,6 +148,10 @@ export default function Dashboard({ ctx }) {
             sub={d.proj.finished ? <>Month complete · last month {compact(d.lastMonth.amount)} <Delta v={change(d.proj.mtd, d.lastMonth.amount)} /></> : <>
               Run rate <b>{compact(d.proj.runRate)}</b> <span className="faint">({d.proj.elapsed} of {d.proj.days} days)</span>
               {' '}· last month {compact(d.lastMonth.amount)} <Delta v={change(d.proj.runRate, d.lastMonth.amount)} /></>} />
+          {d.profit && (
+            <Kpi label="Gross profit · selected period" value={money(d.profit.cur.profit)} delta={change(d.profit.cur.profit, d.profit.prev.profit)}
+              sub={`margin ${marginFmt(d.profit.cur.margin)} · cost known for ${pct(d.profit.cur.coverage, 0)} of sales`} />
+          )}
           <Kpi label="Discounts · selected period" value={pct(d.cur.discPct)} delta={d.prev.discPct ? d.cur.discPct - d.prev.discPct : null} invert
             sub={`${money(d.cur.disc)} given`} />
         </div>
@@ -184,6 +197,43 @@ export default function Dashboard({ ctx }) {
           </ul>
         </div>
       </div>
+
+      {d.profit && (
+        <div className="grid two">
+          <div className="card">
+            <div className="card-head">
+              <div>
+                <h2>Most profitable products · share of daily profit</h2>
+                <p>Gross profit in the period ({money(d.profit.rank.total / d.profit.rank.days)} per trading day). Full list in “Profit & costs”.</p>
+              </div>
+            </div>
+            <ul className="barlist">
+              {d.profit.rank.rows.slice(0, 10).map((p, i) => (
+                <li key={p.key}>
+                  <button className="name" onClick={() => openProduct(p.key)} title={p.name}>{i + 1}. {p.name}</button>
+                  <span className="val">{pct(p.profitShare)} <span className="faint">· {money(p.profitPerDay)}/day · {marginFmt(p.margin)} margin</span></span>
+                  <div className="track"><div className="fill" style={{ width: (p.profitShare / d.profit.rank.rows[0].profitShare) * 100 + '%', background: 'var(--good)' }} /></div>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-head"><div><h2>Menu engineering</h2><p>Popularity vs profit per item for products with a known cost.</p></div></div>
+            <div className="menu-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+              {MENU_CLASSES.map(([cls, what]) => {
+                const items = d.profit.me.items.filter((r) => r.menuClass === cls).sort((a, b) => b.profit - a.profit);
+                return (
+                  <div key={cls} className={'menu-cell mc-' + cls.toLowerCase()}>
+                    <div className="menu-cell-head"><b>{cls}s · {items.length}</b></div>
+                    <div className="faint" style={{ fontSize: 12 }}>{what}</div>
+                    <ul>{items.slice(0, 3).map((r) => <li key={r.key}><button className="linklike" onClick={() => openProduct(r.key)}>{r.name}</button></li>)}</ul>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-head">
@@ -328,6 +378,24 @@ function buildInsights(d, ctx) {
   }
   if (!d.proj.finished) {
     out.push({ icon: '📈', text: <>{monthLabel(d.proj.month)} run rate: <b>{money(d.proj.runRate)}</b> ({money(d.proj.mtd)} in {d.proj.elapsed} days ÷ {d.proj.elapsed} × {d.proj.days}) vs {money(d.lastMonth.amount)} last month. A weekday-aware projection (remaining days at their weekday average of the last 4 weeks) gives {money(d.proj.projected)}.</> });
+  }
+  if (d.profit) {
+    const { rank, me, cur } = d.profit;
+    out.push({ icon: '💰', text: <>Gross profit was <b>{money(cur.profit)}</b> ({money(rank.total / rank.days)} per day) at a <b>{marginFmt(cur.margin)}</b> margin. {cur.coverage < 0.9 ? <>Only {pct(cur.coverage, 0)} of sales have a known cost; add the rest in “Profit & costs” for a complete figure.</> : ''}</> });
+    const topProfit = rank.rows[0];
+    const topSeller = d.top.find((p) => !p.unallocated);
+    if (topProfit && topSeller) {
+      out.push({ icon: '🥇', text: topProfit.key === topSeller.key
+        ? <><b>{topProfit.name}</b> is both the best seller and the biggest profit earner ({pct(topProfit.profitShare)} of profit).</>
+        : <><b>{topProfit.name}</b> earns the most profit ({pct(topProfit.profitShare)} of profit), while <b>{topSeller.name}</b> sells the most.</> });
+    }
+    const wh = me.items.filter((r) => r.menuClass === 'Workhorse').sort((a, b) => b.qty - a.qty)[0];
+    if (wh) out.push({ icon: '🐴', text: <><b>{wh.name}</b> is popular ({int(wh.qty)} sold) but earns only {money2(wh.unitProfit)} per item vs the {money2(me.profitLine)} average. A small price rise or cheaper recipe would add up fast.</> });
+    const pz = me.items.filter((r) => r.menuClass === 'Puzzle').sort((a, b) => b.profit - a.profit)[0];
+    if (pz) out.push({ icon: '🧩', text: <><b>{pz.name}</b> makes {money2(pz.unitProfit)} per item but sells little ({int(pz.qty)}). Worth promoting.</> });
+    if (cur.profit > 0 && d.cur.disc > 0) out.push({ icon: '🏷️', text: <>Discounts cost {money(d.cur.disc)}, equal to <b>{pct(d.cur.disc / cur.profit, 0)}</b> of gross profit.</> });
+    const neg = rank.rows.filter((r) => r.margin != null && r.margin < 0);
+    if (neg.length) out.push({ icon: '⛔', text: <>{neg.length} item{neg.length > 1 ? 's sell' : ' sells'} below cost: {neg.slice(0, 3).map((r) => `${r.name} (${marginFmt(r.margin)})`).join(', ')}. Check the price or the linked cost.</> });
   }
   if (ctx.filters.channel === 'all' && d.cur.net) {
     out.push({ icon: '💳', text: <>{pct(d.cur.card / d.cur.net, 0)} of sales were paid by card, {pct(d.cur.cash / d.cur.net, 0)} in cash and {pct(d.cur.account / d.cur.net, 0)} on account.</> });

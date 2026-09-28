@@ -56,7 +56,7 @@ export default function Upload({ onFiles: onFilesRaw, error, saved, onCancel, ca
           </p>
         )}
         <p className="muted" style={{ margin: 0 }}>
-          Drop the ASEAL database folder, its <b>.DB</b> files, or one <b>.zip</b> / <b>.rar</b> archive here.
+          Drop the ASEAL database folder, its <b>.DB</b> files, or one <b>.zip</b> / <b>.rar</b> archive here. You can add the product cost sheet (<b>.xlsx</b>) too, or on its own.
         </p>
         <div className="save-box">
           <label className="check">
@@ -79,7 +79,7 @@ export default function Upload({ onFiles: onFilesRaw, error, saved, onCancel, ca
           <button className="btn" onClick={() => dirRef.current.click()}>Choose a folder</button>
           {onCancel && <button className="btn ghost" onClick={onCancel}>Cancel</button>}
         </div>
-        <input ref={fileRef} type="file" multiple accept=".db,.DB,.zip,.rar"
+        <input ref={fileRef} type="file" multiple accept=".db,.DB,.zip,.rar,.xlsx"
           onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onFiles(f); }} />
         <input ref={dirRef} type="file" webkitdirectory="" directory=""
           onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onFiles(f); }} />
