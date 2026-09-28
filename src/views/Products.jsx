@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { monthDays, productMonthPivot, productRows } from '../lib/aggregate.js';
 import DataTable from '../components/DataTable.jsx';
+import ItemPicker from '../components/ItemPicker.jsx';
 import { dec1, int, longDate, money, money2, monthLabel, pct, shortDate, signedMoney } from '../format.js';
 import { ChangeCell, amountLabel } from './common.jsx';
 
@@ -11,8 +12,9 @@ export default function Products({ ctx }) {
       <div className="card-head">
         <div>
           <h2>Product sales</h2>
-          <p>Every product total adds up exactly to the invoice totals. Invoice discounts are shared across the lines of each invoice for the Net figure.</p>
+          <p>Every product total adds up exactly to the invoice totals. Invoice discounts are shared across the lines of each invoice for the Net figure. Click a product, or search for one, to track it month by month.</p>
         </div>
+        <ItemPicker model={ctx.model} onPick={ctx.openProduct} label="Track an item" />
         <div className="seg" role="group" aria-label="View">
           <button aria-pressed={mode === 'summary'} onClick={() => setMode('summary')}>Summary</button>
           <button aria-pressed={mode === 'amount'} onClick={() => setMode('amount')}>Amount by month</button>
