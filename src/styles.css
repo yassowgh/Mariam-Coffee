@@ -326,3 +326,5 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .pill.mc-dog { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }
 .check-inline { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; font-size: 13px; cursor: pointer; }
 .check-inline input { width: 18px; height: 18px; }
+.line-toggles { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.product-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }

@@ -8,7 +8,7 @@ import { addDays, daysBetween, filterInvoices, mainDiscountKinds, promoTest } fr
 import { longDate } from './format.js';
 import Upload from './components/Upload.jsx';
 import FilterBar from './components/FilterBar.jsx';
-import ProductDrawer from './components/ProductDrawer.jsx';
+import ProductPage from './components/ProductPage.jsx';
 import Dashboard from './views/Dashboard.jsx';
 import Monthly from './views/Monthly.jsx';
 import Daily from './views/Daily.jsx';
@@ -38,6 +38,26 @@ export default function App() {
   const [tab, setTab] = useState('dashboard');
   const [filters, setFilters] = useState(null);
   const [product, setProduct] = useState(null);
+
+  // Product pages get a browser history entry, so the back button returns to the report.
+  function openProduct(id) {
+    const wasOpen = product != null;
+    setProduct(id);
+    window.scrollTo(0, 0);
+    try {
+      if (wasOpen) history.replaceState({ product: id }, '', '#item' + id);
+      else history.pushState({ product: id }, '', '#item' + id);
+    } catch { /* history unavailable (e.g. sandboxed preview) */ }
+  }
+  function closeProduct() {
+    if (history.state && history.state.product != null) history.back();
+    else setProduct(null);
+  }
+  useEffect(() => {
+    const onPop = (e) => setProduct(e.state && e.state.product != null ? e.state.product : null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   const [saved, setSaved] = useState(null); // metadata of the dataset stored on the server
   const [notice, setNotice] = useState(null); // { kind: 'ok' | 'bad' | 'info', text }
@@ -142,7 +162,7 @@ export default function App() {
       if (costMsg) setNotice((n) => ({ kind: n?.kind || 'ok', text: [n?.text, costMsg].filter(Boolean).join(' ') }));
       m.loadMs = Math.round(performance.now() - t0);
       setModel(m);
-      setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all', profitLine: true });
+      setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all', profitLine: true, showMA: true, showDow: false });
       setFileLabel(label);
       setTab('dashboard');
       setStage('ready');
@@ -178,12 +198,12 @@ export default function App() {
     const basis = deferred.basis === 'profit' && !model.hasCosts ? 'net' : deferred.basis;
     const f = basis === deferred.basis ? deferred : { ...deferred, basis };
     return {
-      model, filters: f, basis, invs, prevInvs, prevFrom, prevTo, len, openProduct: setProduct,
+      model, filters: f, basis, invs, prevInvs, prevFrom, prevTo, len, openProduct,
       setFilter: (patch) => setFilters((cur) => ({ ...cur, ...patch })),
-      profitLineLive: filters?.profitLine !== false, // the switch shows the current value, not the delayed one
+      live: filters, // switches show the current value, not the delayed one
       costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, info: model.costInfo },
     };
-  }, [deferredVm, deferred, costCfg, serverOk, filters?.profitLine]);
+  }, [deferredVm, deferred, costCfg, serverOk, filters?.profitLine, filters?.showMA, filters?.showDow, product]);
 
   if (stage !== 'ready') {
     return (
@@ -207,7 +227,7 @@ export default function App() {
         tabs={
           <nav className="tabs" role="tablist" aria-label="Reports">
             {TABS.map(([k, label]) => (
-              <button key={k} role="tab" className="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
+              <button key={k} role="tab" className="tab" aria-selected={tab === k} onClick={() => { setTab(k); if (product != null) closeProduct(); }}>
                 {label}
                 {k === 'recon' && <ReconBadge model={model} />}
               </button>
@@ -232,9 +252,10 @@ export default function App() {
             <button className="btn small" onClick={() => setFilters({ ...filters, promo: 'all' })}>Show all orders</button>
           </div>
         )}
-        {ctx && <View ctx={ctx} />}
+        {ctx && (product != null
+          ? <ProductPage ctx={ctx} id={product} onBack={closeProduct} backLabel={TABS.find(([k]) => k === tab)?.[1] || 'report'} />
+          : <View ctx={ctx} />)}
       </main>
-      {product != null && ctx && <ProductDrawer ctx={ctx} id={product} onClose={() => setProduct(null)} />}
       {busy && (
         <div className="busy" role="status" aria-live="polite">
           Recalculating reports…

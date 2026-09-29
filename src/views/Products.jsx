@@ -19,9 +19,10 @@ export default function Products({ ctx }) {
           <button aria-pressed={mode === 'summary'} onClick={() => setMode('summary')}>Summary</button>
           <button aria-pressed={mode === 'amount'} onClick={() => setMode('amount')}>Amount by month</button>
           <button aria-pressed={mode === 'qty'} onClick={() => setMode('qty')}>Quantity by month</button>
+          {ctx.model.hasCosts && <button aria-pressed={mode === 'profit'} onClick={() => setMode('profit')}>Gross profit by month</button>}
         </div>
       </div>
-      {mode === 'summary' ? <Summary ctx={ctx} /> : <Pivot ctx={ctx} qty={mode === 'qty'} />}
+      {mode === 'summary' ? <Summary ctx={ctx} /> : <Pivot ctx={ctx} qty={mode === 'qty'} profit={mode === 'profit' && ctx.model.hasCosts} />}
     </div>
   );
 }
@@ -57,9 +58,10 @@ function Summary({ ctx }) {
   );
 }
 
-function Pivot({ ctx, qty }) {
+function Pivot({ ctx, qty, profit }) {
   const { model, invs, basis, filters, openProduct } = ctx;
-  const { months, rows } = useMemo(() => productMonthPivot(model, invs, basis), [model, invs, basis]);
+  const pivotBasis = profit ? 'profit' : basis;
+  const { months, rows } = useMemo(() => productMonthPivot(model, invs, pivotBasis), [model, invs, pivotBasis]);
   // forecast for a month that is still running at the end of the data (same idea as the owner's Excel)
   const lastM = months[months.length - 1];
   const lastDay = model.maxDate;
@@ -70,8 +72,11 @@ function Pivot({ ctx, qty }) {
     for (const m of months) o[m] = (qty ? r['q' + m] : r[m]) || 0;
     if (running) o.forecast = o[lastM] * factor;
     if (months.length >= 2) {
-      const a = o[months[months.length - 2]], b = running ? o.forecast : o[lastM];
-      o.trend = a ? (b - a) / a : null;
+      // skip the comparison when the earlier month is only partly inside the selected dates
+      const prevM = months[months.length - 2];
+      const prevPartial = filters.from > prevM + '-01';
+      const a = o[prevM], b = running ? o.forecast : o[lastM];
+      o.trend = a && !prevPartial ? (b - a) / a : null;
     }
     return o;
   }), [rows, months, qty, running, factor, lastM]);
@@ -85,9 +90,9 @@ function Pivot({ ctx, qty }) {
   ];
   return (
     <DataTable columns={columns} rows={data} defaultSort={{ key: 'total', dir: 'desc' }}
-      filters={{ search: 'name', amount: 'total', amountLabel: qty ? 'Total qty' : 'Total' }}
-      exportName={qty ? 'product-quantity-by-month' : 'product-sales-by-month'}
+      filters={{ search: 'name', amount: 'total', amountLabel: qty ? 'Total qty' : profit ? 'Total gross profit' : 'Total' }}
+      exportName={qty ? 'product-quantity-by-month' : profit ? 'product-gross-profit-by-month' : 'product-sales-by-month'}
       onRowClick={(r) => openProduct(r.key)} pageSize={400}
-      footerNote={`${qty ? 'quantities' : amountLabel(basis).toLowerCase()} per month`} />
+      footerNote={`${qty ? 'quantities' : amountLabel(pivotBasis).toLowerCase()} per month${profit ? ' (items without a cost show 0)' : ''}`} />
   );
 }

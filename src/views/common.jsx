@@ -69,17 +69,55 @@ export function payRows(pp, total) {
   return PAY_SERIES.filter((sr) => pp[sr.key] > 0.5).map((sr) => [sr.label, `${money(pp[sr.key])} · ${pct(total ? pp[sr.key] / total : 0, 0)}`, sr.color]);
 }
 
-/** On/off switch for the expected gross profit line on the daily charts (needs costs; hidden when bars already show profit). */
-export function ProfitLineToggle({ ctx }) {
-  if (!ctx.model.hasCosts || ctx.basis === 'profit') return null;
-  const on = ctx.profitLineLive ?? ctx.filters.profitLine !== false;
-  return (
-    <label className="check-inline" title="Sales after discount minus the cost of goods, for items with a known cost">
-      <input type="checkbox" checked={on} onChange={(e) => ctx.setFilter({ profitLine: e.target.checked })} />
-      Show expected gross profit
+/**
+ * Optional lines on the daily sales charts. Each has an on/off switch; the state lives in the filters:
+ *  showMA (7-day average, default on), showDow (average for that weekday, default off), profitLine (default on).
+ */
+export function chartLineFlags(ctx, weekly) {
+  const live = ctx.live || ctx.filters;
+  return {
+    ma: !weekly && live.showMA !== false,
+    dow: !weekly && !!live.showDow,
+    profit: ctx.model.hasCosts && ctx.basis !== 'profit' && live.profitLine !== false,
+    canProfit: ctx.model.hasCosts && ctx.basis !== 'profit',
+  };
+}
+
+export function chartLines(flags) {
+  return [
+    flags.ma && { key: 'line', label: '7-day average', color: 'var(--text)' },
+    flags.dow && { key: 'dowAvg', label: 'Average for that weekday', color: 'var(--text-3)' },
+    flags.profit && { key: 'line2', label: 'Expected gross profit', color: 'var(--series-7)', markers: true },
+  ].filter(Boolean);
+}
+
+export function ChartLineToggles({ ctx, weekly }) {
+  const f = chartLineFlags(ctx, weekly);
+  const live = ctx.live || ctx.filters;
+  const box = (key, label, checked, title) => (
+    <label className="check-inline" title={title} key={key}>
+      <input type="checkbox" checked={checked} onChange={(e) => ctx.setFilter({ [key]: e.target.checked })} />
+      {label}
     </label>
   );
+  return (
+    <div className="line-toggles" role="group" aria-label="Lines on the chart">
+      {!weekly && box('showMA', '7-day average', live.showMA !== false, 'Average of the last 7 days, each day')}
+      {!weekly && box('showDow', 'Weekday average', !!live.showDow, 'Average sales for that weekday (e.g. all Mondays) in the selected period')}
+      {f.canProfit && box('profitLine', 'Expected gross profit', live.profitLine !== false, 'Sales after discount minus the cost of goods, for items with a known cost')}
+    </div>
+  );
 }
-export const showProfitLine = (ctx) => ctx.model.hasCosts && ctx.basis !== 'profit' && ctx.filters.profitLine !== false;
+
+/** Average amount per weekday over the given day rows (trading days only). */
+export function weekdayAverages(dayRows) {
+  const sum = new Array(7).fill(0), n = new Array(7).fill(0);
+  for (const r of dayRows) {
+    const dow = new Date(r.key + 'T00:00:00Z').getUTCDay();
+    if (r.orders > 0) { sum[dow] += r.amount; n[dow]++; }
+  }
+  return sum.map((v, i) => (n[i] ? v / n[i] : null));
+}
+
 /** Tooltip rows for the profit line. */
 export const profitRows = (r) => (r && r.costedNet ? [['Expected gross profit', money(r.profit), 'var(--series-7)'], ['Margin', pct(r.profit / r.costedNet)]] : []);

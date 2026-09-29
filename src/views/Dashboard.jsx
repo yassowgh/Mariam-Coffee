@@ -4,7 +4,7 @@ import {
   monthlyRows, productRows, runRateFor, summarize, weekdayRows, DAY_START_HOUR,
 } from '../lib/aggregate.js';
 import { BarLineChart, Heatmap } from '../components/charts.jsx';
-import { PAY_SERIES, ProfitLineToggle, basisWord as basisWordOf, marginFmt, payParts, payRows, profitRows, showProfitLine } from './common.jsx';
+import { ChartLineToggles, PAY_SERIES, basisWord as basisWordOf, chartLineFlags, chartLines, marginFmt, payParts, payRows, profitRows, weekdayAverages } from './common.jsx';
 import { MENU_CLASSES, menuEngineering, profitRanking } from './Profit.jsx';
 import {
   compact, dec1, hourRange, timeLabel, int, longDate, money, money2, monthLabel, pct, shortDate, signedMoney, signedPct,
@@ -33,7 +33,8 @@ export default function Dashboard({ ctx }) {
   const ch = filters.channel;
 
   const d = useMemo(() => {
-    const profitOn = showProfitLine(ctx);
+    const lf = chartLineFlags(ctx, ctx.len > 190);
+    const profitOn = lf.profit;
     const last7 = summarize(filterInvoices(model, { from: addDays(L, -6), to: L, channel: ch }), basis);
     const prev7 = summarize(filterInvoices(model, { from: addDays(L, -13), to: addDays(L, -7), channel: ch }), basis);
     const lastDay = summarize(filterInvoices(model, { from: L, to: L, channel: ch }), basis);
@@ -52,6 +53,7 @@ export default function Dashboard({ ctx }) {
     const trend = [];
     if (len <= 190) {
       const vals = [];
+      const dowAvg = weekdayAverages([...daily.values()].filter((r) => r.key >= filters.from));
       for (let day = addDays(filters.from, -6); day <= filters.to; day = addDays(day, 1)) {
         const r = daily.get(day);
         vals.push(r ? r.amount : 0);
@@ -59,11 +61,17 @@ export default function Dashboard({ ctx }) {
         const win = vals.slice(-7);
         const ma = win.reduce((s, v) => s + v, 0) / win.length;
         const pp = payParts(r);
+        const dow = new Date(day + 'T00:00:00Z').getUTCDay();
+        const da = dowAvg[dow];
         trend.push({
-          key: day, label: shortDate(day), value: r ? r.amount : 0, line: ma, parts: pp,
+          key: day, label: shortDate(day), value: r ? r.amount : 0, parts: pp,
+          line: lf.ma ? ma : undefined,
+          dowAvg: lf.dow && da != null ? da : undefined,
           line2: profitOn ? (r ? r.profit : 0) : undefined,
-          title: `${DOW[new Date(day + 'T00:00:00Z').getUTCDay()]} ${longDate(day)}`,
-          rows: [['Sales', money(r ? r.amount : 0)], ...payRows(pp, r ? r.amount : 0), ...(profitOn ? profitRows(r) : []), ['Orders', int(r ? r.orders : 0)], ['Avg ticket', money2(r ? r.avgTicket : 0)], ['7-day avg', money(ma)]],
+          title: `${DOW[dow]} ${longDate(day)}`,
+          rows: [['Sales', money(r ? r.amount : 0)], ...payRows(pp, r ? r.amount : 0), ...(profitOn ? profitRows(r) : []), ['Orders', int(r ? r.orders : 0)], ['Avg ticket', money2(r ? r.avgTicket : 0)],
+            ...(lf.ma ? [['7-day avg', money(ma), 'var(--text)']] : []),
+            ...(lf.dow && da != null ? [[`Avg ${DOW[dow]}`, money(da), 'var(--text-3)']] : [])],
         });
       }
     } else {
@@ -125,7 +133,7 @@ export default function Dashboard({ ctx }) {
     }
 
     return { profit, partial, lastOrderClock: lastOrder != null ? toClock(lastOrder) : null, usualCloseClock: usualClose != null ? toClock(usualClose) : null, last7, prev7, lastDay, lastWeekSameDay, proj, lastMonth, cur, prev, trend, rising, falling, top, pareto, soldCount: sold.length, dormant, hours, wd, heat, dayRows, months };
-  }, [model, invs, prevInvs, basis, ch, L, filters.from, filters.to, ctx.len, filters.profitLine]);
+  }, [model, invs, prevInvs, basis, ch, L, filters.from, filters.to, ctx.len, ctx.live?.profitLine, ctx.live?.showMA, ctx.live?.showDow]);
 
   const activeHours = d.hours.filter((h) => h.orders > 0).map((h) => h.key).sort((a, b) => hourOrder(a) - hourOrder(b));
   const hoursRange = activeHours.length
@@ -169,10 +177,9 @@ export default function Dashboard({ ctx }) {
               <Delta v={change(d.cur.amount, d.prev.amount)} />
             </p>
           </div>
-          <ProfitLineToggle ctx={ctx} />
+          <ChartLineToggles ctx={ctx} weekly={ctx.len > 190} />
         </div>
-        <BarLineChart data={d.trend} height={260} series={PAY_SERIES} lineLabel={ctx.len > 190 ? null : '7-day average (total)'}
-          line2Label={showProfitLine(ctx) ? 'Expected gross profit' : null} />
+        <BarLineChart data={d.trend} height={260} series={PAY_SERIES} lines={chartLines(chartLineFlags(ctx, ctx.len > 190))} />
       </div>
 
       <div className="grid two">
