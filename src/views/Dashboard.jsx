@@ -4,7 +4,7 @@ import {
   monthlyRows, productRows, runRateFor, summarize, weekdayRows, DAY_START_HOUR,
 } from '../lib/aggregate.js';
 import { BarLineChart, Heatmap } from '../components/charts.jsx';
-import { PAY_SERIES, basisWord as basisWordOf, marginFmt, payParts, payRows } from './common.jsx';
+import { PAY_SERIES, ProfitLineToggle, basisWord as basisWordOf, marginFmt, payParts, payRows, profitRows, showProfitLine } from './common.jsx';
 import { MENU_CLASSES, menuEngineering, profitRanking } from './Profit.jsx';
 import {
   compact, dec1, hourRange, timeLabel, int, longDate, money, money2, monthLabel, pct, shortDate, signedMoney, signedPct,
@@ -33,6 +33,7 @@ export default function Dashboard({ ctx }) {
   const ch = filters.channel;
 
   const d = useMemo(() => {
+    const profitOn = showProfitLine(ctx);
     const last7 = summarize(filterInvoices(model, { from: addDays(L, -6), to: L, channel: ch }), basis);
     const prev7 = summarize(filterInvoices(model, { from: addDays(L, -13), to: addDays(L, -7), channel: ch }), basis);
     const lastDay = summarize(filterInvoices(model, { from: L, to: L, channel: ch }), basis);
@@ -60,8 +61,9 @@ export default function Dashboard({ ctx }) {
         const pp = payParts(r);
         trend.push({
           key: day, label: shortDate(day), value: r ? r.amount : 0, line: ma, parts: pp,
+          line2: profitOn ? (r ? r.profit : 0) : undefined,
           title: `${DOW[new Date(day + 'T00:00:00Z').getUTCDay()]} ${longDate(day)}`,
-          rows: [['Sales', money(r ? r.amount : 0)], ...payRows(pp, r ? r.amount : 0), ['Orders', int(r ? r.orders : 0)], ['Avg ticket', money2(r ? r.avgTicket : 0)], ['7-day avg', money(ma)]],
+          rows: [['Sales', money(r ? r.amount : 0)], ...payRows(pp, r ? r.amount : 0), ...(profitOn ? profitRows(r) : []), ['Orders', int(r ? r.orders : 0)], ['Avg ticket', money2(r ? r.avgTicket : 0)], ['7-day avg', money(ma)]],
         });
       }
     } else {
@@ -70,15 +72,16 @@ export default function Dashboard({ ctx }) {
         if (r.key < filters.from) continue;
         const dow = (new Date(r.key + 'T00:00:00Z').getUTCDay() + 6) % 7;
         const wk = addDays(r.key, -dow);
-        const w = weeks.get(wk) || { amount: 0, orders: 0, days: 0, net: 0, card: 0, cash: 0, account: 0 };
+        const w = weeks.get(wk) || { amount: 0, orders: 0, days: 0, net: 0, card: 0, cash: 0, account: 0, profit: 0, costedNet: 0 };
         w.amount += r.amount; w.orders += r.orders; w.days++;
         w.net += r.net; w.card += r.card; w.cash += r.cash; w.account += r.account;
+        w.profit += r.profit; w.costedNet += r.costedNet;
         weeks.set(wk, w);
       }
       for (const [wk, w] of [...weeks].sort()) {
         const pp = payParts(w);
-        trend.push({ key: wk, label: shortDate(wk), value: w.amount, parts: pp, title: `Week of ${longDate(wk)}`,
-          rows: [['Sales', money(w.amount)], ...payRows(pp, w.amount), ['Orders', int(w.orders)], ['Trading days', w.days]] });
+        trend.push({ key: wk, label: shortDate(wk), value: w.amount, parts: pp, line2: profitOn ? w.profit : undefined, title: `Week of ${longDate(wk)}`,
+          rows: [['Sales', money(w.amount)], ...payRows(pp, w.amount), ...(profitOn ? profitRows(w) : []), ['Orders', int(w.orders)], ['Trading days', w.days]] });
       }
     }
 
@@ -122,7 +125,7 @@ export default function Dashboard({ ctx }) {
     }
 
     return { profit, partial, lastOrderClock: lastOrder != null ? toClock(lastOrder) : null, usualCloseClock: usualClose != null ? toClock(usualClose) : null, last7, prev7, lastDay, lastWeekSameDay, proj, lastMonth, cur, prev, trend, rising, falling, top, pareto, soldCount: sold.length, dormant, hours, wd, heat, dayRows, months };
-  }, [model, invs, prevInvs, basis, ch, L, filters.from, filters.to, ctx.len]);
+  }, [model, invs, prevInvs, basis, ch, L, filters.from, filters.to, ctx.len, filters.profitLine]);
 
   const activeHours = d.hours.filter((h) => h.orders > 0).map((h) => h.key).sort((a, b) => hourOrder(a) - hourOrder(b));
   const hoursRange = activeHours.length
@@ -166,8 +169,10 @@ export default function Dashboard({ ctx }) {
               <Delta v={change(d.cur.amount, d.prev.amount)} />
             </p>
           </div>
+          <ProfitLineToggle ctx={ctx} />
         </div>
-        <BarLineChart data={d.trend} height={260} series={PAY_SERIES} lineLabel={ctx.len > 190 ? null : '7-day average (total)'} />
+        <BarLineChart data={d.trend} height={260} series={PAY_SERIES} lineLabel={ctx.len > 190 ? null : '7-day average (total)'}
+          line2Label={showProfitLine(ctx) ? 'Expected gross profit' : null} />
       </div>
 
       <div className="grid two">

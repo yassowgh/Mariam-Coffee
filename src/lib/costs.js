@@ -172,17 +172,27 @@ export const DEFAULT_LINKS = {
 
 // Costs (TL) for items the sheet does not cover, given by the owner.
 export const DEFAULT_MANUAL = {
-  54: 6, // WATER SMALL
-  55: 10, 61: 10, 503: 10, 504: 10, 506: 10, 507: 10, // cardamom packs
+  54: 8.25, // WATER SMALL
+  55: 189.5, // MARIAM CARDAMOM 250G
+  61: 10, 503: 10, 504: 10, 506: 10, 507: 10, // other cardamom packs
   508: 40, // trendyol 1 kilo cardamom = 4 packs
 };
-const DEFAULTS_VERSION = 2;
+// earlier built-in values: replaced by the new ones unless the owner changed them
+const PREVIOUS_DEFAULTS = { 54: [6], 55: [10] };
+const DEFAULTS_VERSION = 3;
 
 /** Build a cost config from a parsed workbook, keeping the owner's manual costs and edited links. */
 export function makeCostConfig(parsed, previous) {
   return withDefaults({
-    recipes: parsed.recipes.map(({ id, name, type, cost, price }) => ({ id, name, type, cost, price })),
-    ingredients: parsed.ingredients,
+    // a new sheet replaces the sheet items; items the owner added in the app are kept
+    recipes: [
+      ...parsed.recipes.map(({ id, name, type, cost, price }) => ({ id, name, type, cost, price })),
+      ...(previous?.recipes || []).filter((r) => r.custom && !parsed.recipes.some((p) => p.id === r.id)),
+    ],
+    ingredients: [
+      ...parsed.ingredients,
+      ...(previous?.ingredients || []).filter((r) => r.custom && !parsed.ingredients.some((p) => p.id === r.id)),
+    ],
     links: previous?.links ? { ...DEFAULT_LINKS, ...previous.links } : { ...DEFAULT_LINKS },
     manual: previous?.manual ? { ...previous.manual } : {},
     defaultsVersion: previous?.defaultsVersion,
@@ -191,10 +201,14 @@ export function makeCostConfig(parsed, previous) {
   });
 }
 
-/** Add the built-in manual costs once to an older config (never overrides a cost the owner typed). */
+/** Add/refresh the built-in manual costs in an older config (never overrides a cost the owner typed). */
 export function withDefaults(cfg) {
   if (!cfg || (cfg.defaultsVersion || 0) >= DEFAULTS_VERSION) return cfg;
-  return { ...cfg, manual: { ...DEFAULT_MANUAL, ...(cfg.manual || {}) }, defaultsVersion: DEFAULTS_VERSION };
+  const manual = { ...DEFAULT_MANUAL, ...(cfg.manual || {}) };
+  for (const [item, olds] of Object.entries(PREVIOUS_DEFAULTS)) {
+    if (olds.includes(Number(manual[item]))) manual[item] = DEFAULT_MANUAL[item];
+  }
+  return { ...cfg, manual, defaultsVersion: DEFAULTS_VERSION };
 }
 
 /** itemNo -> { cost, via: 'manual' | 'sheet', label, type } for items with a known cost. */

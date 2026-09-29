@@ -142,7 +142,7 @@ export default function App() {
       if (costMsg) setNotice((n) => ({ kind: n?.kind || 'ok', text: [n?.text, costMsg].filter(Boolean).join(' ') }));
       m.loadMs = Math.round(performance.now() - t0);
       setModel(m);
-      setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all' });
+      setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all', profitLine: true });
       setFileLabel(label);
       setTab('dashboard');
       setStage('ready');
@@ -179,9 +179,11 @@ export default function App() {
     const f = basis === deferred.basis ? deferred : { ...deferred, basis };
     return {
       model, filters: f, basis, invs, prevInvs, prevFrom, prevTo, len, openProduct: setProduct,
+      setFilter: (patch) => setFilters((cur) => ({ ...cur, ...patch })),
+      profitLineLive: filters?.profitLine !== false, // the switch shows the current value, not the delayed one
       costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, info: model.costInfo },
     };
-  }, [deferredVm, deferred, costCfg, serverOk]);
+  }, [deferredVm, deferred, costCfg, serverOk, filters?.profitLine]);
 
   if (stage !== 'ready') {
     return (

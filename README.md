@@ -34,7 +34,10 @@ upload screen or in the **Profit & costs** tab. Till products are linked to shee
 (`DEFAULT_LINKS` in `src/lib/costs.js`, editable in the app); items the sheet lacks can get a typed cost.
 Settings are saved with the upload password (`/api/costs`). Gross profit = sales after discount − COGS,
 for lines with a known cost; margin % = profit ÷ those sales. The **Show → Gross profit** switch turns every
-report into profit. Check with `COSTS=<sheet.xlsx> npm test -- <folder>`.
+report into profit. The daily charts can overlay an **expected gross profit** line (switch on the chart).
+The cost list itself (recipe/ingredient costs and menu prices) is editable in **Profit & costs → Cost list**;
+you can add your own items there. A new sheet replaces the sheet items but keeps your added items, links and typed costs.
+Check with `COSTS=<sheet.xlsx> npm test -- <folder>`.
 
 ## Data rules
 - Business day = the working date the system books (after-midnight sales → previous day).

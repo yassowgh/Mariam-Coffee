@@ -189,6 +189,7 @@ function CostSetup({ ctx }) {
   const [msg, setMsg] = useState(null);
   const [password, setPassword] = useState('');
   const [editing, setEditing] = useState(null);
+  const [view, setView] = useState('links'); // 'links' | 'list'
   const cfg = costs.cfg;
 
   async function loadSheet(file) {
@@ -275,6 +276,13 @@ function CostSetup({ ctx }) {
       </div>
       {msg && <div className={'banner ' + msg.kind}><span>{msg.text}</span><button className="btn small ghost" onClick={() => setMsg(null)} aria-label="Dismiss">✕</button></div>}
       {cfg && (
+        <div className="seg" role="group" aria-label="Cost view" style={{ marginBottom: 12 }}>
+          <button aria-pressed={view === 'links'} onClick={() => setView('links')}>Products & their costs</button>
+          <button aria-pressed={view === 'list'} onClick={() => setView('list')}>Cost list (recipes & ingredients)</button>
+        </div>
+      )}
+      {cfg && view === 'list' && <CostListEditor cfg={cfg} update={costs.update} />}
+      {cfg && view === 'links' && (
         <>
           <p className="notice" style={{ margin: '0 0 12px' }}>
             Products with a cost cover <b>{pct(allSales ? knownSales / allSales : 0, 0)}</b> of sales in the selected period.
@@ -316,6 +324,99 @@ function CostSetup({ ctx }) {
             ]} />
         </>
       )}
+    </div>
+  );
+}
+
+/** Edit the cost list itself: change costs/prices of recipes and ingredients, add or remove your own items. */
+function CostListEditor({ cfg, update }) {
+  const [draft, setDraft] = useState({ kind: 'recipe', name: '', type: 'HOT', cost: '', price: '' });
+  const [err, setErr] = useState('');
+  const linkCount = useMemo(() => {
+    const m = new Map();
+    for (const ids of Object.values(cfg.links || {})) for (const id of ids || []) m.set(id, (m.get(id) || 0) + 1);
+    return m;
+  }, [cfg.links]);
+  const rows = useMemo(() => [
+    ...cfg.recipes.map((r) => ({ ...r, key: r.id, kind: 'Recipe', linked: linkCount.get(r.id) || 0 })),
+    ...cfg.ingredients.map((r) => ({ ...r, key: r.id, kind: 'Ingredient', type: 'INGREDIENT', linked: linkCount.get(r.id) || 0 })),
+  ], [cfg, linkCount]);
+
+  const stamp = () => new Date().toISOString();
+  function edit(row, patch) {
+    const list = row.kind === 'Recipe' ? 'recipes' : 'ingredients';
+    update({ ...cfg, [list]: cfg[list].map((r) => (r.id === row.id ? { ...r, ...patch, edited: true } : r)), updatedAt: stamp() });
+  }
+  function remove(row) {
+    const list = row.kind === 'Recipe' ? 'recipes' : 'ingredients';
+    const links = Object.fromEntries(Object.entries(cfg.links).map(([k, ids]) => [k, (ids || []).filter((id) => id !== row.id)]));
+    update({ ...cfg, [list]: cfg[list].filter((r) => r.id !== row.id), links, updatedAt: stamp() });
+  }
+  function add(e) {
+    e.preventDefault();
+    const name = draft.name.trim();
+    const cost = Number(draft.cost);
+    if (!name) { setErr('Enter a name.'); return; }
+    if (!(cost >= 0) || draft.cost === '') { setErr('Enter the cost in TL.'); return; }
+    const id = (draft.kind === 'recipe' ? 'r:' : 'i:') + name;
+    if (rows.some((r) => r.id === id)) { setErr('An item with this name already exists.'); return; }
+    const item = draft.kind === 'recipe'
+      ? { id, name, type: draft.type || 'OTHER', cost, price: Number(draft.price) || 0, custom: true }
+      : { id, name, cost, custom: true };
+    const list = draft.kind === 'recipe' ? 'recipes' : 'ingredients';
+    update({ ...cfg, [list]: [...cfg[list], item], updatedAt: stamp() });
+    setDraft({ ...draft, name: '', cost: '', price: '' });
+    setErr('');
+  }
+
+  const num = (row, field, label) => (
+    <input key={row.id + field + row[field]} type="number" inputMode="decimal" min="0" step="0.01" aria-label={`${label} of ${row.name}`}
+      defaultValue={row[field] ?? ''} style={{ width: 96, minHeight: 32 }}
+      onBlur={(e) => { const v = e.target.value; if (v !== '' && Number(v) !== row[field]) edit(row, { [field]: Number(v) }); }} />
+  );
+
+  return (
+    <div>
+      <p className="notice" style={{ margin: '0 0 12px' }}>
+        Change any cost or menu price here; every product linked to that item updates straight away.
+        Loading a new cost sheet replaces the sheet items but keeps the items you added, your product links and your typed product costs.
+        Click <b>Save costs for everyone</b> above to keep the changes.
+      </p>
+      <form className="table-tools" onSubmit={add} aria-label="Add an item to the cost list">
+        <label className="field"><span>New item</span>
+          <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
+            <option value="recipe">Recipe / product</option>
+            <option value="ingredient">Ingredient / add-on</option>
+          </select></label>
+        <label className="field"><span>Name</span>
+          <input id="new-cost-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Honey Cake" /></label>
+        {draft.kind === 'recipe' && (
+          <label className="field"><span>Category</span>
+            <select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}>
+              {['HOT', 'COLD', 'SWEETS', 'FOOD', 'RETAIL', 'OTHER'].map((t) => <option key={t}>{t}</option>)}
+            </select></label>
+        )}
+        <label className="field"><span>Cost (TL)</span>
+          <input id="new-cost-value" type="number" inputMode="decimal" min="0" step="0.01" value={draft.cost} onChange={(e) => setDraft({ ...draft, cost: e.target.value })} /></label>
+        {draft.kind === 'recipe' && (
+          <label className="field"><span>Menu price (TL)</span>
+            <input type="number" inputMode="decimal" min="0" step="0.01" value={draft.price} onChange={(e) => setDraft({ ...draft, price: e.target.value })} /></label>
+        )}
+        <button className="btn primary" type="submit">Add</button>
+        {err && <span className="down" role="alert">{err}</span>}
+      </form>
+      <DataTable exportName="cost-list" rows={rows} defaultSort={{ key: 'name', dir: 'asc' }} pageSize={80} filters={{ search: 'name' }}
+        columns={[
+          { key: 'name', label: 'Item', name: true, render: (r) => <span title={r.name}>{r.name}{r.custom && <span className="pill" style={{ marginLeft: 6 }}>added</span>}{r.edited && <span className="pill warn" style={{ marginLeft: 6 }}>edited</span>}</span> },
+          { key: 'kind', label: 'Kind' },
+          { key: 'type', label: 'Category' },
+          { key: 'cost', label: 'Cost (TL)', align: 'r', render: (r) => num(r, 'cost', 'Cost'), csv: (r) => r.cost },
+          { key: 'price', label: 'Menu price (TL)', align: 'r', render: (r) => (r.kind === 'Recipe' ? num(r, 'price', 'Price') : '–'), csv: (r) => r.price ?? '' },
+          { key: 'margin', label: 'Margin at menu price', align: 'r', sortValue: (r) => (r.price ? (r.price - r.cost) / r.price : null),
+            render: (r) => (r.price ? marginFmt((r.price - r.cost) / r.price) : '–') },
+          { key: 'linked', label: 'Products linked', align: 'r' },
+          { key: 'del', label: '', render: (r) => (r.custom ? <button className="btn small ghost" onClick={() => remove(r)} aria-label={`Delete ${r.name}`}>Delete</button> : null) },
+        ]} />
     </div>
   );
 }

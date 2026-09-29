@@ -68,3 +68,18 @@ export function payParts(r) {
 export function payRows(pp, total) {
   return PAY_SERIES.filter((sr) => pp[sr.key] > 0.5).map((sr) => [sr.label, `${money(pp[sr.key])} · ${pct(total ? pp[sr.key] / total : 0, 0)}`, sr.color]);
 }
+
+/** On/off switch for the expected gross profit line on the daily charts (needs costs; hidden when bars already show profit). */
+export function ProfitLineToggle({ ctx }) {
+  if (!ctx.model.hasCosts || ctx.basis === 'profit') return null;
+  const on = ctx.profitLineLive ?? ctx.filters.profitLine !== false;
+  return (
+    <label className="check-inline" title="Sales after discount minus the cost of goods, for items with a known cost">
+      <input type="checkbox" checked={on} onChange={(e) => ctx.setFilter({ profitLine: e.target.checked })} />
+      Show expected gross profit
+    </label>
+  );
+}
+export const showProfitLine = (ctx) => ctx.model.hasCosts && ctx.basis !== 'profit' && ctx.filters.profitLine !== false;
+/** Tooltip rows for the profit line. */
+export const profitRows = (r) => (r && r.costedNet ? [['Expected gross profit', money(r.profit), 'var(--series-7)'], ['Margin', pct(r.profit / r.costedNet)]] : []);

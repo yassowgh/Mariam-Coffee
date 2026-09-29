@@ -15,6 +15,7 @@
   --series-1-soft: #9ec5f4;
   --series-2: #eb6834;
   --series-3: #1baf7a;
+  --series-7: #4a3aa7;
   --good: #0ca30c;
   --good-text: #006300;
   --bad: #d03b3b;
@@ -50,6 +51,7 @@
     --series-1-soft: #184f95;
     --series-2: #d95926;
     --series-3: #199e70;
+    --series-7: #9085e9;
     --good-text: #4cc94c;
     --bad-text: #ee7a7a;
     --seq-0: #232321;
@@ -80,6 +82,7 @@
   --series-1-soft: #184f95;
   --series-2: #d95926;
   --series-3: #199e70;
+  --series-7: #9085e9;
   --good-text: #4cc94c;
   --bad-text: #ee7a7a;
   --seq-0: #232321;
@@ -321,3 +324,5 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .pill.mc-workhorse { background: color-mix(in srgb, var(--series-1) 15%, transparent); color: var(--text); }
 .pill.mc-puzzle { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); }
 .pill.mc-dog { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }
+.check-inline { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; font-size: 13px; cursor: pointer; }
+.check-inline input { width: 18px; height: 18px; }
