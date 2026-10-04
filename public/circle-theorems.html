@@ -1,0 +1,442 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="description" content="Interactive GCSE circle theorems: drag the points and watch the angles change.">
+<title>Circle Theorems Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a geometry bench. Rule list | drawing board on graph paper | live readout and exam wording */
+:root{
+  --bg:#E8EDF2; --paper:#FFFFFF; --ink:#18212F; --muted:#586477; --line:#C9D2DD; --grid:#E4EAF1;
+  --accent:#2C58D0; --accent-soft:#E3EAFB;
+  --a1:#C47500; --a2:#08857F; --a3:#C3337A; --a4:#6A4BD1; --good:#1D8A4A;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F141B; --paper:#171E28; --ink:#E4EAF2; --muted:#98A4B6; --line:#2C3644; --grid:#1F2834;
+  --accent:#7C9CF5; --accent-soft:#212C45;
+  --a1:#F1AE3B; --a2:#36C6BE; --a3:#EE6EA8; --a4:#A48CF7; --good:#4FCB7F; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F141B; --paper:#171E28; --ink:#E4EAF2; --muted:#98A4B6; --line:#2C3644; --grid:#1F2834;
+  --accent:#7C9CF5; --accent-soft:#212C45;
+  --a1:#F1AE3B; --a2:#36C6BE; --a3:#EE6EA8; --a4:#A48CF7; --good:#4FCB7F; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--body);margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:16px;padding-block:20px 48px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;margin-bottom:18px}
+h1{font:800 clamp(28px,4vw,40px)/1.05 var(--display);letter-spacing:-.02em;margin:0;text-wrap:balance}
+h1 span{color:var(--accent)}
+header p{margin:0;color:var(--muted);max-width:60ch}
+
+.lab{display:grid;grid-template-columns:250px minmax(0,1fr) 330px;gap:20px;align-items:start}
+@media (max-width:1080px){.lab{grid-template-columns:minmax(0,1fr) 310px}.nav{grid-column:1/-1}}
+@media (max-width:740px){.lab{grid-template-columns:minmax(0,1fr)}}
+
+.nav{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+@media (max-width:1080px){.nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
+.nav button{all:unset;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;width:100%;min-height:48px;padding:8px 12px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+.nav button .n{font:600 15px/1.25 var(--display)}
+.nav button .s{font-size:13px;color:var(--muted);line-height:1.3}
+.nav button:hover{background:var(--paper)}
+.nav button[aria-current="true"]{background:var(--paper);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.nav button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+.stage{min-width:0;display:flex;flex-direction:column;gap:10px}
+.board{display:block;width:100%;max-width:640px;height:auto;aspect-ratio:1;margin:0 auto;background:var(--paper);border:1px solid var(--line);border-radius:14px;touch-action:none;user-select:none;-webkit-user-select:none}
+.tools{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center}
+.btn{font:700 14px var(--body);min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.hint{text-align:center;color:var(--muted);font-size:14px;margin:0}
+
+.info{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.info h2{font:800 22px/1.15 var(--display);margin:0;text-wrap:balance}
+.rule{margin:0;font-size:17px}
+.label{font:700 11px var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.rows{display:grid;gap:6px}
+.row{display:grid;grid-template-columns:14px 1fr auto;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;background:var(--bg)}
+.sw{width:14px;height:14px;border-radius:4px;background:var(--c)}
+.row .k{font-weight:700}
+.row .v{font:700 16px var(--mono);font-variant-numeric:tabular-nums;color:var(--c)}
+.check{margin:0;font:700 15px/1.4 var(--mono);color:var(--good)}
+.check.hidden{color:var(--muted);font-family:var(--body);font-weight:400}
+.note{margin:0;font-size:14px;padding:8px 10px;border-radius:8px;background:var(--accent-soft)}
+.reason{margin:0;padding:10px 12px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;font-weight:700}
+.tip{margin:0;font-size:15px;color:var(--ink)}
+
+/* SVG */
+.circ{fill:none;stroke:var(--ink);stroke-width:2.5}
+.l{stroke:var(--ink);stroke-width:2;stroke-linecap:round;fill:none}
+.l.dash{stroke:var(--muted);stroke-dasharray:6 6}
+.l.thick{stroke-width:3}
+.l.tan{stroke:var(--accent);stroke-width:2.5}
+.wedge{fill:var(--c);fill-opacity:.2;stroke:var(--c);stroke-width:2}
+.rt{fill:var(--c);fill-opacity:.2;stroke:var(--c);stroke-width:2}
+.hl{fill:none;stroke:var(--c);stroke-width:7;stroke-opacity:.45;stroke-linecap:round}
+.segfill{fill:var(--c);fill-opacity:.09;stroke:none}
+.quad{fill:var(--accent);fill-opacity:.06;stroke:none}
+.tick{stroke:var(--c);stroke-width:2.5;stroke-linecap:round}
+.val{font:700 14px var(--mono);fill:var(--c);text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:var(--paper);stroke-width:4px;stroke-linejoin:round}
+.pn{font:800 17px var(--display);fill:var(--ink);text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:var(--paper);stroke-width:4px;stroke-linejoin:round}
+.dot{fill:var(--ink)}
+.gridline{stroke:var(--grid);stroke-width:1}
+.h{cursor:grab;outline:none}
+.h .hit{fill:transparent}
+.h .vis{fill:var(--accent);stroke:var(--paper);stroke-width:3;transition:r .12s}
+.h.ext .vis{fill:var(--a3)}
+.h .ring{fill:none;stroke:none}
+.h:hover .vis,.h.on .vis{r:11}
+.h:focus-visible .ring{stroke:var(--accent);stroke-width:2.5;stroke-dasharray:4 3}
+.dragging,.dragging .h{cursor:grabbing}
+@media (prefers-reduced-motion:reduce){.h .vis{transition:none}}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <h1>Circle Theorems <span>Lab</span></h1>
+    <p>All eight GCSE circle theorems. Drag the points and watch the angles change while the rule stays true.</p>
+  </header>
+
+  <div class="lab">
+    <ul class="nav" id="nav" aria-label="Circle theorems"></ul>
+
+    <div class="stage">
+      <svg class="board" id="board" viewBox="0 0 440 440" role="img" aria-labelledby="boardTitle">
+        <title id="boardTitle">Interactive circle diagram</title>
+        <defs>
+          <pattern id="grid" width="22" height="22" patternUnits="userSpaceOnUse">
+            <path class="gridline" d="M22 0H0V22" fill="none"/>
+          </pattern>
+        </defs>
+        <rect width="440" height="440" fill="url(#grid)"/>
+        <g id="drawing"></g>
+        <g id="handles"></g>
+      </svg>
+      <div class="tools">
+        <button class="btn" id="reset" type="button">Reset</button>
+        <button class="btn" id="shuffle" type="button">Random position</button>
+        <button class="btn" id="hide" type="button" aria-pressed="false">Hide the answer</button>
+      </div>
+      <p class="hint">Drag the coloured points. Points on the circle stay on the circle. You can also tab to a point and use the arrow keys.</p>
+    </div>
+
+    <aside class="info" aria-live="polite">
+      <h2 id="tName"></h2>
+      <p class="rule" id="tRule"></p>
+      <div>
+        <p class="label">Live measurements</p>
+        <div class="rows" id="rows"></div>
+      </div>
+      <p class="check" id="check"></p>
+      <p class="note" id="note" hidden></p>
+      <div>
+        <p class="label">Reason to write in the exam</p>
+        <p class="reason" id="tReason"></p>
+      </div>
+      <div>
+        <p class="label">Spot it</p>
+        <p class="tip" id="tTip"></p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+const O={x:220,y:220}, R=130, CM=26, SNAP=2, GAP=6, BOX=[16,424];
+const norm=d=>((d%360)+360)%360, rad=d=>d*Math.PI/180, todeg=r=>r*180/Math.PI;
+const onC=t=>({x:O.x+R*Math.cos(rad(t)),y:O.y+R*Math.sin(rad(t))});
+const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y}), add=(a,b)=>({x:a.x+b.x,y:a.y+b.y}), mul=(a,k)=>({x:a.x*k,y:a.y*k});
+const len=v=>Math.hypot(v.x,v.y), unit=v=>{const l=len(v)||1;return{x:v.x/l,y:v.y/l}};
+const cross=(a,b)=>a.x*b.y-a.y*b.x, dir=v=>Math.atan2(v.y,v.x);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+function sweep(a,b){let d=b-a;while(d<=-Math.PI)d+=2*Math.PI;while(d>Math.PI)d-=2*Math.PI;return d}
+function angleAt(V,A,B){const s=dir(sub(A,V)),sw=sweep(s,dir(sub(B,V)));return{s,sw,v:Math.abs(todeg(sw))}}
+const deg=v=>`${Math.round(v)}°`, cm=px=>`${(px/CM).toFixed(1)} cm`;
+const f=n=>n.toFixed(2);
+
+let out=[];
+const seg=(P,Q,c='l')=>out.push(`<line class="${c}" x1="${f(P.x)}" y1="${f(P.y)}" x2="${f(Q.x)}" y2="${f(Q.y)}"/>`);
+const text=(P,t,c,cls='val')=>out.push(`<text class="${cls}" style="--c:var(${c})" x="${f(P.x)}" y="${f(P.y)}">${t}</text>`);
+function wedge(V,s,sw,c,t,r){
+  r=r||(Math.abs(sw)<0.75?42:30);
+  const a={x:V.x+r*Math.cos(s),y:V.y+r*Math.sin(s)}, b={x:V.x+r*Math.cos(s+sw),y:V.y+r*Math.sin(s+sw)};
+  out.push(`<path class="wedge" style="--c:var(${c})" d="M${f(V.x)} ${f(V.y)}L${f(a.x)} ${f(a.y)}A${r} ${r} 0 ${Math.abs(sw)>Math.PI?1:0} ${sw>0?1:0} ${f(b.x)} ${f(b.y)}Z"/>`);
+  const m=s+sw/2, lr=r+19;
+  text({x:V.x+lr*Math.cos(m),y:V.y+lr*Math.sin(m)},t,c);
+}
+function right(V,u1,u2,c,t){
+  const s=14, a=add(V,mul(u1,s)), b=add(V,add(mul(u1,s),mul(u2,s))), d=add(V,mul(u2,s));
+  out.push(`<path class="rt" style="--c:var(${c})" d="M${f(V.x)} ${f(V.y)}L${f(a.x)} ${f(a.y)}L${f(b.x)} ${f(b.y)}L${f(d.x)} ${f(d.y)}Z"/>`);
+  if(t) text(add(V,mul(unit(add(u1,u2)),36)),t,c);
+}
+function ticks(P,Q,n,c){
+  const m=mul(add(P,Q),.5), d=unit(sub(Q,P)), nr={x:-d.y,y:d.x};
+  for(let i=0;i<n;i++){const o=add(m,mul(d,(i-(n-1)/2)*6));
+    const a=add(o,mul(nr,7)), b=add(o,mul(nr,-7));
+    out.push(`<line class="tick" style="--c:var(${c})" x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}"/>`)}
+}
+const arcPath=(t0,span)=>{const a=onC(t0),b=onC(t0+span);return `M${f(a.x)} ${f(a.y)}A${R} ${R} 0 ${span>180?1:0} 1 ${f(b.x)} ${f(b.y)}`};
+const arcHL=(t0,span,c)=>out.push(`<path class="hl" style="--c:var(${c})" d="${arcPath(t0,span)}"/>`);
+const segFill=(t0,span,c)=>out.push(`<path class="segfill" style="--c:var(${c})" d="${arcPath(t0,span)}Z"/>`);
+function name(n,P,dot){
+  if(dot) out.push(`<circle class="dot" cx="${f(P.x)}" cy="${f(P.y)}" r="4.5"/>`);
+  const v=sub(P,O), q=len(v)<4?add(P,{x:-14,y:-14}):add(P,mul(unit(v),22));
+  text(q,n,'--ink','pn');
+}
+// The arc from A to B (increasing angle) that does NOT contain C: [start, span]
+function arcAway(tA,tB,tC){const s=norm(tB-tA);return norm(tC-tA)<s?[tB,360-s]:[tA,s]}
+function arcWith(tA,tB,tC){const s=norm(tB-tA);return norm(tC-tA)<s?[tA,s]:[tB,360-s]}
+const tangentDir=t=>({x:-Math.sin(rad(t)),y:Math.cos(rad(t))});
+
+const TH=[
+{id:'centre',name:'Angle at the centre',short:'Centre angle = 2 × circumference angle',
+ rule:'The angle at the centre is twice the angle at the circumference when both stand on the same arc.',
+ reason:'The angle at the centre is twice the angle at the circumference.',
+ tip:'Look for an arrowhead shape: two radii and two chords meeting the same two points. Drag C onto the small arc and the centre angle becomes reflex. The rule still works.',
+ init:{A:150,B:30,C:270}, circle:['A','B','C'],
+ draw(p,h){
+  const A=onC(p.A),B=onC(p.B),C=onC(p.C), [st,span]=arcAway(p.A,p.B,p.C);
+  arcHL(st,span,'--a4');
+  seg(O,A);seg(O,B);seg(C,A);seg(C,B);
+  const c=angleAt(C,A,B);
+  wedge(O,rad(st),rad(span),'--a2',h?'?':deg(span),span>180?24:30);
+  wedge(C,c.s,c.sw,'--a1',deg(c.v));
+  name('A',A);name('B',B);name('C',C);
+  return{rows:[{c:'--a1',k:'∠ACB',v:deg(c.v)},{c:'--a2',k:span>180?'Reflex ∠AOB':'∠AOB',v:deg(span),ans:1},{c:'--a4',k:'Arc AB',v:deg(span)}],
+   check:`${deg(span)} = 2 × ${deg(c.v)}`,
+   note:span>180?'C is on the minor arc, so the angle at the centre is reflex (more than 180°).':''};
+ }},
+{id:'semicircle',name:'Angle in a semicircle',short:'Angle on a diameter = 90°',
+ rule:'Any angle at the circumference that stands on a diameter is a right angle.',
+ reason:'The angle in a semicircle is 90°.',
+ tip:'Look for a triangle with one side going straight through the centre. The right angle is always opposite the diameter. This is the centre rule with a 180° angle at the centre.',
+ init:{A:180,C:240}, circle:['A','C'], ts:p=>[p.A,norm(p.A+180),p.C],
+ draw(p,h){
+  const A=onC(p.A),B=onC(p.A+180),C=onC(p.C);
+  seg(A,B,'l thick');seg(C,A);seg(C,B);
+  const a=angleAt(A,C,B), b=angleAt(B,A,C);
+  wedge(A,a.s,a.sw,'--a2',deg(a.v));wedge(B,b.s,b.sw,'--a4',deg(b.v));
+  right(C,unit(sub(A,C)),unit(sub(B,C)),'--a1',h?'?':'90°');
+  name('A',A);name('B',B,true);name('C',C);
+  return{rows:[{c:'--a1',k:'∠ACB',v:'90°',ans:1},{c:'--a2',k:'∠CAB',v:deg(a.v)},{c:'--a4',k:'∠ABC',v:deg(b.v)}],
+   check:`${deg(a.v)} + ${deg(b.v)} + 90° = 180°`};
+ }},
+{id:'segment',name:'Angles in the same segment',short:'Angles on the same chord are equal',
+ rule:'Angles at the circumference that stand on the same chord, on the same side of it, are equal.',
+ reason:'Angles in the same segment are equal.',
+ tip:'Look for a bow-tie shape. Both angles must stand on the same chord and be on the same side of it. Drag D across chord AB to see what happens.',
+ init:{A:160,B:20,C:245,D:300}, circle:['A','B','C','D'],
+ draw(p,h){
+  const A=onC(p.A),B=onC(p.B),C=onC(p.C),D=onC(p.D);
+  const [st,sp]=arcWith(p.A,p.B,p.C); segFill(st,sp,'--a1');
+  seg(A,B,'l dash');seg(C,A);seg(C,B);seg(D,A);seg(D,B);
+  const c=angleAt(C,A,B), d=angleAt(D,A,B);
+  wedge(C,c.s,c.sw,'--a1',deg(c.v));wedge(D,d.s,d.sw,'--a2',h?'?':deg(d.v));
+  name('A',A);name('B',B);name('C',C);name('D',D);
+  const span=norm(p.B-p.A), same=(norm(p.C-p.A)<span)===(norm(p.D-p.A)<span);
+  return{rows:[{c:'--a1',k:'∠ACB',v:deg(c.v)},{c:'--a2',k:'∠ADB',v:deg(d.v),ans:1}],
+   check:same?`${deg(c.v)} = ${deg(d.v)}`:`${deg(c.v)} + ${deg(d.v)} = 180°`,
+   note:same?'':'C and D are now on opposite sides of AB, so they are not in the same segment. ACBD is a cyclic quadrilateral, so these angles add up to 180° instead.'};
+ }},
+{id:'cyclic',name:'Cyclic quadrilateral',short:'Opposite angles add to 180°',
+ rule:'In a quadrilateral with all four corners on the circle, opposite angles add up to 180°.',
+ reason:'Opposite angles in a cyclic quadrilateral add up to 180°.',
+ tip:'All four corners must touch the circle. If one corner is the centre O, it is not cyclic. Related fact: an exterior angle equals the interior opposite angle.',
+ init:{A:200,B:280,C:350,D:110}, circle:['A','B','C','D'],
+ valid:p=>Math.abs(norm(p.B-p.A)+norm(p.C-p.B)+norm(p.D-p.C)+norm(p.A-p.D)-360)<.5,
+ draw(p,h){
+  const A=onC(p.A),B=onC(p.B),C=onC(p.C),D=onC(p.D);
+  out.push(`<path class="quad" d="M${f(A.x)} ${f(A.y)}L${f(B.x)} ${f(B.y)}L${f(C.x)} ${f(C.y)}L${f(D.x)} ${f(D.y)}Z"/>`);
+  seg(A,B);seg(B,C);seg(C,D);seg(D,A);
+  const a=angleAt(A,D,B),b=angleAt(B,A,C),c=angleAt(C,B,D),d=angleAt(D,C,A);
+  wedge(A,a.s,a.sw,'--a1',deg(a.v));wedge(C,c.s,c.sw,'--a3',h?'?':deg(c.v));
+  wedge(B,b.s,b.sw,'--a2',deg(b.v));wedge(D,d.s,d.sw,'--a4',h?'?':deg(d.v));
+  name('A',A);name('B',B);name('C',C);name('D',D);
+  return{rows:[{c:'--a1',k:'∠A',v:deg(a.v)},{c:'--a3',k:'∠C',v:deg(c.v),ans:1},{c:'--a2',k:'∠B',v:deg(b.v)},{c:'--a4',k:'∠D',v:deg(d.v),ans:1}],
+   check:`A + C = ${deg(a.v)} + ${deg(c.v)} = 180°<br>B + D = ${deg(b.v)} + ${deg(d.v)} = 180°`};
+ }},
+{id:'tangent',name:'Tangent and radius',short:'Tangent meets radius at 90°',
+ rule:'A tangent touches the circle at one point and meets the radius at that point at 90°.',
+ reason:'A tangent to a circle is perpendicular to the radius at the point of contact.',
+ tip:'Often paired with Pythagoras (the radius, tangent and line to the centre make a right-angled triangle) or with angles in a triangle adding to 180°.',
+ init:{A:300}, circle:['A'],
+ draw(p,h){
+  const A=onC(p.A), u=tangentDir(p.A);
+  seg(add(A,mul(u,-300)),add(A,mul(u,300)),'l tan');
+  seg(O,A,'l thick');
+  right(A,unit(sub(O,A)),u,'--a1',h?'?':'90°');
+  const T=add(A,mul(u,120)); out.push(`<circle class="dot" cx="${f(T.x)}" cy="${f(T.y)}" r="4.5"/>`);
+  text(add(T,mul(unit(sub(A,O)),20)),'T','--ink','pn');
+  name('A',A);
+  return{rows:[{c:'--a1',k:'∠OAT',v:'90°',ans:1},{c:'--a4',k:'Radius OA',v:cm(R)}],
+   check:'OA ⟂ AT'};
+ }},
+{id:'tangents',name:'Two tangents',short:'Tangents from a point are equal',
+ rule:'The two tangents drawn from a point outside the circle are equal in length.',
+ reason:'Tangents from an external point are equal in length.',
+ tip:'The shape OAPB is a kite. OP is its line of symmetry, so OP also cuts angle APB in half. Each tangent meets its radius at 90°.',
+ init:{P:{x:392,y:86}}, ext:['P'], circle:[],
+ draw(p,h){
+  const P=p.P, v=sub(P,O), d=len(v), phi=dir(v), al=Math.acos(R/d);
+  const A={x:O.x+R*Math.cos(phi+al),y:O.y+R*Math.sin(phi+al)}, B={x:O.x+R*Math.cos(phi-al),y:O.y+R*Math.sin(phi-al)};
+  out.push(`<path class="quad" d="M${f(O.x)} ${f(O.y)}L${f(A.x)} ${f(A.y)}L${f(P.x)} ${f(P.y)}L${f(B.x)} ${f(B.y)}Z"/>`);
+  seg(O,P,'l dash');seg(O,A);seg(O,B);
+  seg(add(P,mul(unit(sub(A,P)),len(sub(A,P))+60)),P,'l tan');seg(add(P,mul(unit(sub(B,P)),len(sub(B,P))+60)),P,'l tan');
+  right(A,unit(sub(O,A)),unit(sub(P,A)),'--a1');right(B,unit(sub(O,B)),unit(sub(P,B)),'--a1');
+  ticks(P,A,2,'--a4');ticks(P,B,2,'--a4');
+  const x=angleAt(P,A,O), y=angleAt(P,O,B);
+  wedge(P,x.s,x.sw,'--a2',deg(x.v),46);wedge(P,y.s,y.sw,'--a3',h?'?':deg(y.v),46);
+  const L=len(sub(A,P));
+  name('A',A,true);name('B',B,true);name('P',P);
+  return{rows:[{c:'--a4',k:'PA',v:cm(L)},{c:'--a4',k:'PB',v:cm(L),ans:1},{c:'--a2',k:'∠APO',v:deg(x.v)},{c:'--a3',k:'∠BPO',v:deg(y.v),ans:1},{c:'--a1',k:'∠OAP = ∠OBP',v:'90°'}],
+   check:`PA = PB = ${cm(L)}`};
+ }},
+{id:'chord',name:'Chord bisector',short:'Perpendicular from centre halves a chord',
+ rule:'The perpendicular from the centre to a chord cuts the chord exactly in half.',
+ reason:'The perpendicular from the centre to a chord bisects the chord.',
+ tip:'It works both ways: the line from the centre to the midpoint of a chord meets it at 90°. Use it with Pythagoras to find chord lengths or the distance from the centre.',
+ init:{A:200,B:330}, circle:['A','B'],
+ draw(p,h){
+  const A=onC(p.A),B=onC(p.B),M=mul(add(A,B),.5), diam=len(sub(M,O))<3;
+  seg(O,A,'l dash');seg(O,B,'l dash');seg(A,B,'l thick');
+  ticks(A,M,1,'--a2');ticks(M,B,1,'--a2');
+  if(!diam){seg(O,M);right(M,unit(sub(O,M)),unit(sub(A,M)),'--a1',h?'?':'90°')}
+  const L=len(sub(A,M));
+  name('A',A);name('B',B);if(!diam)name('M',M,true);
+  return{rows:[{c:'--a2',k:'AM',v:cm(L)},{c:'--a2',k:'MB',v:cm(L),ans:1},{c:'--a1',k:'∠OMA',v:diam?'—':'90°',ans:1},{c:'--a4',k:'Distance OM',v:cm(len(sub(M,O)))}],
+   check:`AM = MB = ${cm(L)}`,
+   note:diam?'AB is now a diameter, so its midpoint is the centre O.':''};
+ }},
+{id:'alternate',name:'Alternate segment',short:'Tangent–chord angle = opposite angle',
+ rule:'The angle between a tangent and a chord equals the angle in the alternate segment (the segment on the other side of the chord).',
+ reason:'Alternate segment theorem.',
+ tip:'The hardest one to spot. Find the tangent, then the chord from the point of contact. The matching angle sits in the triangle on the other side of that chord.',
+ init:{A:90,B:330,C:200}, circle:['A','B','C'],
+ draw(p,h){
+  const A=onC(p.A),B=onC(p.B),C=onC(p.C), u=tangentDir(p.A), v=sub(B,A), w=sub(C,A);
+  const d=Math.sign(cross(v,u))!==Math.sign(cross(v,w))?u:mul(u,-1);
+  const [st,sp]=arcWith(p.A,p.B,p.C); segFill(st,sp,'--a2');
+  seg(add(A,mul(d,-300)),add(A,mul(d,300)),'l tan');
+  seg(A,B,'l thick');seg(A,C);seg(B,C);
+  const tc={s:dir(d)}; tc.sw=sweep(tc.s,dir(v)); const tv=Math.abs(todeg(tc.sw));
+  const c=angleAt(C,A,B);
+  wedge(A,tc.s,tc.sw,'--a1',deg(tv));wedge(C,c.s,c.sw,'--a2',h?'?':deg(c.v));
+  const T=add(A,mul(d,120)); out.push(`<circle class="dot" cx="${f(T.x)}" cy="${f(T.y)}" r="4.5"/>`);
+  text(add(T,mul(unit(sub(A,O)),20)),'T','--ink','pn');
+  name('A',A);name('B',B);name('C',C);
+  return{rows:[{c:'--a1',k:'∠TAB',v:deg(tv)},{c:'--a2',k:'∠ACB',v:deg(c.v),ans:1}],
+   check:`${deg(tv)} = ${deg(c.v)}`};
+ }}
+];
+
+const $=id=>document.getElementById(id);
+const board=$('board'), drawing=$('drawing'), handles=$('handles');
+const clone=o=>JSON.parse(JSON.stringify(o));
+const state=TH.map(t=>clone(t.init));
+let cur=0, hide=false, active=null;
+
+function valid(th,p){
+  const ts=th.ts?th.ts(p):th.circle.map(n=>p[n]);
+  for(let i=0;i<ts.length;i++)for(let j=i+1;j<ts.length;j++){const g=norm(ts[i]-ts[j]);if(Math.min(g,360-g)<GAP)return false}
+  for(const n of th.ext||[]){const q=p[n];if(len(sub(q,O))<R+16||q.x<BOX[0]||q.x>BOX[1]||q.y<BOX[0]||q.y>BOX[1])return false}
+  return th.valid?th.valid(p):true;
+}
+
+function buildNav(){
+  $('nav').innerHTML=TH.map((t,i)=>`<li><button type="button" data-i="${i}"><span class="n">${t.name}</span><span class="s">${t.short}</span></button></li>`).join('');
+  $('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)select(+b.dataset.i)});
+}
+function buildHandles(){
+  const th=TH[cur];
+  handles.innerHTML=[...th.circle.map(n=>[n,0]),...(th.ext||[]).map(n=>[n,1])].map(([n,x])=>
+    `<g class="h${x?' ext':''}" data-n="${n}" tabindex="0" role="slider" aria-label="Point ${n}. Use arrow keys to move."><circle class="hit" r="24"/><circle class="ring" r="16"/><circle class="vis" r="9"/></g>`).join('');
+}
+function pos(th,p,n){return th.circle.includes(n)?onC(p[n]):p[n]}
+
+function render(){
+  const th=TH[cur], p=state[cur]; out=[];
+  out.push(`<circle class="circ" cx="${O.x}" cy="${O.y}" r="${R}"/>`);
+  const res=th.draw(p,hide);
+  out.push(`<circle class="dot" cx="${O.x}" cy="${O.y}" r="4.5"/>`);
+  text({x:O.x-14,y:O.y+16},'O','--ink','pn');
+  drawing.innerHTML=out.join('');
+  handles.querySelectorAll('.h').forEach(g=>{const q=pos(th,p,g.dataset.n);g.setAttribute('transform',`translate(${f(q.x)} ${f(q.y)})`);
+    g.setAttribute('aria-valuetext',th.circle.includes(g.dataset.n)?`${p[g.dataset.n]} degrees around the circle`:`${Math.round(q.x)}, ${Math.round(q.y)}`)});
+  $('rows').innerHTML=res.rows.map(r=>`<div class="row" style="--c:var(${r.c})"><span class="sw"></span><span class="k">${r.k}</span><span class="v">${hide&&r.ans?'?':r.v}</span></div>`).join('');
+  const ck=$('check');
+  if(hide){ck.className='check hidden';ck.textContent='Work out each ? using the rule, then press Show the answer.'}
+  else{ck.className='check';ck.innerHTML='✓ '+res.check}
+  $('note').hidden=!res.note; $('note').textContent=res.note||'';
+}
+
+function select(i){
+  cur=i;
+  document.querySelectorAll('#nav button').forEach((b,j)=>b.setAttribute('aria-current',j===i?'true':'false'));
+  const th=TH[i];
+  $('tName').textContent=th.name;$('tRule').textContent=th.rule;$('tReason').textContent=th.reason;$('tTip').textContent=th.tip;
+  try{history.replaceState(null,'','#'+th.id)}catch(e){}
+  buildHandles();render();
+}
+
+function tryUpdate(np){if(valid(TH[cur],np)){state[cur]=np;render();return true}return false}
+function moveTo(n,pt){
+  const th=TH[cur], p=state[cur];
+  if(th.circle.includes(n)){
+    const t=norm(Math.round(todeg(Math.atan2(pt.y-O.y,pt.x-O.x))/SNAP)*SNAP);
+    if(t!==p[n])tryUpdate({...p,[n]:t});
+  }else{
+    let v=sub(pt,O); if(len(v)<R+16)v=mul(unit(v),R+16);
+    const q=add(O,v); q.x=clamp(q.x,BOX[0],BOX[1]); q.y=clamp(q.y,BOX[0],BOX[1]);
+    tryUpdate({...p,[n]:q});
+  }
+}
+function toSvg(e){const m=board.getScreenCTM().inverse();const q=new DOMPoint(e.clientX,e.clientY).matrixTransform(m);return{x:q.x,y:q.y}}
+
+handles.addEventListener('pointerdown',e=>{
+  const g=e.target.closest('.h'); if(!g)return;
+  e.preventDefault(); active=g.dataset.n; g.classList.add('on'); g.focus({preventScroll:true});
+  board.classList.add('dragging');
+  try{board.setPointerCapture(e.pointerId)}catch(_){}
+});
+board.addEventListener('pointermove',e=>{if(active)moveTo(active,toSvg(e))});
+const end=()=>{if(!active)return;handles.querySelectorAll('.h.on').forEach(g=>g.classList.remove('on'));active=null;board.classList.remove('dragging')};
+board.addEventListener('pointerup',end);board.addEventListener('pointercancel',end);
+
+handles.addEventListener('keydown',e=>{
+  const g=e.target.closest('.h'); if(!g)return;
+  const n=g.dataset.n, th=TH[cur], p=state[cur];
+  const k={ArrowRight:[1,0],ArrowLeft:[-1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key]; if(!k)return;
+  e.preventDefault();
+  if(th.circle.includes(n)){
+    const step=(k[0]||-k[1])*SNAP*(e.shiftKey?5:1);
+    tryUpdate({...p,[n]:norm(p[n]+step)});
+  }else{
+    const s=e.shiftKey?30:6, q={x:p[n].x+k[0]*s,y:p[n].y+k[1]*s};
+    tryUpdate({...p,[n]:q});
+  }
+});
+
+$('reset').addEventListener('click',()=>{state[cur]=clone(TH[cur].init);render()});
+$('shuffle').addEventListener('click',()=>{
+  const th=TH[cur];
+  for(let i=0;i<500;i++){
+    const np={};
+    th.circle.forEach(n=>np[n]=Math.floor(Math.random()*180)*2);
+    (th.ext||[]).forEach(n=>{const a=Math.random()*Math.PI*2,d=R+30+Math.random()*120;np[n]={x:O.x+d*Math.cos(a),y:O.y+d*Math.sin(a)}});
+    if(th.id==='cyclic'){const ts=th.circle.map(n=>np[n]).sort((a,b)=>a-b);th.circle.forEach((n,j)=>np[n]=ts[j])}
+    if(valid(th,np)){state[cur]=np;render();return}
+  }
+});
+$('hide').addEventListener('click',e=>{hide=!hide;e.currentTarget.setAttribute('aria-pressed',hide);e.currentTarget.textContent=hide?'Show the answer':'Hide the answer';render()});
+
+buildNav();
+const h=(location.hash||'').slice(1), start=Math.max(0,TH.findIndex(t=>t.id===h));
+select(start);
+})();
+</script>
+</body></html>
