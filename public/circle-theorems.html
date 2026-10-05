@@ -98,7 +98,7 @@ header p{margin:0;color:var(--muted);max-width:60ch}
 <div class="wrap">
   <header>
     <h1>Circle Theorems <span>Lab</span></h1>
-    <p>All eight GCSE circle theorems. Drag the points and watch the angles change while the rule stays true.</p>
+    <p>Six key GCSE circle theorems. Drag the points and watch the angles change while the rule stays true.</p>
   </header>
 
   <div class="lab">
@@ -275,42 +275,6 @@ const TH=[
   name('A',A);
   return{rows:[{c:'--a1',k:'∠OAT',v:'90°',ans:1},{c:'--a4',k:'Radius OA',v:cm(R)}],
    check:'OA ⟂ AT'};
- }},
-{id:'tangents',name:'Two tangents',short:'Tangents from a point are equal',
- rule:'The two tangents drawn from a point outside the circle are equal in length.',
- reason:'Tangents from an external point are equal in length.',
- tip:'The shape OAPB is a kite. OP is its line of symmetry, so OP also cuts angle APB in half. Each tangent meets its radius at 90°.',
- init:{P:{x:392,y:86}}, ext:['P'], circle:[],
- draw(p,h){
-  const P=p.P, v=sub(P,O), d=len(v), phi=dir(v), al=Math.acos(R/d);
-  const A={x:O.x+R*Math.cos(phi+al),y:O.y+R*Math.sin(phi+al)}, B={x:O.x+R*Math.cos(phi-al),y:O.y+R*Math.sin(phi-al)};
-  out.push(`<path class="quad" d="M${f(O.x)} ${f(O.y)}L${f(A.x)} ${f(A.y)}L${f(P.x)} ${f(P.y)}L${f(B.x)} ${f(B.y)}Z"/>`);
-  seg(O,P,'l dash');seg(O,A);seg(O,B);
-  seg(add(P,mul(unit(sub(A,P)),len(sub(A,P))+60)),P,'l tan');seg(add(P,mul(unit(sub(B,P)),len(sub(B,P))+60)),P,'l tan');
-  right(A,unit(sub(O,A)),unit(sub(P,A)),'--a1');right(B,unit(sub(O,B)),unit(sub(P,B)),'--a1');
-  ticks(P,A,2,'--a4');ticks(P,B,2,'--a4');
-  const x=angleAt(P,A,O), y=angleAt(P,O,B);
-  wedge(P,x.s,x.sw,'--a2',deg(x.v),46);wedge(P,y.s,y.sw,'--a3',h?'?':deg(y.v),46);
-  const L=len(sub(A,P));
-  name('A',A,true);name('B',B,true);name('P',P);
-  return{rows:[{c:'--a4',k:'PA',v:cm(L)},{c:'--a4',k:'PB',v:cm(L),ans:1},{c:'--a2',k:'∠APO',v:deg(x.v)},{c:'--a3',k:'∠BPO',v:deg(y.v),ans:1},{c:'--a1',k:'∠OAP = ∠OBP',v:'90°'}],
-   check:`PA = PB = ${cm(L)}`};
- }},
-{id:'chord',name:'Chord bisector',short:'Perpendicular from centre halves a chord',
- rule:'The perpendicular from the centre to a chord cuts the chord exactly in half.',
- reason:'The perpendicular from the centre to a chord bisects the chord.',
- tip:'It works both ways: the line from the centre to the midpoint of a chord meets it at 90°. Use it with Pythagoras to find chord lengths or the distance from the centre.',
- init:{A:200,B:330}, circle:['A','B'],
- draw(p,h){
-  const A=onC(p.A),B=onC(p.B),M=mul(add(A,B),.5), diam=len(sub(M,O))<3;
-  seg(O,A,'l dash');seg(O,B,'l dash');seg(A,B,'l thick');
-  ticks(A,M,1,'--a2');ticks(M,B,1,'--a2');
-  if(!diam){seg(O,M);right(M,unit(sub(O,M)),unit(sub(A,M)),'--a1',h?'?':'90°')}
-  const L=len(sub(A,M));
-  name('A',A);name('B',B);if(!diam)name('M',M,true);
-  return{rows:[{c:'--a2',k:'AM',v:cm(L)},{c:'--a2',k:'MB',v:cm(L),ans:1},{c:'--a1',k:'∠OMA',v:diam?'—':'90°',ans:1},{c:'--a4',k:'Distance OM',v:cm(len(sub(M,O)))}],
-   check:`AM = MB = ${cm(L)}`,
-   note:diam?'AB is now a diameter, so its midpoint is the centre O.':''};
  }},
 {id:'alternate',name:'Alternate segment',short:'Tangent–chord angle = opposite angle',
  rule:'The angle between a tangent and a chord equals the angle in the alternate segment (the segment on the other side of the chord).',
