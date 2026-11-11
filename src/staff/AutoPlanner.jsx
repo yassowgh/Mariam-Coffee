@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, api, hoursFmt, shiftHours } from '../lib/api.js';
 import { DAY_NAMES, DAY_SHORT, DEFAULT_SETTINGS, buildSchedule, describeRule, fromSlot, hoursFromDemand } from '../lib/autoSchedule.js';
 import { loadSaved } from '../lib/remote.js';
+import { PARSER_EXAMPLES, parseConditions } from '../lib/ruleParser.js';
 import { collectTables } from '../lib/archive.js';
 import { buildModel } from '../lib/model.js';
 import { computeDemand } from '../lib/demand.js';
@@ -68,15 +69,26 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
 
   const hours = settings.hours || (demand ? hoursFromDemand(demand) : null);
 
+  // 1) the built-in reader (free, instant); 2) only the sentences it could not read go to the AI on the server
   async function readText() {
     setMsg(null);
-    setBusy('Reading your conditions…');
-    try {
-      const r = await api('plan-parse', { method: 'POST', body: { text, week, hours } });
-      setRules(r.rules);
-      setUnclear(r.unclear);
-      setMsg({ ok: true, text: `Understood ${r.rules.length} condition${r.rules.length === 1 ? '' : 's'}. Check them below.` });
-    } catch (e) { setMsg({ ok: false, text: e.message }); } finally { setBusy(''); }
+    const local = parseConditions(text, people);
+    let found = local.rules, left = local.unclear, aiNote = '';
+    if (left.length) {
+      setBusy('Asking the AI about ' + left.length + ' sentence' + (left.length === 1 ? '' : 's') + '…');
+      try {
+        const sentencesLeft = left.map((u) => u.slice(0, u.lastIndexOf(': ')));
+        const r = await api('plan-parse', { method: 'POST', body: { text: sentencesLeft.join('\n'), week, hours } });
+        found = [...found, ...r.rules];
+        left = r.unclear;
+        if (r.rules.length) aiNote = ` ${r.rules.length} read by ${r.by}: please check those.`;
+      } catch (e) {
+        aiNote = ` (${e.message})`;
+      } finally { setBusy(''); }
+    }
+    setRules(found);
+    setUnclear(left);
+    setMsg({ ok: !left.length, text: `Understood ${found.length} condition${found.length === 1 ? '' : 's'}.${aiNote}${left.length ? ' Some sentences were not understood (see below).' : ''}` });
   }
   function create() {
     if (!demand) return;
@@ -115,6 +127,12 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
 
       <label className="field"><span>Conditions for this week{copied ? ` (copied from the week of ${longDate(copied)})` : ''}</span>
         <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={EXAMPLE} /></label>
+      <details className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>
+        <summary style={{ cursor: 'pointer' }}>How to write conditions</summary>
+        <p style={{ margin: '4px 0' }}>One condition per line. Use the barista’s name, the day and the time. Times without am/pm: 7–11 = morning, 1–6 = afternoon; write 01:00 or 1am for after midnight. Examples:</p>
+        <ul style={{ margin: 0, paddingLeft: 18 }}>{PARSER_EXAMPLES.map((x) => <li key={x}>{x}</li>)}</ul>
+        <p style={{ margin: '4px 0 0' }}>Sentences the website cannot read are passed to an AI; the conditions it reads are marked “AI”.</p>
+      </details>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
         <button className="btn" onClick={readText} disabled={!!busy || !text.trim()}>{busy || 'Read conditions'}</button>
         <AddRule people={people} onAdd={(r) => setRules([...rules, r])} />
@@ -131,7 +149,7 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
         {rules.length ? (
           <ul className="rule-list">
             {rules.map((r, i) => (
-              <li key={i}><span>{describeRule(r, people)}</span>{r.text && <small className="faint">“{r.text}”</small>}
+              <li key={i}><span>{describeRule(r, people)}{r.source && r.source !== 'built-in' && <span className="pill warn" style={{ marginLeft: 6 }} title="Read by AI: check it is right">AI</span>}</span>{r.text && <small className="faint">“{r.text}”</small>}
                 <button className="btn small ghost" onClick={() => setRules(rules.filter((_, j) => j !== i))} aria-label="Remove this condition">✕</button></li>
             ))}
           </ul>

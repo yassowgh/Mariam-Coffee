@@ -2,7 +2,8 @@
 //   GET/PUT /api/demand            sales pattern (average orders per weekday and hour), saved by the owner's browser
 //   GET/PUT /api/plan-settings     settings for the automatic schedule (orders per barista per hour, overlap…)
 //   GET/PUT /api/plan-rules?week=  the conditions written for one week
-//   POST    /api/plan-parse        turns written conditions into rules with Claude (needs ANTHROPIC_API_KEY)
+//   POST    /api/plan-parse        sentences the built-in reader could not read -> rules, with Claude
+//                                  (if ANTHROPIC_API_KEY is set) or Cloudflare Workers AI (binding AI, free allowance)
 import Anthropic from '@anthropic-ai/sdk';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -97,7 +98,8 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
     return json({ ok: true });
   }
   if (head === 'plan-parse' && request.method === 'POST') {
-    if (!env.ANTHROPIC_API_KEY) fail(501, 'Reading written conditions needs an Anthropic API key on the website (ANTHROPIC_API_KEY). Until then, add conditions with “Add a condition”.');
+    // Claude when an Anthropic key is set, otherwise Cloudflare Workers AI (free allowance on the Cloudflare account)
+    if (!env.ANTHROPIC_API_KEY && !env.AI) fail(501, 'No AI is connected to the website, so only the built-in reader is used. Rephrase like the examples, or add these with “Add a condition”.');
     const b = await request.json().catch(() => null);
     const text = String(b?.text || '').trim().slice(0, 4000);
     if (!text) fail(400, 'Write the conditions first.');
@@ -113,34 +115,103 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
       'Conditions written by the manager:',
       text,
     ].join('\n');
-    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-    let res;
-    try {
-      res = await client.beta.messages.create({
-        model: 'claude-opus-5-5',
-        max_tokens: 16000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-        output_config: { effort: 'medium', format: { type: 'json_schema', schema: RULES_SCHEMA } },
-        system: SYSTEM,
-        messages: [{ role: 'user', content: context }],
-      });
-    } catch (e) {
-      if (e instanceof Anthropic.AuthenticationError) fail(502, 'The Anthropic API key on the website is not valid.');
-      if (e instanceof Anthropic.RateLimitError) fail(503, 'Too many requests to Claude right now. Try again in a minute.');
-      if (e instanceof Anthropic.APIError) fail(502, `Claude could not read the conditions (error ${e.status}). Try again.`);
-      throw e;
-    }
-    if (res.stop_reason === 'refusal') fail(422, 'Claude declined to read these conditions. Please rephrase them.');
-    const out = res.content.find((c) => c.type === 'text');
-    let parsed;
-    try { parsed = JSON.parse(out?.text || ''); } catch { fail(502, 'Claude’s answer could not be read. Try again.'); }
+    const parsed = env.ANTHROPIC_API_KEY ? await withClaude(env, context, fail) : await withWorkersAI(env, context, fail);
     const known = new Set(people.map((p) => p.username.toLowerCase()));
-    const rules = parsed.rules.filter((r) => r.type === 'minStaff' || (r.person && known.has(r.person.toLowerCase())));
-    await audit(db, me, 'plan.parse', { rules: rules.length, unclear: parsed.unclear.length });
-    return json({ rules, unclear: parsed.unclear });
+    const unclear = [...parsed.unclear];
+    const rules = [];
+    for (const r of parsed.rules) {
+      if (r.type !== 'minStaff' && !(r.person && known.has(r.person.toLowerCase()))) { unclear.push(`${r.text || r.person}: no barista with that name`); continue; }
+      rules.push({ ...r, person: r.type === 'minStaff' ? null : r.person.toLowerCase(), source: env.ANTHROPIC_API_KEY ? 'claude' : 'cloudflare-ai' });
+    }
+    await audit(db, me, 'plan.parse', { rules: rules.length, unclear: unclear.length, by: env.ANTHROPIC_API_KEY ? 'claude' : 'workers-ai' });
+    return json({ rules, unclear, by: env.ANTHROPIC_API_KEY ? 'Claude' : 'Cloudflare AI' });
   }
   fail(405, 'Not allowed.');
+}
+
+async function withClaude(env, context, fail) {
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  let res;
+  try {
+    res = await client.beta.messages.create({
+      model: 'claude-opus-5-5',
+      max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: RULES_SCHEMA } },
+      system: SYSTEM,
+      messages: [{ role: 'user', content: context }],
+    });
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) fail(502, 'The Anthropic API key on the website is not valid.');
+    if (e instanceof Anthropic.RateLimitError) fail(503, 'Too many requests to Claude right now. Try again in a minute.');
+    if (e instanceof Anthropic.APIError) fail(502, `Claude could not read the conditions (error ${e.status}). Try again.`);
+    throw e;
+  }
+  if (res.stop_reason === 'refusal') fail(422, 'Claude declined to read these conditions. Please rephrase them.');
+  const out = res.content.find((c) => c.type === 'text');
+  try { return JSON.parse(out?.text || ''); } catch { return fail(502, 'Claude’s answer could not be read. Try again.'); }
+}
+
+// Workers AI: a simpler schema (no null types), "" / 0 mean "not given".
+const CF_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+const CF_SCHEMA = {
+  type: 'object',
+  required: ['rules', 'unclear'],
+  properties: {
+    rules: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['type', 'person', 'days', 'from', 'to', 'number', 'text'],
+        properties: {
+          type: { type: 'string', enum: ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff'] },
+          person: { type: 'string' },
+          days: { type: 'array', items: { type: 'integer' } },
+          from: { type: 'string' },
+          to: { type: 'string' },
+          number: { type: 'number' },
+          text: { type: 'string' },
+        },
+      },
+    },
+    unclear: { type: 'array', items: { type: 'string' } },
+  },
+};
+const CF_RULES = '\nAnswer with JSON only. Use "" for a missing person, from or to, and 0 for a missing number.';
+
+async function withWorkersAI(env, context, fail) {
+  let res;
+  try {
+    res = await env.AI.run(CF_MODEL, {
+      messages: [{ role: 'system', content: SYSTEM + CF_RULES }, { role: 'user', content: context }],
+      response_format: { type: 'json_schema', json_schema: CF_SCHEMA },
+      max_tokens: 2048,
+      temperature: 0,
+    });
+  } catch (e) {
+    console.error('workers ai', e);
+    const m = String(e?.message || e);
+    if (/limit|quota|neurons|429/i.test(m)) fail(503, 'The free Cloudflare AI allowance for today is used up. Try again tomorrow, or add the conditions with “Add a condition”.');
+    if (/not enabled|authorized|10000|permission/i.test(m)) fail(503, 'Cloudflare AI is not switched on for this account yet (Cloudflare dashboard → AI → Workers AI).');
+    fail(502, 'Cloudflare AI could not read the conditions. Try again, or add them with “Add a condition”.');
+  }
+  let out = res?.response;
+  if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
+  if (!out || !Array.isArray(out.rules)) fail(502, 'Cloudflare AI gave an answer that could not be read. Try again, or add the conditions by hand.');
+  const time = (t) => (typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : null);
+  const TYPES = ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff'];
+  return {
+    rules: out.rules.filter((r) => r && TYPES.includes(r.type)).map((r) => ({
+      type: r.type,
+      person: r.person ? String(r.person) : null,
+      days: Array.isArray(r.days) ? [...new Set(r.days.map(Number).filter((d) => d >= 0 && d <= 6))] : [],
+      from: time(r.from), to: time(r.to),
+      number: Number(r.number) > 0 ? Number(r.number) : null,
+      text: String(r.text || ''),
+    })),
+    unclear: Array.isArray(out.unclear) ? out.unclear.map(String) : [],
+  };
 }
 
 export const PLANNER_ROUTES = ['demand', 'plan-settings', 'plan-rules', 'plan-parse'];

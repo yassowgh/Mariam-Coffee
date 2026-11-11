@@ -61,7 +61,7 @@ const appliesTo = (r, dow) => !r.days || !r.days.length || r.days.includes(dow);
 
 export function describeRule(r, people) {
   const who = r.person ? (people.find((p) => p.username.toLowerCase() === String(r.person).toLowerCase())?.name || r.person) : 'Café';
-  const days = !r.days || !r.days.length ? 'every day' : r.days.length === 7 ? 'every day' : r.days.map((d) => DAY_SHORT[d]).join(', ');
+  const days = !r.days || !r.days.length || r.days.length === 7 ? 'every day' : [...r.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => DAY_SHORT[d]).join(', ');
   const span = r.from || r.to ? `${r.from || 'opening'}–${r.to || 'closing'}` : '';
   switch (r.type) {
     case 'off': return `${who} is off on ${days}`;

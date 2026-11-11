@@ -19,6 +19,8 @@
   "kv_namespaces": [
     { "binding": "DATA" }
   ],
+  // Cloudflare Workers AI (free daily allowance): reads written schedule conditions
+  "ai": { "binding": "AI" },
   "d1_databases": [
     { "binding": "DB", "database_name": "mariam-coffee-staff" }
   ],
