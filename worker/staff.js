@@ -50,6 +50,10 @@ function ensureSchema(db) {
   if (!schemaReady) {
     schemaReady = (async () => {
       await db.batch(SCHEMA.map((s) => db.prepare(s)));
+      // columns added after the first release (ALTER fails harmlessly when they exist)
+      for (const col of ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0']) {
+        try { await db.prepare(`ALTER TABLE users ADD COLUMN ${col}`).run(); } catch { /* already there */ }
+      }
       const { n } = await db.prepare('SELECT COUNT(*) AS n FROM categories').first();
       if (!n) {
         const now = new Date().toISOString();
@@ -83,6 +87,11 @@ const money = (v) => {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[^\d.,-]/g, '').replace(',', '.'));
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 };
+const cleanEmail = (v) => {
+  const e = str(v, 120).toLowerCase();
+  if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) fail(400, 'The email address does not look right.');
+  return e || null;
+};
 const rolesOf = (u) => (u?.roles || '').split(',').filter(Boolean);
 const has = (u, ...roles) => { const r = rolesOf(u); return r.includes('owner') || roles.some((x) => r.includes(x)); };
 const need = (u, ...roles) => { if (!u) fail(401, 'Please sign in.'); if (roles.length && !has(u, ...roles)) fail(403, 'Your account cannot do this.'); };
@@ -97,7 +106,7 @@ export function distanceM(a, b) {
 
 const publicUser = (u) => u && ({
   id: u.id, username: u.username, name: u.name, roles: rolesOf(u), active: !!u.active,
-  rate: u.rate, phone: u.phone || '', color: u.color || '', created_at: u.created_at,
+  rate: u.rate, phone: u.phone || '', color: u.color || '', email: u.email || '', mustChange: !!u.must_change, created_at: u.created_at,
 });
 
 async function audit(db, user, action, detail) {
@@ -169,7 +178,8 @@ async function changeOwnPassword(request, env, me) {
   const { current, next } = await body(request);
   if (!(await verifyPassword(String(current || ''), me.pass))) fail(400, 'Your current password is not right.');
   if (!next || String(next).length < 6) fail(400, 'The new password needs at least 6 characters.');
-  await env.DB.prepare('UPDATE users SET pass = ? WHERE id = ?').bind(await hashPassword(String(next)), me.id).run();
+  if (String(next) === String(current)) fail(400, 'Choose a password different from the one you were given.');
+  await env.DB.prepare('UPDATE users SET pass = ?, must_change = 0 WHERE id = ?').bind(await hashPassword(String(next)), me.id).run();
   await audit(env.DB, me, 'account.password', 'Changed own password');
   return json({ ok: true });
 }
@@ -206,8 +216,9 @@ async function users(request, env, me, id) {
     if (!b.password || String(b.password).length < 6) fail(400, 'The password needs at least 6 characters.');
     const exists = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
     if (exists) fail(400, 'That username is taken.');
-    const r = await db.prepare('INSERT INTO users (username, name, roles, pass, rate, phone, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(username, str(b.name, 80), roles.join(','), await hashPassword(String(b.password)), rate, str(b.phone, 30), color, nowIso()).run();
+    // a password chosen by someone else must be changed at the first sign-in
+    const r = await db.prepare('INSERT INTO users (username, name, roles, pass, rate, phone, color, email, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
+      .bind(username, str(b.name, 80), roles.join(','), await hashPassword(String(b.password)), rate, str(b.phone, 30), color, cleanEmail(b.email), nowIso()).run();
     await audit(db, me, 'account.create', { username, roles });
     return json({ id: r.meta.last_row_id });
   }
@@ -219,11 +230,13 @@ async function users(request, env, me, id) {
     if (roles) { if (!roles.length) fail(400, 'Choose at least one role.'); sets.push('roles = ?'); vals.push(roles.join(',')); }
     if ('rate' in b) { sets.push('rate = ?'); vals.push(rate); }
     if ('phone' in b) { sets.push('phone = ?'); vals.push(str(b.phone, 30)); }
+    if ('email' in b) { sets.push('email = ?'); vals.push(cleanEmail(b.email)); }
     if ('color' in b) { sets.push('color = ?'); vals.push(color); }
     if (b.active != null) { sets.push('active = ?'); vals.push(b.active ? 1 : 0); }
     if (b.password) {
       if (String(b.password).length < 6) fail(400, 'The password needs at least 6 characters.');
       sets.push('pass = ?'); vals.push(await hashPassword(String(b.password)));
+      if (target.id !== me.id) sets.push('must_change = 1');
     }
     if (!sets.length) return json({ ok: true });
     const stmts = [db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, target.id)];

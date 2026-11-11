@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { api } from '../lib/api.js';
 
 /** Change your own password (inside the account menu). */
-export default function Account() {
-  const [open, setOpen] = useState(false);
+export default function Account({ forced, onDone }) {
+  const [open, setOpen] = useState(!!forced);
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
   const [msg, setMsg] = useState(null);
@@ -14,11 +14,12 @@ export default function Account() {
       await api('me/password', { method: 'POST', body: { current: cur, next } });
       setMsg({ ok: true, text: 'Password changed.' });
       setCur(''); setNext('');
+      onDone?.();
     } catch (err) { setMsg({ ok: false, text: err.message }); }
   }
   return (
     <form onSubmit={save} className="stack" style={{ gap: 8 }}>
-      <label className="field"><span>Current password</span><input type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} required /></label>
+      <label className="field"><span>{forced ? 'Password you were given' : 'Current password'}</span><input type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} required /></label>
       <label className="field"><span>New password (6+ characters)</span><input type="password" autoComplete="new-password" minLength={6} value={next} onChange={(e) => setNext(e.target.value)} required /></label>
       {msg && <span style={{ color: msg.ok ? 'var(--good-text)' : 'var(--bad-text)', fontSize: 13 }}>{msg.text}</span>}
       <button className="btn primary" type="submit">Save new password</button>

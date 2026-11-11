@@ -86,6 +86,20 @@ export default function Root() {
   }
 
   const { user } = state;
+  if (user.mustChange) {
+    return (
+      <>
+        <Header title="Mariam Coffee" subtitle={`Signed in as ${user.name}`} account={<button className="btn small" onClick={logout}>Sign out</button>} />
+        <main>
+          <div className="card login">
+            <h2>Welcome, {user.name.split(' ')[0]}</h2>
+            <p className="muted" style={{ margin: 0 }}>Before you start, please choose your own password. Only you will know it.</p>
+            <Account forced onDone={() => signedIn({ ...user, mustChange: false })} />
+          </div>
+        </main>
+      </>
+    );
+  }
   const list = allowed(user);
   const areas = list.length > 1 ? (
     <nav className="areas" aria-label="Sections">
