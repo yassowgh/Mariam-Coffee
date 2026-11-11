@@ -23,13 +23,15 @@ const AREAS = [
   ['team', 'Team', ['scheduler']],
   ['settings', 'Settings', []],
 ];
-const allowed = (user) => AREAS.filter(([, , roles]) => hasRole(user, ...roles) && (roles.length || user.roles.includes('owner')));
+// the sales reports are public, so every signed-in person can open them too
+const allowed = (user) => AREAS.filter(([k, , roles]) => k === 'reports' || hasRole(user, ...roles));
 
 /** Signs people in and shows only the parts of the site their role allows. */
 export default function Root() {
   const [state, setState] = useState({ status: 'checking' });
   const [area, setArea] = useState(null);
   const [showAccount, setShowAccount] = useState(false);
+  const [wantLogin, setWantLogin] = useState(false);
 
   async function check() {
     try {
@@ -43,10 +45,12 @@ export default function Root() {
   }
   function signedIn(user) {
     setState({ status: 'ready', user });
+    setWantLogin(false);
     const list = allowed(user).map(([k]) => k);
     let saved = null;
     try { saved = localStorage.getItem('mc-area'); } catch { /* storage unavailable */ }
-    setArea(list.includes(saved) ? saved : list[0]);
+    // owner starts on the reports; staff start on their own page
+    setArea(list.includes(saved) ? saved : list.find((k) => k !== 'reports' || user.roles.includes('owner')) || list[0]);
   }
   useEffect(() => {
     check();
@@ -71,7 +75,14 @@ export default function Root() {
     return (<><Header title="Mariam Coffee" subtitle=" " /><main><div className="card progress-card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div></main></>);
   }
   if (state.status === 'login') {
-    return (<><Header title="Mariam Coffee" subtitle="Staff and owner sign-in" /><main><Login firstRun={state.firstRun} error={state.error} onDone={signedIn} /></main></>);
+    // the sales reports are open to everyone; staff sign in for their own pages
+    if (!wantLogin && !state.error) {
+      const signInBtn = <button className="btn small" onClick={() => setWantLogin(true)} title="Staff and owner sign-in">👤 Staff sign-in</button>;
+      return <App shell={{ user: null, areas: null, account: signInBtn }} />;
+    }
+    return (<><Header title="Mariam Coffee" subtitle="Staff and owner sign-in"
+      account={<button className="btn small" onClick={() => { setWantLogin(false); setState({ status: 'login', firstRun: state.firstRun }); }}>← Sales reports</button>} />
+      <main><Login firstRun={state.firstRun} error={state.error} onDone={signedIn} /></main></>);
   }
 
   const { user } = state;

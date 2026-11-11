@@ -34,7 +34,8 @@ const TABS = [
 
 /** shell (when signed in): { user, areas, account } from Root.jsx */
 export default function App({ shell }) {
-  const tabs = shell ? TABS : TABS.filter(([k]) => k !== 'net');
+  const owner = !!shell?.user?.roles.includes('owner');
+  const tabs = owner ? TABS : TABS.filter(([k]) => k !== 'net');
   const [stage, setStage] = useState('upload');
   const [progress, setProgress] = useState({ msg: '', frac: 0 });
   const [error, setError] = useState('');
@@ -206,7 +207,7 @@ export default function App({ shell }) {
       model, filters: f, basis, invs, prevInvs, prevFrom, prevTo, len, openProduct,
       setFilter: (patch) => setFilters((cur) => ({ ...cur, ...patch })),
       live: filters, // switches show the current value, not the delayed one
-      costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, signedIn: !!shell, info: model.costInfo },
+      costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, signedIn: owner, info: model.costInfo },
     };
   }, [deferredVm, deferred, costCfg, serverOk, shell, filters?.profitLine, filters?.showMA, filters?.showDow, product]);
 
@@ -217,7 +218,7 @@ export default function App({ shell }) {
         <main>
           {stage === 'loading'
             ? <LoadingCard progress={progress} />
-            : <Upload onFiles={load} error={error} saved={saved} canSave={serverOk} signedIn={!!shell} onCancel={model ? () => setStage('ready') : null} />}
+            : <Upload onFiles={load} error={error} saved={saved} canSave={serverOk} signedIn={owner} onCancel={model ? () => setStage('ready') : null} />}
         </main>
       </>
     );
