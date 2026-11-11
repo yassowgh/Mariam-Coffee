@@ -116,6 +116,12 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
       text,
     ].join('\n');
     const parsed = env.ANTHROPIC_API_KEY ? await withClaude(env, context, fail) : await withWorkersAI(env, context, fail);
+    // "off" with a time means "not during those hours": keep the rest of the day open
+    for (const r of parsed.rules) {
+      if (r.type === 'off' && (r.from || r.to)) {
+        if (r.from) { r.type = 'available'; r.to = r.from; r.from = null; } else { r.type = 'available'; r.from = r.to; r.to = null; }
+      }
+    }
     const known = new Set(people.map((p) => p.username.toLowerCase()));
     const unclear = [...parsed.unclear];
     const rules = [];
