@@ -6,8 +6,9 @@ import { longDate } from '../format.js';
 /** "41.0082, 28.9784" or a Google Maps link -> { lat, lng } */
 function parseCoords(text) {
   const s = String(text || '');
-  const m = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(s) || /[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/.exec(s)
-    || /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(s) || /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/.exec(s);
+  // the place pin (!3d…!4d…) first: the "@" numbers are only where the map view is centred
+  const m = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(s) || /[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/.exec(s)
+    || /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(s) || /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/.exec(s);
   return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null;
 }
 
@@ -56,9 +57,9 @@ function Site() {
     <form className="card form-card" onSubmit={save}>
       <div className="card-head">
         <div><h2>Café location for clock-in</h2>
-          <p>Baristas can clock in and out only when their phone is within the allowed distance of this point. {site ? <>Saved {longDate(site.updatedAt.slice(0, 10))}.</> : <b>Not set yet: nobody can clock in.</b>}</p></div>
+          <p>Baristas can clock in and out only when their phone is within the allowed distance of this point. {site?.isDefault ? <>Now using <b>Mariam Coffee Shop’s pin on Google Maps</b>. Save here to change it.</> : site ? <>Saved {longDate(site.updatedAt.slice(0, 10))}.</> : null}</p></div>
       </div>
-      <p className="notice" style={{ margin: '0 0 12px' }}>Easiest: stand inside the café with your phone and tap <b>Use my current location</b>. Or, in Google Maps, long-press the café, copy the numbers shown (like 41.0082, 28.9784) and paste them here.</p>
+      <p className="notice" style={{ margin: '0 0 12px' }}>To change it: stand inside the café with your phone and tap <b>Use my current location</b>. Or, in Google Maps, long-press the café, copy the numbers shown (like 41.0082, 28.9784) and paste them here.</p>
       <div className="form-grid">
         <label className="field"><span>Name</span><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} maxLength={80} /></label>
         <label className="field wide"><span>Coordinates or Google Maps link</span>

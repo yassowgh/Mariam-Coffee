@@ -119,6 +119,10 @@ async function body(request) {
   try { return await request.json(); } catch { fail(400, 'The request was not valid.'); }
 }
 
+// Mariam Coffee Shop's pin on Google Maps, used until the owner saves another location in Settings
+const DEFAULT_SITE = { lat: 41.1236348, lng: 28.7777111, radius: 100, name: 'Mariam Coffee Shop', isDefault: true };
+const siteOf = async (db) => (await getSetting(db, 'site')) || DEFAULT_SITE;
+
 async function getSetting(db, key, fallback = null) {
   const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first();
   return row ? JSON.parse(row.value) : fallback;
@@ -495,7 +499,7 @@ const isStale = (rec) => rec && Date.now() - Date.parse(rec.in_at) > MAX_OPEN_HO
 
 async function clockStatus(env, me) {
   const db = env.DB;
-  const site = await getSetting(db, 'site');
+  const site = await siteOf(db);
   const open = await openRecord(db, me.id);
   const today = localParts().date;
   const { results: upcoming } = await db.prepare('SELECT * FROM shifts WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date, start')
@@ -512,7 +516,7 @@ async function clockStatus(env, me) {
 async function clock(request, env, me, kind) {
   need(me, 'barista');
   const db = env.DB;
-  const site = await getSetting(db, 'site');
+  const site = await siteOf(db);
   if (!site) fail(400, 'The owner has not set the café location yet, so clocking in is not possible.');
   const b = await body(request);
   const lat = Number(b.lat), lng = Number(b.lng), acc = Number(b.accuracy);
@@ -605,7 +609,7 @@ async function site(request, env, me) {
   const db = env.DB;
   if (request.method === 'GET') {
     need(me, 'owner');
-    return json({ site: await getSetting(db, 'site') });
+    return json({ site: await siteOf(db) });
   }
   need(me, 'owner');
   const b = await body(request);

@@ -74,8 +74,13 @@ export default function Root() {
   if (state.status === 'checking') {
     return (<><Header title="Mariam Coffee" subtitle=" " /><main><div className="card progress-card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div></main></>);
   }
+  // /staff = the staff link: straight to sign-in, never the sales
+  const staffLink = /^\/staff\/?$/.test(location.pathname);
   if (state.status === 'login') {
-    // the sales reports are open to everyone; staff sign in for their own pages
+    if (staffLink) {
+      return (<><Header title="Mariam Coffee" subtitle="Staff sign-in" /><main><Login firstRun={state.firstRun} error={state.error} onDone={signedIn} /></main></>);
+    }
+    // the sales reports are open to everyone with the main link; staff sign in for their own pages
     if (!wantLogin && !state.error) {
       const signInBtn = <button className="btn small" onClick={() => setWantLogin(true)} title="Staff and owner sign-in">👤 Staff sign-in</button>;
       return <App shell={{ user: null, areas: null, account: signInBtn }} />;
