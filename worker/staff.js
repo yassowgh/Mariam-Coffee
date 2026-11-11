@@ -7,6 +7,7 @@
 //   expenses   records spending and sees what they recorded
 //   scheduler  adds/removes baristas, plans shifts, sees and corrects attendance
 //   barista    sees their own shifts, clocks in and out at the café
+import { PLANNER_ROUTES, handlePlanner } from './planner.js';
 import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
 
 export const ROLES = ['owner', 'expenses', 'scheduler', 'barista'];
@@ -644,6 +645,9 @@ export async function handleStaff(request, env, path, passwordOk) {
       }
       return json({ user: publicUser(me) });
     }
+    if (PLANNER_ROUTES.includes(head)) {
+      return await handlePlanner({ request, env, head, me, need, isOwner, passwordOk, getSetting, setSetting, audit, fail });
+    }
     need(me);
     switch (head) {
       case 'users': return await users(request, env, me, idOf(sub));
@@ -670,5 +674,5 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = ['login', 'logout', 'me', 'users', 'categories', 'expenses', 'receipts', 'fixed-costs',
+export const STAFF_ROUTES = [...PLANNER_ROUTES, 'login', 'logout', 'me', 'users', 'categories', 'expenses', 'receipts', 'fixed-costs',
   'cost-summary', 'shifts', 'clock', 'attendance', 'site', 'activity'];

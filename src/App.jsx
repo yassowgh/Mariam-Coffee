@@ -6,6 +6,7 @@ import { applyCosts, makeCostConfig, parseCostWorkbook, withDefaults } from './l
 import costSheet from './data/costSheet.json';
 import { addDays, daysBetween, filterInvoices, mainDiscountKinds, promoTest } from './lib/aggregate.js';
 import { longDate } from './format.js';
+import { saveDemand } from './lib/demand.js';
 import Upload from './components/Upload.jsx';
 import Header from './components/Header.jsx';
 import NetProfit from './views/NetProfit.jsx';
@@ -167,6 +168,8 @@ export default function App({ shell }) {
       }
       if (costMsg) setNotice((n) => ({ kind: n?.kind || 'ok', text: [n?.text, costMsg].filter(Boolean).join(' ') }));
       m.loadMs = Math.round(performance.now() - t0);
+      // keep the sales pattern for the automatic schedule up to date
+      if (owner || opts.save) saveDemand(m, opts.password);
       setModel(m);
       setFilters({ from: addDays(m.maxDate, -29), to: m.maxDate, channel: 'all', basis: 'net', preset: '30', source: m.hasAcc ? 'acc' : 'pos', day: 'business', promo: 'all', profitLine: true, showMA: true, showDow: false });
       setFileLabel(label);

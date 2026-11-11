@@ -30,7 +30,7 @@ export async function api(path, { method = 'GET', body, raw, type } = {}) {
 export const ROLE_LABELS = {
   owner: 'Owner',
   expenses: 'Expenses',
-  scheduler: 'Scheduler',
+  scheduler: 'Admin',
   barista: 'Barista',
 };
 export const hasRole = (user, ...roles) => !!user && (user.roles.includes('owner') || roles.some((r) => user.roles.includes(r)));

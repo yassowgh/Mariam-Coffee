@@ -5,7 +5,7 @@ import { money, longDate } from '../format.js';
 const ROLE_HELP = {
   owner: 'everything, including sales reports and fixed costs',
   expenses: 'records spending',
-  scheduler: 'manages baristas, shifts and attendance',
+  scheduler: 'below the owner: manages baristas, makes schedules (also automatically from conditions) and checks attendance; no sales',
   barista: 'sees own shifts, clocks in and out',
 };
 /** A ready-to-send email (opens the phone's or computer's email app). */

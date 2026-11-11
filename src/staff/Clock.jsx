@@ -62,7 +62,7 @@ export default function Clock() {
         <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>📍 Your phone’s location is checked once when you tap. You must be inside {st.site.name || 'the café'} (within {st.site.radius || 100} m). The time comes from the server.</p>
         {msg && <div className={'banner ' + (msg.ok ? 'ok' : 'bad')} role="status" style={{ margin: 0 }}><span>{msg.text}</span></div>}
         {st.forgotten && (
-          <div className="banner bad" style={{ margin: 0 }}><span>You did not clock out after your shift on {longDate(toLocal(st.forgotten.in_at).date)} (in at {toLocal(st.forgotten.in_at).time}). Tell the scheduler the time you left so it can be corrected.</span></div>
+          <div className="banner bad" style={{ margin: 0 }}><span>You did not clock out after your shift on {longDate(toLocal(st.forgotten.in_at).date)} (in at {toLocal(st.forgotten.in_at).time}). Tell the admin the time you left so it can be corrected.</span></div>
         )}
       </div>
 

@@ -6,3 +6,4 @@ dist-single
 *.zip
 .DS_Store
 .wrangler
+.dev.vars

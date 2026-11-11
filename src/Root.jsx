@@ -23,8 +23,8 @@ const AREAS = [
   ['team', 'Team', ['scheduler']],
   ['settings', 'Settings', []],
 ];
-// the sales reports are public, so every signed-in person can open them too
-const allowed = (user) => AREAS.filter(([k, , roles]) => k === 'reports' || hasRole(user, ...roles));
+// only the owner sees the sales (and net profit) inside the staff menu
+const allowed = (user) => AREAS.filter(([, , roles]) => hasRole(user, ...roles));
 
 /** Signs people in and shows only the parts of the site their role allows. */
 export default function Root() {

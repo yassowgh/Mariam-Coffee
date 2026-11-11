@@ -11,6 +11,7 @@
     "build:single": "vite build --mode single"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "fflate": "^0.8.3",
     "node-unrar-js": "^2.0.2",
     "react": "^19.3.0",

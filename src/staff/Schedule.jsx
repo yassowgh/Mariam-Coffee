@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, api, dowOf, hoursFmt, shiftHours, shiftRange, todayLocal, weekStart } from '../lib/api.js';
-import { longDate, shortDate } from '../format.js';
+import { int, longDate, shortDate } from '../format.js';
+import AutoPlanner, { useDemand } from './AutoPlanner.jsx';
+import { ordersBetween } from '../lib/autoSchedule.js';
 
 export default function Schedule({ go }) {
   const [week, setWeek] = useState(weekStart(todayLocal()));
@@ -8,6 +10,10 @@ export default function Schedule({ go }) {
   const [shifts, setShifts] = useState(null);
   const [edit, setEdit] = useState(null);
   const [error, setError] = useState('');
+  const [auto, setAuto] = useState(false);
+  const demandState = useDemand(auto);
+  const demand = demandState.demand;
+  const dayOrders = (d) => (demand ? demand.days[new Date(d + 'T00:00:00Z').getUTCDay()].orders : null);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDaysLocal(week, i)), [week]);
   const end = days[6];
 
@@ -69,6 +75,7 @@ export default function Schedule({ go }) {
               <button onClick={() => setWeek(weekStart(today))} aria-pressed={week === weekStart(today)}>This week</button>
               <button onClick={() => setWeek(addDaysLocal(week, 7))} aria-label="Next week">Next ›</button>
             </div>
+            <button className="btn primary" onClick={() => setAuto(true)} disabled={!people}>✨ Create automatically</button>
             <button className="btn" onClick={copyLastWeek} disabled={!shifts}>Copy last week</button>
             <button className="btn ghost" onClick={clearWeek} disabled={!shifts?.length}>Clear week</button>
             <button className="btn ghost" onClick={() => window.print()}>Print</button>
@@ -84,7 +91,7 @@ export default function Schedule({ go }) {
               <thead>
                 <tr>
                   <th>Barista</th>
-                  {days.map((d) => <th key={d} className={d === today ? 'today' : ''}>{dowOf(d)} {shortDate(d)}</th>)}
+                  {days.map((d) => <th key={d} className={d === today ? 'today' : ''}>{dowOf(d)} {shortDate(d)}{demand && <small className="faint" style={{ display: 'block', fontWeight: 500 }}>~{int(dayOrders(d))} orders</small>}</th>)}
                   <th className="r">Hours</th>
                 </tr>
               </thead>
@@ -98,7 +105,9 @@ export default function Schedule({ go }) {
                         <td key={d} className={'cell' + (d === today ? ' today' : '')}>
                           {(byCell.get(p.id + '|' + d) || []).map((s) => (
                             <button key={s.id} className="shift" style={{ borderLeftColor: p.color || 'var(--series-1)' }} onClick={() => setEdit({ ...s })} title={s.note || ''}>
-                              {s.start}–{s.end}{s.note ? <small>{s.note}</small> : null}
+                              {s.start}–{s.end}
+                              {demand && <small>~{ordersBetween(demand, new Date(s.date + 'T00:00:00Z').getUTCDay(), s.start, s.end)} orders</small>}
+                              {s.note && !s.note.startsWith('auto ·') ? <small>{s.note}</small> : null}
                             </button>
                           ))}
                           <button className="add no-print" onClick={() => setEdit({ user_id: p.id, date: d, start: templates[0]?.[0] || '', end: templates[0]?.[1] || '', note: '', repeat: [] })} aria-label={`Add a shift for ${p.name} on ${longDate(d)}`}>＋</button>
@@ -123,6 +132,10 @@ export default function Schedule({ go }) {
           </div>
         )}
       </div>
+      {auto && people && (
+        <AutoPlanner week={week} people={people} demandState={demandState} existing={shifts?.length || 0}
+          onClose={() => setAuto(false)} onSaved={() => { setAuto(false); load(); window.scrollTo(0, 0); }} />
+      )}
       {edit && <ShiftEditor edit={edit} setEdit={setEdit} people={people} days={days} shifts={shifts} templates={templates} onSaved={() => { setEdit(null); load(); }} />}
     </div>
   );
