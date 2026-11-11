@@ -19,7 +19,7 @@ const decodeXml = (s) => s
 
 const colIndex = (letters) => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
 
-function readSheets(bytes) {
+export function readSheets(bytes) {
   const files = unzipSync(bytes);
   const text = (p) => (files[p] ? strFromU8(files[p]) : '');
   const shared = [];

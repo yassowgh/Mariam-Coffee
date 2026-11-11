@@ -237,7 +237,7 @@ function CostSetup({ ctx }) {
     costs.update({ ...cfg, manual, updatedAt: new Date().toISOString() });
   }
   async function save() {
-    if (!password) { setMsg({ kind: 'bad', text: 'Enter the upload password to save.' }); return; }
+    if (!password && !costs.signedIn) { setMsg({ kind: 'bad', text: 'Enter the upload password to save.' }); return; }
     try {
       await costs.save(password);
       setMsg({ kind: 'ok', text: 'Costs saved. Everyone opening the site now sees these margins.' });
@@ -267,8 +267,8 @@ function CostSetup({ ctx }) {
             onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) loadSheet(f); }} />
           {cfg && costs.canSave && (
             <>
-              <label className="field"><span>Upload password</span>
-                <input id="costs-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: 150 }} /></label>
+              {!costs.signedIn && <label className="field"><span>Upload password</span>
+                <input id="costs-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: 150 }} /></label>}
               <button className="btn primary" onClick={save}>Save costs for everyone</button>
             </>
           )}

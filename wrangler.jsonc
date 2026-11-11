@@ -1,6 +1,7 @@
 // Cloudflare Workers config.
 // Workers Builds runs `npx wrangler deploy`, which runs the build command below first.
-// The KV namespace "DATA" has no id: wrangler creates it automatically on the first deploy.
+// The KV namespace "DATA" and the D1 database "DB" have no ids: wrangler creates them
+// automatically on the first deploy. The staff tables are created by the Worker itself.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mariam-coffee-db-reader",
@@ -17,6 +18,9 @@
   },
   "kv_namespaces": [
     { "binding": "DATA" }
+  ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "mariam-coffee-staff" }
   ],
   "vars": {
     // SHA-256 of the upload password. Set the secret UPLOAD_PASSWORD in the

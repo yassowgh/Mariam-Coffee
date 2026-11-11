@@ -57,3 +57,16 @@ npm test -- "<folder with .DB files>"   # prints monthly totals + reconciliation
 ## Deploy (Cloudflare Workers)
 Workers Builds runs `npx wrangler deploy`, which builds the app (`npm run build`) and deploys
 the Worker plus the static files in `dist/`.
+
+## Staff accounts (expenses, schedule, clock-in)
+
+Everyone signs in at the same website. First sign-in: username `owner` + the upload password; the owner then adds people in **Team**.
+
+| Role | Can do |
+|---|---|
+| Owner | everything: sales reports, net profit, fixed costs, all expenses, schedule, attendance, team, settings |
+| Expenses | record spending (item, amount, optional reason/photo; the date is set automatically) and see their own entries |
+| Scheduler | add/remove baristas, plan shifts, see and correct attendance |
+| Barista | see own shifts, clock in/out (only within the allowed distance of the café, set in **Settings**) |
+
+Data lives in the D1 database `DB` (created automatically on deploy); receipt photos in the KV namespace `DATA`.

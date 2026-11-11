@@ -24,13 +24,13 @@ async function filesFromDrop(dt) {
   return out;
 }
 
-export default function Upload({ onFiles: onFilesRaw, error, saved, onCancel, canSave }) {
+export default function Upload({ onFiles: onFilesRaw, error, saved, onCancel, canSave, signedIn }) {
   const [over, setOver] = useState(false);
   const [save, setSave] = useState(!!canSave);
   const [password, setPassword] = useState('');
   const [needPw, setNeedPw] = useState(false);
   const onFiles = (files) => {
-    if (save && !password) { setNeedPw(true); return; }
+    if (save && !password && !signedIn) { setNeedPw(true); return; }
     onFilesRaw(files, { save, password });
   };
   const fileRef = useRef(null);
@@ -63,7 +63,7 @@ export default function Upload({ onFiles: onFilesRaw, error, saved, onCancel, ca
             <input type="checkbox" checked={save} onChange={(e) => { setSave(e.target.checked); setNeedPw(false); }} />
             Save for everyone (replaces the saved data)
           </label>
-          {save && (
+          {save && !signedIn && (
             <label className="field">
               <span>Upload password</span>
               <input id="upload-password" type="password" autoComplete="current-password" value={password}

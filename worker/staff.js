@@ -1,0 +1,661 @@
+// Staff side of the site: accounts and roles, expenses, fixed costs, shifts and
+// clock-in / clock-out with a location check. Stored in the D1 database "DB";
+// receipt photos go to the KV namespace "DATA".
+//
+// Roles (one person can have several):
+//   owner      everything: reports, accounts, expenses, fixed costs, schedule, attendance, settings
+//   expenses   records spending and sees what they recorded
+//   scheduler  adds/removes baristas, plans shifts, sees and corrects attendance
+//   barista    sees their own shifts, clocks in and out at the café
+import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
+
+export const ROLES = ['owner', 'expenses', 'scheduler', 'barista'];
+const TZ_OFFSET_MIN = 180; // Türkiye is UTC+3 all year (no daylight saving since 2016)
+const MAX_RECEIPT_BYTES = 4 * 1024 * 1024;
+const MAX_OPEN_HOURS = 16; // an open clock-in older than this counts as "forgot to clock out"
+const MAX_GPS_ACCURACY_M = 150;
+
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL, roles TEXT NOT NULL, pass TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, rate REAL,
+    phone TEXT, color TEXT, created_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    stock INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, created_at TEXT NOT NULL,
+    user_id INTEGER NOT NULL, category_id INTEGER NOT NULL, amount REAL NOT NULL, reason TEXT, receipt TEXT,
+    payment TEXT, deleted INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE INDEX IF NOT EXISTS expenses_date ON expenses(date)`,
+  `CREATE TABLE IF NOT EXISTS fixed_costs (id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT NOT NULL, item TEXT NOT NULL,
+    amount REAL NOT NULL, note TEXT, source TEXT, created_at TEXT NOT NULL, user_id INTEGER)`,
+  `CREATE INDEX IF NOT EXISTS fixed_month ON fixed_costs(month)`,
+  `CREATE TABLE IF NOT EXISTS shifts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL,
+    start TEXT NOT NULL, end TEXT NOT NULL, note TEXT, created_by INTEGER, created_at TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS shifts_date ON shifts(date)`,
+  `CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+    in_at TEXT NOT NULL, in_lat REAL, in_lng REAL, in_acc REAL, in_dist REAL,
+    out_at TEXT, out_lat REAL, out_lng REAL, out_acc REAL, out_dist REAL,
+    note TEXT, edited_by INTEGER, edited_at TEXT)`,
+  `CREATE INDEX IF NOT EXISTS attendance_in ON attendance(in_at)`,
+  `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, user_id INTEGER, action TEXT NOT NULL, detail TEXT)`,
+];
+// [name, stock]: stock = ingredients / goods for sale, already counted in the recipe costs (COGS)
+const DEFAULT_CATEGORIES = [['Coffee beans', 1], ['Milk & dairy', 1], ['Cups & packaging', 1], ['Syrups & sauces', 1],
+  ['Pastries & food supplies', 1], ['Water', 1], ['Cleaning supplies', 0], ['Repairs & maintenance', 0], ['Transport', 0],
+  ['Marketing', 0], ['Other', 0]];
+
+let schemaReady = null;
+function ensureSchema(db) {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      await db.batch(SCHEMA.map((s) => db.prepare(s)));
+      const { n } = await db.prepare('SELECT COUNT(*) AS n FROM categories').first();
+      if (!n) {
+        const now = new Date().toISOString();
+        await db.batch(DEFAULT_CATEGORIES.map(([c, stock]) => db.prepare('INSERT OR IGNORE INTO categories (name, stock, created_at) VALUES (?, ?, ?)').bind(c, stock, now)));
+      }
+    })().catch((e) => { schemaReady = null; throw e; });
+  }
+  return schemaReady;
+}
+
+// ---------- helpers ----------
+class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+const fail = (status, msg) => { throw new HttpError(status, msg); };
+const json = (obj, status = 200, headers = {}) => new Response(JSON.stringify(obj), {
+  status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers },
+});
+const nowIso = () => new Date().toISOString();
+/** Local (Türkiye) date and time for a UTC instant. */
+export function localParts(iso = nowIso()) {
+  const d = new Date(new Date(iso).getTime() + TZ_OFFSET_MIN * 60000).toISOString();
+  return { date: d.slice(0, 10), time: d.slice(11, 16), month: d.slice(0, 7) };
+}
+/** UTC ISO for a local date + HH:MM. */
+const localToIso = (date, hhmm) => new Date(new Date(`${date}T${hhmm}:00Z`).getTime() - TZ_OFFSET_MIN * 60000).toISOString();
+const addDaysIso = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const isMonth = (s) => typeof s === 'string' && /^\d{4}-\d{2}$/.test(s);
+const isTime = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+const str = (v, max = 300) => (v == null ? '' : String(v).trim().slice(0, max));
+const money = (v) => {
+  const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[^\d.,-]/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
+};
+const rolesOf = (u) => (u?.roles || '').split(',').filter(Boolean);
+const has = (u, ...roles) => { const r = rolesOf(u); return r.includes('owner') || roles.some((x) => r.includes(x)); };
+const need = (u, ...roles) => { if (!u) fail(401, 'Please sign in.'); if (roles.length && !has(u, ...roles)) fail(403, 'Your account cannot do this.'); };
+
+/** Distance in metres between two points (haversine). */
+export function distanceM(a, b) {
+  const R = 6371000, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+const publicUser = (u) => u && ({
+  id: u.id, username: u.username, name: u.name, roles: rolesOf(u), active: !!u.active,
+  rate: u.rate, phone: u.phone || '', color: u.color || '', created_at: u.created_at,
+});
+
+async function audit(db, user, action, detail) {
+  await db.prepare('INSERT INTO audit (at, user_id, action, detail) VALUES (?, ?, ?, ?)')
+    .bind(nowIso(), user?.id ?? null, action, typeof detail === 'string' ? detail : JSON.stringify(detail)).run();
+}
+
+async function body(request) {
+  try { return await request.json(); } catch { fail(400, 'The request was not valid.'); }
+}
+
+async function getSetting(db, key, fallback = null) {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first();
+  return row ? JSON.parse(row.value) : fallback;
+}
+async function setSetting(db, key, value) {
+  await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .bind(key, JSON.stringify(value)).run();
+}
+
+/** The signed-in user for this request, or null. */
+export async function currentUser(request, env) {
+  if (!env.DB) return null;
+  await ensureSchema(env.DB);
+  const token = readCookie(request, COOKIE);
+  if (!token) return null;
+  const u = await env.DB.prepare(`SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token = ? AND s.expires > ? AND u.active = 1`).bind(token, Date.now()).first();
+  return u || null;
+}
+export const isOwner = (u) => !!u && rolesOf(u).includes('owner');
+
+// ---------- accounts ----------
+async function login(request, env, passwordOk) {
+  const db = env.DB;
+  const { username, password } = await body(request);
+  const uname = str(username, 60).toLowerCase();
+  if (!uname || !password) fail(400, 'Enter your username and password.');
+  let u = await db.prepare('SELECT * FROM users WHERE username = ?').bind(uname).first();
+  if (!u) {
+    // First start: no accounts yet -> "owner" + the existing upload password creates the owner account.
+    const { n } = await db.prepare('SELECT COUNT(*) AS n FROM users').first();
+    if (!n && uname === 'owner' && (await passwordOk(env, password))) {
+      await db.prepare('INSERT INTO users (username, name, roles, pass, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind('owner', 'Owner', 'owner', await hashPassword(password), nowIso()).run();
+      u = await db.prepare('SELECT * FROM users WHERE username = ?').bind('owner').first();
+      await audit(db, u, 'account.bootstrap', 'Owner account created at first sign-in');
+    }
+  }
+  if (!u || !u.active || !(await verifyPassword(String(password), u.pass))) {
+    await new Promise((r) => setTimeout(r, 400));
+    fail(401, 'Wrong username or password.');
+  }
+  const token = newToken();
+  await db.batch([
+    db.prepare('DELETE FROM sessions WHERE expires < ?').bind(Date.now()),
+    db.prepare('INSERT INTO sessions (token, user_id, expires) VALUES (?, ?, ?)').bind(token, u.id, Date.now() + SESSION_DAYS * 86400000),
+  ]);
+  return json({ user: publicUser(u) }, 200, { 'set-cookie': sessionCookie(token, SESSION_DAYS * 86400) });
+}
+
+async function logout(request, env) {
+  const token = readCookie(request, COOKIE);
+  if (token) await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+  return json({ ok: true }, 200, { 'set-cookie': sessionCookie('', 0) });
+}
+
+async function changeOwnPassword(request, env, me) {
+  const { current, next } = await body(request);
+  if (!(await verifyPassword(String(current || ''), me.pass))) fail(400, 'Your current password is not right.');
+  if (!next || String(next).length < 6) fail(400, 'The new password needs at least 6 characters.');
+  await env.DB.prepare('UPDATE users SET pass = ? WHERE id = ?').bind(await hashPassword(String(next)), me.id).run();
+  await audit(env.DB, me, 'account.password', 'Changed own password');
+  return json({ ok: true });
+}
+
+/** Owner manages every account; a scheduler manages barista-only accounts. */
+function canManage(me, target, roles) {
+  if (isOwner(me)) return true;
+  if (!has(me, 'scheduler')) return false;
+  const onlyBarista = (r) => r.length > 0 && r.every((x) => x === 'barista');
+  return (!target || onlyBarista(rolesOf(target))) && (!roles || onlyBarista(roles));
+}
+
+async function users(request, env, me, id) {
+  const db = env.DB;
+  if (request.method === 'GET') {
+    need(me, 'scheduler');
+    const { results } = await db.prepare('SELECT * FROM users ORDER BY active DESC, name COLLATE NOCASE').all();
+    return json({ users: results.filter((u) => isOwner(me) || rolesOf(u).includes('barista')).map(publicUser) });
+  }
+  const b = await body(request);
+  const roles = b.roles ? [...new Set(b.roles)].filter((r) => ROLES.includes(r)) : null;
+  const target = id ? await db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first() : null;
+  if (id && !target) fail(404, 'That account does not exist.');
+  if (!canManage(me, target, roles)) fail(403, 'Your account cannot change this person.');
+  const rate = b.rate === '' || b.rate == null ? null : money(b.rate);
+  if (rate != null && (Number.isNaN(rate) || rate < 0)) fail(400, 'The hourly rate is not a number.');
+  const color = /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : null;
+
+  if (request.method === 'POST' && !id) {
+    const username = str(b.username, 40).toLowerCase();
+    if (!/^[a-z0-9._-]{3,40}$/.test(username)) fail(400, 'Username: 3–40 letters or numbers (no spaces).');
+    if (!str(b.name, 80)) fail(400, 'Enter the person’s name.');
+    if (!roles?.length) fail(400, 'Choose at least one role.');
+    if (!b.password || String(b.password).length < 6) fail(400, 'The password needs at least 6 characters.');
+    const exists = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
+    if (exists) fail(400, 'That username is taken.');
+    const r = await db.prepare('INSERT INTO users (username, name, roles, pass, rate, phone, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(username, str(b.name, 80), roles.join(','), await hashPassword(String(b.password)), rate, str(b.phone, 30), color, nowIso()).run();
+    await audit(db, me, 'account.create', { username, roles });
+    return json({ id: r.meta.last_row_id });
+  }
+  if (request.method === 'PATCH' && target) {
+    if (target.id === me.id && roles && !roles.includes('owner') && isOwner(me)) fail(400, 'You cannot remove your own owner role.');
+    if (target.id === me.id && b.active === false) fail(400, 'You cannot deactivate your own account.');
+    const sets = [], vals = [];
+    if (b.name != null) { if (!str(b.name, 80)) fail(400, 'Enter the person’s name.'); sets.push('name = ?'); vals.push(str(b.name, 80)); }
+    if (roles) { if (!roles.length) fail(400, 'Choose at least one role.'); sets.push('roles = ?'); vals.push(roles.join(',')); }
+    if ('rate' in b) { sets.push('rate = ?'); vals.push(rate); }
+    if ('phone' in b) { sets.push('phone = ?'); vals.push(str(b.phone, 30)); }
+    if ('color' in b) { sets.push('color = ?'); vals.push(color); }
+    if (b.active != null) { sets.push('active = ?'); vals.push(b.active ? 1 : 0); }
+    if (b.password) {
+      if (String(b.password).length < 6) fail(400, 'The password needs at least 6 characters.');
+      sets.push('pass = ?'); vals.push(await hashPassword(String(b.password)));
+    }
+    if (!sets.length) return json({ ok: true });
+    const stmts = [db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, target.id)];
+    if (b.active === false || b.password) stmts.push(db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id));
+    if (b.active === false) stmts.push(db.prepare('DELETE FROM shifts WHERE user_id = ? AND date >= ?').bind(target.id, localParts().date));
+    await db.batch(stmts);
+    await audit(db, me, 'account.update', { username: target.username, changed: Object.keys(b).filter((k) => k !== 'password').concat(b.password ? ['password'] : []) });
+    return json({ ok: true });
+  }
+  fail(405, 'Not allowed.');
+}
+
+// ---------- expenses ----------
+async function categories(request, env, me) {
+  const db = env.DB;
+  if (request.method === 'GET') {
+    need(me, 'expenses');
+    const { results } = await db.prepare('SELECT id, name, stock, active FROM categories ORDER BY name COLLATE NOCASE').all();
+    return json({ categories: results });
+  }
+  if (request.method === 'POST') {
+    need(me, 'expenses');
+    const name = str((await body(request)).name, 60);
+    if (!name) fail(400, 'Enter a name for the new item.');
+    const found = await db.prepare('SELECT id, name, stock, active FROM categories WHERE name = ?').bind(name).first();
+    if (found) {
+      if (!found.active) await db.prepare('UPDATE categories SET active = 1 WHERE id = ?').bind(found.id).run();
+      return json({ category: { ...found, active: 1 } });
+    }
+    const r = await db.prepare('INSERT INTO categories (name, created_at) VALUES (?, ?)').bind(name, nowIso()).run();
+    await audit(db, me, 'category.create', name);
+    return json({ category: { id: r.meta.last_row_id, name, stock: 0, active: 1 } });
+  }
+  fail(405, 'Not allowed.');
+}
+
+async function categoryEdit(request, env, me, id) {
+  need(me, 'owner');
+  const b = await body(request);
+  const sets = [], vals = [];
+  if (b.name != null) { if (!str(b.name, 60)) fail(400, 'Enter a name.'); sets.push('name = ?'); vals.push(str(b.name, 60)); }
+  if (b.active != null) { sets.push('active = ?'); vals.push(b.active ? 1 : 0); }
+  if (b.stock != null) { sets.push('stock = ?'); vals.push(b.stock ? 1 : 0); }
+  if (sets.length) await env.DB.prepare(`UPDATE categories SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, id).run();
+  await audit(env.DB, me, 'category.update', { id, ...b });
+  return json({ ok: true });
+}
+
+const EXPENSE_SELECT = `SELECT e.id, e.date, e.created_at, e.amount, e.reason, e.receipt, e.payment, e.category_id, e.user_id,
+  c.name AS category, u.name AS user_name FROM expenses e JOIN categories c ON c.id = e.category_id
+  LEFT JOIN users u ON u.id = e.user_id`;
+
+async function expenses(request, env, me, id) {
+  const db = env.DB;
+  const url = new URL(request.url);
+  need(me, 'expenses');
+  if (request.method === 'GET') {
+    const today = localParts().date;
+    let from = url.searchParams.get('from'), to = url.searchParams.get('to') || today;
+    if (!isOwner(me)) from = from && from > addDaysIso(today, -90) ? from : addDaysIso(today, -90);
+    if (!isDate(from)) from = addDaysIso(today, -30);
+    if (!isDate(to)) to = today;
+    const mine = !isOwner(me);
+    const { results } = await db.prepare(`${EXPENSE_SELECT} WHERE e.deleted = 0 AND e.date >= ? AND e.date <= ?${mine ? ' AND e.user_id = ?' : ''}
+      ORDER BY e.date DESC, e.id DESC`).bind(...[from, to, ...(mine ? [me.id] : [])]).all();
+    return json({ expenses: results, from, to });
+  }
+  if (request.method === 'POST' && !id) {
+    const b = await body(request);
+    const amount = money(b.amount);
+    if (!Number.isFinite(amount) || amount <= 0) fail(400, 'Enter the amount spent (more than 0 TL).');
+    if (amount > 10000000) fail(400, 'That amount looks too large.');
+    const cat = await db.prepare('SELECT id, active FROM categories WHERE id = ?').bind(Number(b.category_id)).first();
+    if (!cat || !cat.active) fail(400, 'Choose what the money was spent on.');
+    const receipt = b.receipt && /^r_[a-f0-9]{32}$/.test(b.receipt) ? b.receipt : null;
+    const payment = ['cash', 'card', 'transfer'].includes(b.payment) ? b.payment : null;
+    const created = nowIso();
+    // the date is set by the server (today in Türkiye); only the owner may enter an earlier date
+    const date = isOwner(me) && isDate(b.date) && b.date <= localParts(created).date ? b.date : localParts(created).date;
+    const r = await db.prepare('INSERT INTO expenses (date, created_at, user_id, category_id, amount, reason, receipt, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(date, created, me.id, cat.id, amount, str(b.reason, 500), receipt, payment).run();
+    await audit(db, me, 'expense.create', { id: r.meta.last_row_id, amount, category_id: cat.id, date });
+    const row = await db.prepare(`${EXPENSE_SELECT} WHERE e.id = ?`).bind(r.meta.last_row_id).first();
+    return json({ expense: row });
+  }
+  if (request.method === 'DELETE' && id) {
+    const row = await db.prepare('SELECT * FROM expenses WHERE id = ? AND deleted = 0').bind(id).first();
+    if (!row) fail(404, 'That expense does not exist.');
+    // the person who entered it can remove it on the same day; the owner any time
+    if (!isOwner(me) && (row.user_id !== me.id || row.date !== localParts().date)) fail(403, 'Only the owner can remove an expense after the day it was entered.');
+    await db.prepare('UPDATE expenses SET deleted = 1 WHERE id = ?').bind(id).run();
+    await audit(db, me, 'expense.delete', { id, amount: row.amount, date: row.date });
+    return json({ ok: true });
+  }
+  fail(405, 'Not allowed.');
+}
+
+async function receipts(request, env, me, key) {
+  need(me, 'expenses');
+  if (!env.DATA) fail(503, 'Photo storage is not configured.');
+  if (request.method === 'POST' && !key) {
+    const type = request.headers.get('content-type') || '';
+    if (!/^image\/(jpeg|png|webp)$/.test(type)) fail(400, 'The receipt must be a photo (JPEG, PNG or WebP).');
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength) fail(400, 'The photo is empty.');
+    if (buf.byteLength > MAX_RECEIPT_BYTES) fail(413, 'The photo is too large (limit 4 MB).');
+    const id = 'r_' + newToken().slice(0, 32);
+    await env.DATA.put('receipt:' + id, buf, { metadata: { type, by: me.id, at: nowIso() } });
+    return json({ receipt: id });
+  }
+  if (request.method === 'GET' && key && /^r_[a-f0-9]{32}$/.test(key)) {
+    if (!isOwner(me)) {
+      const row = await env.DB.prepare('SELECT user_id FROM expenses WHERE receipt = ?').bind(key).first();
+      if (!row || row.user_id !== me.id) fail(403, 'Only the owner can see other people’s receipts.');
+    }
+    const { value, metadata } = await env.DATA.getWithMetadata('receipt:' + key, { type: 'arrayBuffer' });
+    if (!value) fail(404, 'The photo was not found.');
+    return new Response(value, { headers: { 'content-type': metadata?.type || 'image/jpeg', 'cache-control': 'private, max-age=86400' } });
+  }
+  fail(405, 'Not allowed.');
+}
+
+// ---------- fixed costs (owner) ----------
+async function fixedCosts(request, env, me, id) {
+  need(me, 'owner');
+  const db = env.DB;
+  if (request.method === 'GET') {
+    const { results } = await db.prepare('SELECT * FROM fixed_costs ORDER BY month DESC, item COLLATE NOCASE').all();
+    return json({ fixed: results });
+  }
+  if (request.method === 'POST' && !id) {
+    const b = await body(request);
+    const rows = Array.isArray(b.rows) ? b.rows : [b];
+    if (rows.length > 2000) fail(400, 'Too many rows (limit 2,000).');
+    const clean = rows.map((r, i) => {
+      const month = str(r.month, 7), item = str(r.item, 80), amount = money(r.amount);
+      if (!isMonth(month)) fail(400, `Row ${i + 1}: the month must look like 2026-11.`);
+      if (!item) fail(400, `Row ${i + 1}: the cost item has no name.`);
+      if (!Number.isFinite(amount)) fail(400, `Row ${i + 1}: the amount is not a number.`);
+      return { month, item, amount, note: str(r.note, 200) };
+    });
+    const now = nowIso(), source = str(b.source, 120) || 'manual';
+    const stmts = [];
+    // importing a file replaces the fixed costs of the months it contains
+    if (b.replaceMonths) for (const m of new Set(clean.map((r) => r.month))) stmts.push(db.prepare('DELETE FROM fixed_costs WHERE month = ?').bind(m));
+    for (const r of clean) {
+      stmts.push(db.prepare('INSERT INTO fixed_costs (month, item, amount, note, source, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .bind(r.month, r.item, r.amount, r.note, source, now, me.id));
+    }
+    await db.batch(stmts);
+    await audit(db, me, 'fixed.import', { rows: clean.length, months: [...new Set(clean.map((r) => r.month))], source });
+    return json({ ok: true, rows: clean.length });
+  }
+  if (request.method === 'PATCH' && id) {
+    const b = await body(request);
+    const amount = money(b.amount);
+    if (!Number.isFinite(amount)) fail(400, 'The amount is not a number.');
+    await db.prepare('UPDATE fixed_costs SET item = COALESCE(?, item), amount = ?, note = COALESCE(?, note) WHERE id = ?')
+      .bind(b.item ? str(b.item, 80) : null, amount, b.note != null ? str(b.note, 200) : null, id).run();
+    await audit(db, me, 'fixed.update', { id, amount });
+    return json({ ok: true });
+  }
+  if (request.method === 'DELETE' && id) {
+    await db.prepare('DELETE FROM fixed_costs WHERE id = ?').bind(id).run();
+    await audit(db, me, 'fixed.delete', { id });
+    return json({ ok: true });
+  }
+  if (request.method === 'DELETE') {
+    const month = new URL(request.url).searchParams.get('month');
+    if (!isMonth(month)) fail(400, 'Choose a month.');
+    await db.prepare('DELETE FROM fixed_costs WHERE month = ?').bind(month).run();
+    await audit(db, me, 'fixed.delete-month', { month });
+    return json({ ok: true });
+  }
+  fail(405, 'Not allowed.');
+}
+
+/** Monthly totals of fixed costs and expenses, for the profit report (owner). */
+async function costSummary(request, env, me) {
+  need(me, 'owner');
+  const db = env.DB;
+  const [fixed, exp] = await Promise.all([
+    db.prepare('SELECT month, item, SUM(amount) AS amount FROM fixed_costs GROUP BY month, item').all(),
+    db.prepare(`SELECT e.date, c.name AS category, c.stock, SUM(e.amount) AS amount, COUNT(*) AS n
+      FROM expenses e JOIN categories c ON c.id = e.category_id WHERE e.deleted = 0 GROUP BY e.date, c.id`).all(),
+  ]);
+  return json({ fixed: fixed.results, expenses: exp.results });
+}
+
+// ---------- shifts ----------
+async function shifts(request, env, me, id) {
+  const db = env.DB;
+  const url = new URL(request.url);
+  if (request.method === 'GET') {
+    need(me, 'barista', 'scheduler');
+    const today = localParts().date;
+    const from = isDate(url.searchParams.get('from')) ? url.searchParams.get('from') : addDaysIso(today, -7);
+    const to = isDate(url.searchParams.get('to')) ? url.searchParams.get('to') : addDaysIso(today, 28);
+    const all = has(me, 'scheduler');
+    const { results } = await db.prepare(`SELECT s.*, u.name AS user_name, u.color FROM shifts s JOIN users u ON u.id = s.user_id
+      WHERE s.date >= ? AND s.date <= ?${all ? '' : ' AND s.user_id = ?'} ORDER BY s.date, s.start`).bind(...[from, to, ...(all ? [] : [me.id])]).all();
+    return json({ shifts: results, from, to });
+  }
+  need(me, 'scheduler');
+  const check = async (s) => {
+    if (!isDate(s.date)) fail(400, 'Choose a date for the shift.');
+    if (!isTime(s.start) || !isTime(s.end)) fail(400, 'Enter start and end times like 08:00.');
+    if (s.start === s.end) fail(400, 'The shift starts and ends at the same time.');
+    const u = await db.prepare('SELECT id, roles, active FROM users WHERE id = ?').bind(Number(s.user_id)).first();
+    if (!u || !u.active || !rolesOf(u).includes('barista')) fail(400, 'Choose an active barista.');
+    return { user_id: u.id, date: s.date, start: s.start, end: s.end, note: str(s.note, 120) };
+  };
+  if (request.method === 'POST' && !id) {
+    const b = await body(request);
+    const list = Array.isArray(b.shifts) ? b.shifts : [b];
+    if (list.length > 500) fail(400, 'Too many shifts at once (limit 500).');
+    const clean = [];
+    for (const s of list) clean.push(await check(s));
+    const now = nowIso();
+    const stmts = clean.map((s) => db.prepare('INSERT INTO shifts (user_id, date, start, end, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(s.user_id, s.date, s.start, s.end, s.note, me.id, now));
+    if (b.replaceRange && isDate(b.replaceRange.from) && isDate(b.replaceRange.to)) {
+      stmts.unshift(db.prepare('DELETE FROM shifts WHERE date >= ? AND date <= ?').bind(b.replaceRange.from, b.replaceRange.to));
+    }
+    if (stmts.length) await db.batch(stmts);
+    await audit(db, me, 'shift.create', { count: clean.length });
+    return json({ ok: true, count: clean.length });
+  }
+  if (request.method === 'PATCH' && id) {
+    const s = await check(await body(request));
+    await db.prepare('UPDATE shifts SET user_id = ?, date = ?, start = ?, end = ?, note = ? WHERE id = ?').bind(s.user_id, s.date, s.start, s.end, s.note, id).run();
+    await audit(db, me, 'shift.update', { id, ...s });
+    return json({ ok: true });
+  }
+  if (request.method === 'DELETE' && id) {
+    await db.prepare('DELETE FROM shifts WHERE id = ?').bind(id).run();
+    await audit(db, me, 'shift.delete', { id });
+    return json({ ok: true });
+  }
+  if (request.method === 'DELETE') {
+    const from = url.searchParams.get('from'), to = url.searchParams.get('to');
+    if (!isDate(from) || !isDate(to)) fail(400, 'Choose the dates to clear.');
+    const r = await db.prepare('DELETE FROM shifts WHERE date >= ? AND date <= ?').bind(from, to).run();
+    await audit(db, me, 'shift.clear', { from, to, count: r.meta.changes });
+    return json({ ok: true, count: r.meta.changes });
+  }
+  fail(405, 'Not allowed.');
+}
+
+// ---------- clock in / out ----------
+async function openRecord(db, userId) {
+  return db.prepare('SELECT * FROM attendance WHERE user_id = ? AND out_at IS NULL ORDER BY in_at DESC LIMIT 1').bind(userId).first();
+}
+const isStale = (rec) => rec && Date.now() - Date.parse(rec.in_at) > MAX_OPEN_HOURS * 3600000;
+
+async function clockStatus(env, me) {
+  const db = env.DB;
+  const site = await getSetting(db, 'site');
+  const open = await openRecord(db, me.id);
+  const today = localParts().date;
+  const { results: upcoming } = await db.prepare('SELECT * FROM shifts WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date, start')
+    .bind(me.id, addDaysIso(today, -1), addDaysIso(today, 13)).all();
+  const { results: recent } = await db.prepare('SELECT * FROM attendance WHERE user_id = ? ORDER BY in_at DESC LIMIT 20').bind(me.id).all();
+  return json({
+    site: site ? { name: site.name, radius: site.radius, set: true } : { set: false },
+    open: open && !isStale(open) ? open : null,
+    forgotten: open && isStale(open) ? open : null,
+    now: nowIso(), today, upcoming, recent,
+  });
+}
+
+async function clock(request, env, me, kind) {
+  need(me, 'barista');
+  const db = env.DB;
+  const site = await getSetting(db, 'site');
+  if (!site) fail(400, 'The owner has not set the café location yet, so clocking in is not possible.');
+  const b = await body(request);
+  const lat = Number(b.lat), lng = Number(b.lng), acc = Number(b.accuracy);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) fail(400, 'Your location could not be read. Allow location for this site and try again.');
+  if (!Number.isFinite(acc) || acc > MAX_GPS_ACCURACY_M) fail(400, `Your phone’s location is not precise enough (±${Math.round(acc) || '?'} m). Turn on precise location / GPS, step near a window and try again.`);
+  const dist = Math.round(distanceM({ lat, lng }, site));
+  const open = await openRecord(db, me.id);
+  const at = nowIso(); // the server's clock, not the phone's
+  if (dist > site.radius) {
+    await audit(db, me, `clock.${kind}.refused`, { dist, acc: Math.round(acc) });
+    fail(403, `You are about ${dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m'} from ${site.name || 'the café'}. You must be inside the café (within ${site.radius} m) to clock ${kind}.`);
+  }
+  if (kind === 'in') {
+    if (open && !isStale(open)) fail(400, 'You are already clocked in.');
+    const r = await db.prepare('INSERT INTO attendance (user_id, in_at, in_lat, in_lng, in_acc, in_dist) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(me.id, at, lat, lng, Math.round(acc), dist).run();
+    await audit(db, me, 'clock.in', { id: r.meta.last_row_id, dist });
+    return json({ ok: true, at, dist });
+  }
+  if (!open || isStale(open)) fail(400, 'You are not clocked in.');
+  await db.prepare('UPDATE attendance SET out_at = ?, out_lat = ?, out_lng = ?, out_acc = ?, out_dist = ? WHERE id = ?')
+    .bind(at, lat, lng, Math.round(acc), dist, open.id).run();
+  await audit(db, me, 'clock.out', { id: open.id, dist });
+  return json({ ok: true, at, dist });
+}
+
+/** Attendance for a period, with each record matched to the shift it belongs to. */
+async function attendance(request, env, me, id) {
+  const db = env.DB;
+  const url = new URL(request.url);
+  if (request.method === 'GET') {
+    need(me, 'barista', 'scheduler');
+    const all = has(me, 'scheduler');
+    const today = localParts().date;
+    const from = isDate(url.searchParams.get('from')) ? url.searchParams.get('from') : addDaysIso(today, -13);
+    const to = isDate(url.searchParams.get('to')) ? url.searchParams.get('to') : today;
+    const fromIso = localToIso(addDaysIso(from, -1), '00:00'), toIso = localToIso(addDaysIso(to, 1), '23:59');
+    const who = all ? [] : [me.id];
+    const [rec, sh] = await Promise.all([
+      db.prepare(`SELECT a.*, u.name AS user_name FROM attendance a JOIN users u ON u.id = a.user_id
+        WHERE a.in_at >= ? AND a.in_at <= ?${all ? '' : ' AND a.user_id = ?'} ORDER BY a.in_at`).bind(fromIso, toIso, ...who).all(),
+      db.prepare(`SELECT s.*, u.name AS user_name, u.rate FROM shifts s JOIN users u ON u.id = s.user_id
+        WHERE s.date >= ? AND s.date <= ?${all ? '' : ' AND s.user_id = ?'} ORDER BY s.date, s.start`).bind(from, to, ...who).all(),
+    ]);
+    const { results: people } = all ? await db.prepare('SELECT id, name, rate, active FROM users').all() : { results: [{ id: me.id, name: me.name, rate: me.rate }] };
+    return json({ from, to, now: nowIso(), records: rec.results, shifts: sh.results, people: people.map((p) => ({ id: p.id, name: p.name, rate: all ? p.rate : null })) });
+  }
+  need(me, 'scheduler');
+  if (request.method === 'POST' && !id) {
+    // manual record (e.g. a phone problem); always marked as edited
+    const b = await body(request);
+    const u = await db.prepare('SELECT id FROM users WHERE id = ?').bind(Number(b.user_id)).first();
+    if (!u) fail(400, 'Choose a barista.');
+    const inAt = parseLocal(b.in_date, b.in_time, 'clock-in');
+    const outAt = b.out_time ? parseLocal(b.out_date || b.in_date, b.out_time, 'clock-out') : null;
+    if (outAt && outAt <= inAt) fail(400, 'Clock-out must be after clock-in.');
+    const r = await db.prepare('INSERT INTO attendance (user_id, in_at, out_at, note, edited_by, edited_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(u.id, inAt, outAt, str(b.note, 200) || 'Added by hand', me.id, nowIso()).run();
+    await audit(db, me, 'attendance.create', { id: r.meta.last_row_id, user_id: u.id, inAt, outAt });
+    return json({ ok: true });
+  }
+  if (request.method === 'PATCH' && id) {
+    const b = await body(request);
+    const row = await db.prepare('SELECT * FROM attendance WHERE id = ?').bind(id).first();
+    if (!row) fail(404, 'Record not found.');
+    const inAt = b.in_time ? parseLocal(b.in_date, b.in_time, 'clock-in') : row.in_at;
+    const outAt = b.out_time ? parseLocal(b.out_date, b.out_time, 'clock-out') : b.out_time === '' ? null : row.out_at;
+    if (outAt && outAt <= inAt) fail(400, 'Clock-out must be after clock-in.');
+    if (!str(b.note, 200)) fail(400, 'Write a short reason for the correction.');
+    await db.prepare('UPDATE attendance SET in_at = ?, out_at = ?, note = ?, edited_by = ?, edited_at = ? WHERE id = ?')
+      .bind(inAt, outAt, str(b.note, 200), me.id, nowIso(), id).run();
+    await audit(db, me, 'attendance.update', { id, before: { in: row.in_at, out: row.out_at }, after: { in: inAt, out: outAt }, note: b.note });
+    return json({ ok: true });
+  }
+  if (request.method === 'DELETE' && id) {
+    const row = await db.prepare('SELECT * FROM attendance WHERE id = ?').bind(id).first();
+    await db.prepare('DELETE FROM attendance WHERE id = ?').bind(id).run();
+    await audit(db, me, 'attendance.delete', row || { id });
+    return json({ ok: true });
+  }
+  fail(405, 'Not allowed.');
+}
+function parseLocal(date, time, what) {
+  if (!isDate(date) || !isTime(time)) fail(400, `Enter the ${what} date and time.`);
+  return localToIso(date, time);
+}
+
+// ---------- settings & activity (owner) ----------
+async function site(request, env, me) {
+  const db = env.DB;
+  if (request.method === 'GET') {
+    need(me, 'owner');
+    return json({ site: await getSetting(db, 'site') });
+  }
+  need(me, 'owner');
+  const b = await body(request);
+  const lat = Number(b.lat), lng = Number(b.lng), radius = Math.round(Number(b.radius));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) fail(400, 'The location is not valid.');
+  if (!Number.isFinite(radius) || radius < 20 || radius > 2000) fail(400, 'The allowed distance must be between 20 and 2,000 metres.');
+  const value = { lat, lng, radius, name: str(b.name, 80) || 'Mariam Coffee', updatedAt: nowIso() };
+  await setSetting(db, 'site', value);
+  await audit(db, me, 'settings.site', value);
+  return json({ site: value });
+}
+
+async function activity(request, env, me) {
+  need(me, 'owner');
+  const { results } = await env.DB.prepare(`SELECT a.*, u.name AS user_name FROM audit a LEFT JOIN users u ON u.id = a.user_id
+    ORDER BY a.id DESC LIMIT 300`).all();
+  return json({ activity: results });
+}
+
+// ---------- router ----------
+export async function handleStaff(request, env, path, passwordOk) {
+  if (!env.DB) return json({ error: 'The staff database is not configured on this deployment.' }, 503);
+  try {
+    await ensureSchema(env.DB);
+    const seg = path.split('/').filter(Boolean).slice(1); // after "api"
+    const [head, sub] = seg;
+    const idOf = (v) => (v && /^\d+$/.test(v) ? Number(v) : null);
+    const m = request.method;
+    if (head === 'login' && m === 'POST') return await login(request, env, passwordOk);
+    if (head === 'logout' && m === 'POST') return await logout(request, env);
+    const me = await currentUser(request, env);
+    if (head === 'me') {
+      if (sub === 'password' && m === 'POST') { need(me); return await changeOwnPassword(request, env, me); }
+      if (!me) {
+        const { n } = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
+        return json({ user: null, firstRun: !n });
+      }
+      return json({ user: publicUser(me) });
+    }
+    need(me);
+    switch (head) {
+      case 'users': return await users(request, env, me, idOf(sub));
+      case 'categories': return sub ? await categoryEdit(request, env, me, idOf(sub)) : await categories(request, env, me);
+      case 'expenses': return await expenses(request, env, me, idOf(sub));
+      case 'receipts': return await receipts(request, env, me, sub);
+      case 'fixed-costs': return await fixedCosts(request, env, me, idOf(sub));
+      case 'cost-summary': return await costSummary(request, env, me);
+      case 'shifts': return await shifts(request, env, me, idOf(sub));
+      case 'clock':
+        if (!sub && m === 'GET') { need(me, 'barista'); return await clockStatus(env, me); }
+        if ((sub === 'in' || sub === 'out') && m === 'POST') return await clock(request, env, me, sub);
+        break;
+      case 'attendance': return await attendance(request, env, me, idOf(sub));
+      case 'site': return await site(request, env, me);
+      case 'activity': return await activity(request, env, me);
+      default:
+    }
+    return json({ error: 'Not found' }, 404);
+  } catch (e) {
+    if (e instanceof HttpError) return json({ error: e.message }, e.status);
+    console.error(e);
+    return json({ error: 'Something went wrong on the server. Please try again.' }, 500);
+  }
+}
+
+export const STAFF_ROUTES = ['login', 'logout', 'me', 'users', 'categories', 'expenses', 'receipts', 'fixed-costs',
+  'cost-summary', 'shifts', 'clock', 'attendance', 'site', 'activity'];

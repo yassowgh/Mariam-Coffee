@@ -7,6 +7,8 @@ import costSheet from './data/costSheet.json';
 import { addDays, daysBetween, filterInvoices, mainDiscountKinds, promoTest } from './lib/aggregate.js';
 import { longDate } from './format.js';
 import Upload from './components/Upload.jsx';
+import Header from './components/Header.jsx';
+import NetProfit from './views/NetProfit.jsx';
 import FilterBar from './components/FilterBar.jsx';
 import ProductPage from './components/ProductPage.jsx';
 import Dashboard from './views/Dashboard.jsx';
@@ -26,10 +28,13 @@ const TABS = [
   ['products', 'Products'],
   ['orders', 'Orders'],
   ['profit', 'Profit & costs'],
+  ['net', 'Net profit'],
   ['recon', 'Reconciliation'],
 ];
 
-export default function App() {
+/** shell (when signed in): { user, areas, account } from Root.jsx */
+export default function App({ shell }) {
+  const tabs = shell ? TABS : TABS.filter(([k]) => k !== 'net');
   const [stage, setStage] = useState('upload');
   const [progress, setProgress] = useState({ msg: '', frac: 0 });
   const [error, setError] = useState('');
@@ -201,32 +206,34 @@ export default function App() {
       model, filters: f, basis, invs, prevInvs, prevFrom, prevTo, len, openProduct,
       setFilter: (patch) => setFilters((cur) => ({ ...cur, ...patch })),
       live: filters, // switches show the current value, not the delayed one
-      costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, info: model.costInfo },
+      costs: { cfg: costCfg, update: updateCosts, save: (pw) => saveCosts(costCfg, pw), canSave: serverOk, signedIn: !!shell, info: model.costInfo },
     };
-  }, [deferredVm, deferred, costCfg, serverOk, filters?.profitLine, filters?.showMA, filters?.showDow, product]);
+  }, [deferredVm, deferred, costCfg, serverOk, shell, filters?.profitLine, filters?.showMA, filters?.showDow, product]);
 
   if (stage !== 'ready') {
     return (
       <>
-        <Header />
+        <Header areas={shell?.areas} account={shell?.account} />
         <main>
           {stage === 'loading'
             ? <LoadingCard progress={progress} />
-            : <Upload onFiles={load} error={error} saved={saved} canSave={serverOk} onCancel={model ? () => setStage('ready') : null} />}
+            : <Upload onFiles={load} error={error} saved={saved} canSave={serverOk} signedIn={!!shell} onCancel={model ? () => setStage('ready') : null} />}
         </main>
       </>
     );
   }
 
-  const View = { dashboard: Dashboard, monthly: Monthly, daily: Daily, hourly: Hourly, products: Products, orders: Orders, profit: Profit, recon: Reconciliation }[tab];
+  const View = { dashboard: Dashboard, monthly: Monthly, daily: Daily, hourly: Hourly, products: Products, orders: Orders, profit: Profit, net: NetProfit, recon: Reconciliation }[tab];
   return (
     <>
       <Header
+        areas={shell?.areas}
+        account={shell?.account}
         subtitle={`${fileLabel} · ${longDate(model.minDate)} – ${longDate(model.maxDate)}${saved ? ` · saved ${new Date(saved.uploadedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}`}
         onReset={() => { setError(''); setStage('upload'); }}
         tabs={
           <nav className="tabs" role="tablist" aria-label="Reports">
-            {TABS.map(([k, label]) => (
+            {tabs.map(([k, label]) => (
               <button key={k} role="tab" className="tab" aria-selected={tab === k} onClick={() => { setTab(k); if (product != null) closeProduct(); }}>
                 {label}
                 {k === 'recon' && <ReconBadge model={model} />}
@@ -271,26 +278,6 @@ function ReconBadge({ model }) {
   return <span className={'pill ' + (ok ? 'ok' : 'bad')} style={{ marginLeft: 6 }}>{ok ? '✓' : '!'}</span>;
 }
 
-function Header({ subtitle, onReset, tabs }) {
-  return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 32 32"><path d="M6 11h16v7a7 7 0 0 1-7 7h-2a7 7 0 0 1-7-7z" fill="currentColor" /><path d="M22 13h2.5a3.5 3.5 0 0 1 0 7H22" stroke="currentColor" strokeWidth="2.4" fill="none" /></svg>
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <h1>Mariam Coffee · Sales</h1>
-            <small>{subtitle || 'Sales analytics from your ASEAL database'}</small>
-          </div>
-        </div>
-        <span className="spacer" />
-        {onReset && <button className="btn small" onClick={onReset} title="Upload new database files">⤒ Update data</button>}
-      </div>
-      {tabs}
-    </header>
-  );
-}
 
 function LoadingCard({ progress }) {
   const pctv = Math.round(progress.frac * 100);

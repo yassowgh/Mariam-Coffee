@@ -5,24 +5,18 @@
 //   PUT /api/data  -> replace it; requires the upload password in X-Upload-Password
 //   POST /api/auth -> 204 if X-Upload-Password is right, 401 otherwise
 //   GET/PUT /api/costs -> product cost settings (JSON); PUT requires the password
+//   Reading the sales data and costs needs the owner's sign-in. Saving needs the
+//   owner's sign-in or the upload password.
+//   Staff features (accounts, expenses, fixed costs, shifts, clock-in) live in staff.js.
 //
 // Password: set the secret UPLOAD_PASSWORD (Settings -> Variables and Secrets) to
 // override; otherwise it is checked against UPLOAD_PASSWORD_SHA256 from wrangler.jsonc.
 
+import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
+import { safeEqual, sha256Hex } from './auth.js';
+
 const KEY = 'dataset';
 const MAX_BYTES = 24 * 1024 * 1024; // Workers KV value limit is 25 MiB
-
-async function sha256Hex(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function safeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
 
 async function passwordOk(env, given) {
   if (!given) return false;
@@ -35,8 +29,17 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 });
 
+/** Owner signed in, or (for saving only) the upload password. */
+async function allowed(request, env, write) {
+  const me = await currentUser(request, env).catch(() => null);
+  if (isOwner(me)) return true;
+  return write && passwordOk(env, request.headers.get('x-upload-password'));
+}
+const signIn = () => json({ error: 'Please sign in as the owner to see the sales reports.' }, 401);
+
 async function handleData(request, env) {
   if (!env.DATA) return json({ error: 'Storage is not configured on this deployment.' }, 503);
+  if ((request.method === 'GET' || request.method === 'HEAD') && !(await allowed(request, env, false))) return signIn();
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     const { value, metadata } = await env.DATA.getWithMetadata(KEY, { type: 'arrayBuffer' });
@@ -52,7 +55,7 @@ async function handleData(request, env) {
   }
 
   if (request.method === 'PUT') {
-    if (!(await passwordOk(env, request.headers.get('x-upload-password')))) {
+    if (!(await allowed(request, env, true))) {
       return json({ error: 'Wrong password. The data was not saved.' }, 401);
     }
     const body = await request.arrayBuffer();
@@ -80,12 +83,13 @@ const MAX_COSTS_BYTES = 2 * 1024 * 1024;
 async function handleCosts(request, env) {
   if (!env.DATA) return json({ error: 'Storage is not configured on this deployment.' }, 503);
   if (request.method === 'GET') {
+    if (!(await allowed(request, env, false))) return signIn();
     const value = await env.DATA.get(COSTS_KEY);
     if (!value) return json({ error: 'No cost settings saved yet.' }, 404);
     return new Response(value, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
   }
   if (request.method === 'PUT') {
-    if (!(await passwordOk(env, request.headers.get('x-upload-password')))) {
+    if (!(await allowed(request, env, true))) {
       return json({ error: 'Wrong password. Costs were not saved.' }, 401);
     }
     const text = await request.text();
@@ -106,10 +110,12 @@ export default {
     if (url.pathname === '/api/data') return handleData(request, env);
     if (url.pathname === '/api/costs') return handleCosts(request, env);
     if (url.pathname === '/api/auth' && request.method === 'POST') {
-      return (await passwordOk(env, request.headers.get('x-upload-password')))
+      return (await allowed(request, env, true))
         ? new Response(null, { status: 204 })
         : json({ error: 'Wrong password.' }, 401);
     }
+    const head = url.pathname.split('/')[2];
+    if (STAFF_ROUTES.includes(head)) return handleStaff(request, env, url.pathname, passwordOk);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     return env.ASSETS.fetch(request);
   },
