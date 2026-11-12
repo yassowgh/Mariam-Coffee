@@ -22,6 +22,7 @@ const AR = {
   'Reject': 'رفض',
   'Paid from': 'دُفع من',
   'Nothing waiting.': 'لا شيء بالانتظار.',
+  'Show categories': 'إظهار الفئات',
   'Per-day spending': 'الصرف اليومي',
   'Per-day by category': 'الصرف اليومي حسب الفئة',
   'Categories': 'الفئات',

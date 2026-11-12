@@ -23,6 +23,9 @@ export default function Finance({ user, go }) {
   const [payFor, setPayFor] = useState(null);
   const [editing, setEditing] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [byCatMonths, setByCatMonths] = useState(() => { try { return localStorage.getItem('mc-finance-month-cats') === '1'; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem('mc-finance-month-cats', byCatMonths ? '1' : '0'); } catch { /* private mode */ } }, [byCatMonths]);
+  const colorOf = useCategoryColors(base.records);
   const ctx = { ...base, edit: (r) => { setEditing(r); window.scrollTo(0, 0); } };
   const { records, today } = base;
 
@@ -39,23 +42,42 @@ export default function Finance({ user, go }) {
       byAccount.set(k, (byAccount.get(k) || 0) + r.total);
       byCat.set(r.category, (byCat.get(r.category) || 0) + r.total);
     }
-    // 6 months back, 5 ahead: paid vs still to pay, by the month each payment belongs to
+    // 6 months back, 5 ahead: paid vs still to pay (or by category), by the month each payment belongs to
     const chart = [];
+    const catTotals = new Map();
+    const months = [];
     for (let i = -6; i <= 5; i++) {
       const m = shiftMonth(month, i);
       const list = records.filter((r) => financeMonth(r) === m);
       const paid = list.filter((r) => r.status === 'paid').reduce((t, r) => t + total(r), 0);
       const open = list.filter((r) => r.status !== 'paid').reduce((t, r) => t + total(r), 0);
-      chart.push({ key: m, label: monthLabel(m).slice(0, 3) + ' ' + m.slice(2, 4), value: paid + open, parts: { paid, open },
-        title: monthLabel(m), rows: [['Paid', money(paid), 'var(--series-1)'], ['Still to pay', money(open), 'var(--series-2)']] });
+      const byCat = {};
+      for (const r of list) { byCat[r.category] = (byCat[r.category] || 0) + total(r); catTotals.set(r.category, (catTotals.get(r.category) || 0) + total(r)); }
+      months.push({ m, list, paid, open, byCat });
+    }
+    const isOther = (c) => colorOf(c) === 'var(--cat-other)';
+    const catsShown = [...catTotals.keys()];
+    const coloured = catsShown.filter((c) => !isOther(c)).sort((a, b) => colorOf(a).localeCompare(colorOf(b), undefined, { numeric: true }));
+    const others = catsShown.filter(isOther);
+    const catSeries = [...coloured.map((c) => ({ key: c, label: c, color: colorOf(c) })), ...(others.length ? [{ key: '__other', label: `Smaller categories (${others.length})`, color: 'var(--cat-other)' }] : [])];
+    for (const { m, paid, open, byCat } of months) {
+      const base = { key: m, label: monthLabel(m).slice(0, 3) + ' ' + m.slice(2, 4), value: paid + open, title: monthLabel(m) };
+      if (byCatMonths) {
+        const parts = {};
+        for (const c of coloured) parts[c] = byCat[c] || 0;
+        parts.__other = others.reduce((t, c) => t + (byCat[c] || 0), 0);
+        chart.push({ ...base, parts, rows: [['Total', money(paid + open)], ...Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]).slice(0, 8).map((c) => [c, money(byCat[c]), colorOf(c)])] });
+      } else {
+        chart.push({ ...base, parts: { paid, open }, rows: [['Paid', money(paid), 'var(--series-1)'], ['Still to pay', money(open), 'var(--series-2)']] });
+      }
     }
     return {
-      due, late, nodate, paidOut, chart,
+      due, late, nodate, paidOut, chart, catSeries,
       dueTotal: sum(due), duePaid: sum(due.filter((r) => r.status === 'paid')), dueOpen: sum(due.filter((r) => r.status !== 'paid')),
       lateTotal: sum(late), nodateTotal: sum(nodate), paidTotal: sum(paidOut),
       byAccount: [...byAccount].sort((a, b) => b[1] - a[1]), byCat: [...byCat].sort((a, b) => b[1] - a[1]),
     };
-  }, [records, month]);
+  }, [records, month, byCatMonths, colorOf]);
 
   // tap a month in "Month by month": switch to it and jump to its day-by-day details
   function openMonth(m) {
@@ -141,7 +163,8 @@ export default function Finance({ user, go }) {
 
       <div className="card">
         <div className="card-head"><div><h2>Month by month</h2><p>Each payment counts in the month it is due (or, if it had no due date, the month it was paid).</p></div></div>
-        <BarLineChart height={220} data={v.chart} series={[{ key: 'paid', label: 'Paid', color: 'var(--series-1)' }, { key: 'open', label: 'Still to pay', color: 'var(--series-2)' }]}
+        <div className="checks"><label className="check"><input type="checkbox" checked={byCatMonths} onChange={(e) => setByCatMonths(e.target.checked)} /> Show categories</label></div>
+        <BarLineChart height={byCatMonths ? 260 : 220} data={v.chart} series={byCatMonths ? v.catSeries : [{ key: 'paid', label: 'Paid', color: 'var(--series-1)' }, { key: 'open', label: 'Still to pay', color: 'var(--series-2)' }]}
           onBarClick={(d) => openMonth(d.key)} highlightKey={month} />
         <p className="faint" style={{ fontSize: 12.5, margin: '6px 0 0' }}>Tap a month to see its spending day by day and by category.</p>
       </div>
@@ -194,6 +217,17 @@ function Bars({ list }) {
 }
 
 // ---------------------------------------------------------------- per day
+/** Colours follow the category, not a month's ranking: the 7 biggest categories of all time get their
+ *  own colour, the rest share grey "Smaller categories" (more colours could not be told apart). */
+function useCategoryColors(records) {
+  return useMemo(() => {
+    const all = new Map();
+    for (const r of records) if (r.status === 'paid' && r.kind !== 'loan_repayment') all.set(r.category, (all.get(r.category) || 0) + total(r));
+    const top = [...all].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([n]) => n);
+    return (c) => { const i = top.indexOf(c); return i >= 0 ? `var(--cat-${i + 1})` : 'var(--cat-other)'; };
+  }, [records]);
+}
+
 const DAILY_KEY = 'mc-finance-daily';
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(DAILY_KEY)) || {}; } catch { return {}; }
@@ -206,14 +240,7 @@ function DailySpending({ records, month }) {
   const off = new Set(prefs.off);
   const set = (p) => setPrefs((x) => ({ ...x, ...p }));
 
-  // Colours follow the category, not this month's ranking: the 7 biggest categories of all time
-  // get their own colour, the rest share grey "Other" (more colours could not be told apart).
-  const colorOf = useMemo(() => {
-    const all = new Map();
-    for (const r of records) if (r.status === 'paid' && r.kind !== 'loan_repayment') all.set(r.category, (all.get(r.category) || 0) + total(r));
-    const top = [...all].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([n]) => n);
-    return (c) => { const i = top.indexOf(c); return i >= 0 ? `var(--cat-${i + 1})` : 'var(--cat-other)'; };
-  }, [records]);
+  const colorOf = useCategoryColors(records);
   const isOther = (c) => colorOf(c) === 'var(--cat-other)';
 
   const d = useMemo(() => {
