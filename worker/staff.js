@@ -9,6 +9,7 @@
 //   manager    adds/removes baristas, plans shifts, sees and corrects attendance, salaries
 //   barista    sees their own shifts, clocks in and out at the café
 import { PLANNER_ROUTES, handlePlanner } from './planner.js';
+import { EMAIL_ROUTES, handleEmail } from './email.js';
 import { ACCOUNTING_ROUTES, ACCOUNTING_SCHEMA, DEFAULT_ACCOUNTS, EXPENSE_COLUMNS, handleAccounting } from './accounting.js';
 import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
 
@@ -220,9 +221,13 @@ async function users(request, env, me, id) {
   if (request.method === 'GET') {
     need(me, 'manager', 'accountant');
     const { results } = await db.prepare('SELECT * FROM users ORDER BY active DESC, name COLLATE NOCASE').all();
-    return json({ users: results.filter((u) => isOwner(me) || rolesOf(u).includes('barista')).map(publicUser) });
+    // owner and accountants see everyone with pay; a manager sees the baristas, without pay
+    const fin = has(me, 'accountant');
+    return json({ users: results.filter((u) => fin || rolesOf(u).includes('barista')).map((u) => (fin ? publicUser(u) : { ...publicUser(u), rate: null, pay_type: null, monthly_salary: null })) });
   }
   const b = await body(request);
+  // pay is set by the owner or an accountant only
+  if (!has(me, 'accountant')) { delete b.rate; delete b.pay_type; delete b.monthly_salary; }
   const roles = b.roles ? [...new Set(b.roles)].filter((r) => ROLES.includes(r)) : null;
   const target = id ? await db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first() : null;
   if (id && !target) fail(404, 'That account does not exist.');
@@ -404,11 +409,11 @@ async function attendance(request, env, me, id) {
     const [rec, sh] = await Promise.all([
       db.prepare(`SELECT a.*, u.name AS user_name FROM attendance a JOIN users u ON u.id = a.user_id
         WHERE a.in_at >= ? AND a.in_at <= ?${all ? '' : ' AND a.user_id = ?'} ORDER BY a.in_at`).bind(fromIso, toIso, ...who).all(),
-      db.prepare(`SELECT s.*, u.name AS user_name, u.rate FROM shifts s JOIN users u ON u.id = s.user_id
+      db.prepare(`SELECT s.*, u.name AS user_name FROM shifts s JOIN users u ON u.id = s.user_id
         WHERE s.date >= ? AND s.date <= ?${all ? '' : ' AND s.user_id = ?'} ORDER BY s.date, s.start`).bind(from, to, ...who).all(),
     ]);
     const { results: people } = all ? await db.prepare('SELECT id, name, rate, active FROM users').all() : { results: [{ id: me.id, name: me.name, rate: me.rate }] };
-    return json({ from, to, now: nowIso(), records: rec.results, shifts: sh.results, people: people.map((p) => ({ id: p.id, name: p.name, rate: all ? p.rate : null })) });
+    return json({ from, to, now: nowIso(), records: rec.results, shifts: sh.results, people: people.map((p) => ({ id: p.id, name: p.name, rate: has(me, 'accountant') ? p.rate : null })) });
   }
   need(me, 'manager');
   if (request.method === 'POST' && !id) {
@@ -499,10 +504,9 @@ export async function handleStaff(request, env, path, passwordOk) {
       return await handlePlanner({ request, env, head, me, need, isOwner, passwordOk, getSetting, setSetting, audit, fail });
     }
     need(me);
-    if (ACCOUNTING_ROUTES.includes(head)) {
-      const h = { need, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken };
-      return await handleAccounting({ head, sub, request, env, me, h });
-    }
+    const h = { need, has, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken, getSetting, setSetting };
+    if (ACCOUNTING_ROUTES.includes(head)) return await handleAccounting({ head, sub, request, env, me, h });
+    if (EMAIL_ROUTES.includes(head)) return await handleEmail({ head, request, env, me, h });
     switch (head) {
       case 'users': return await users(request, env, me, idOf(sub));
       case 'shifts': return await shifts(request, env, me, idOf(sub));
@@ -523,4 +527,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity'];
+export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity'];

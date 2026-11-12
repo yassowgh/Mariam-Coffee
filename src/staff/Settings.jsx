@@ -16,6 +16,7 @@ export default function Settings() {
   return (
     <div className="stack">
       <Site />
+      <EmailSetup />
       <Activity />
     </div>
   );
@@ -79,13 +80,56 @@ function Site() {
   );
 }
 
+function EmailSetup() {
+  const [st, setSt] = useState(null);
+  const [key, setKey] = useState('');
+  const [from, setFrom] = useState('');
+  const [msg, setMsg] = useState(null);
+  const load = () => api('email-settings').then((r) => { setSt(r); setFrom(r.from || ''); }).catch((e) => setMsg({ ok: false, text: e.message }));
+  useEffect(() => { load(); }, []);
+  async function save(e) {
+    e.preventDefault();
+    try {
+      await api('email-settings', { method: 'PUT', body: { ...(key ? { key } : {}), from } });
+      setKey(''); setMsg({ ok: true, text: 'Saved.' }); load();
+    } catch (x) { setMsg({ ok: false, text: x.message }); }
+  }
+  async function test() {
+    setMsg(null);
+    try { const r = await api('email-test', { method: 'POST' }); setMsg({ ok: true, text: `Test email sent to ${r.to}. Check the inbox (and spam).` }); } catch (x) { setMsg({ ok: false, text: x.message }); }
+  }
+  const verified = (st?.domains || []).filter((d) => d.status === 'verified');
+  return (
+    <form className="card form-card" onSubmit={save}>
+      <div className="card-head"><div><h2>Email</h2><p>Emails to staff (schedules, sign-in details) are sent through Resend.</p></div></div>
+      {st && (
+        <p className="notice" style={{ margin: '0 0 12px' }}>
+          {st.configured ? <>API key saved (ending …{st.keyEnd}). </> : <b>No API key yet. </b>}
+          {st.domains ? (verified.length ? <>Verified domain: <b>{verified.map((d) => d.name).join(', ')}</b>. Use an address at it as “from”.</>
+            : <><b>No verified domain in Resend yet</b>: Resend only delivers to your own Resend account address until you add and verify a domain (resend.com → Domains).{st.domains.length ? ` Waiting: ${st.domains.map((d) => `${d.name} (${d.status})`).join(', ')}.` : ''}</>)
+            : st.domainsError ? <>Could not check domains ({st.domainsError}).</> : null}
+        </p>
+      )}
+      <div className="form-grid">
+        <label className="field"><span>{st?.configured ? 'Replace the API key' : 'Resend API key'}</span><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="re_…" autoComplete="off" /></label>
+        <label className="field"><span>From</span><input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Mariam Coffee <team@yourdomain.com>" /></label>
+      </div>
+      {msg && <div className={'banner ' + (msg.ok ? 'ok' : 'bad')} role="status" style={{ marginTop: 12 }}><span>{msg.text}</span></div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <button className="btn primary" type="submit">Save</button>
+        <button className="btn" type="button" onClick={test} disabled={!st?.configured}>Send a test email to me</button>
+      </div>
+    </form>
+  );
+}
+
 const ACTIONS = {
   'clock.in': 'Clocked in', 'clock.out': 'Clocked out', 'clock.in.refused': 'Clock-in refused (too far)', 'clock.out.refused': 'Clock-out refused (too far)',
   'expense.create': 'Expense added', 'expense.delete': 'Expense removed', 'fixed.import': 'Fixed costs imported', 'fixed.update': 'Fixed cost changed',
   'fixed.delete': 'Fixed cost removed', 'fixed.delete-month': 'Fixed costs of a month removed', 'shift.create': 'Shifts added', 'shift.update': 'Shift changed',
   'shift.delete': 'Shift removed', 'shift.clear': 'Shifts cleared', 'attendance.create': 'Clock record added by hand', 'attendance.update': 'Clock record corrected',
   'attendance.delete': 'Clock record deleted', 'account.create': 'Account created', 'account.update': 'Account changed', 'account.password': 'Password changed',
-  'account.bootstrap': 'Owner account created', 'settings.site': 'Café location changed', 'category.create': 'Expense item added', 'category.update': 'Expense item changed',
+  'account.bootstrap': 'Owner account created', 'settings.site': 'Café location changed', 'settings.email': 'Email settings changed', 'schedule.email': 'Schedules emailed', 'account.email': 'Sign-in details emailed', 'plan.parse': 'Conditions read by AI', 'expense.import': 'Records imported', 'expense.update': 'Record changed', 'expense.paid': 'Record marked paid', 'category.create': 'Expense item added', 'category.update': 'Expense item changed',
 };
 
 function Activity() {

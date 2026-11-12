@@ -78,31 +78,33 @@ export default function Salaries() {
     return out;
   }, []);
 
+  const finance = !!data?.finance; // a manager sees hours only
+  const money_ = (cols) => (finance ? cols : []);
   const columns = [
     { key: 'name', label: 'Employee', render: (r) => <button className="linklike" onClick={() => setOpen(open === r.key ? null : r.key)}>{r.name}</button>, csv: (r) => r.name },
-    { key: 'payType', label: 'Paid', fmt: (v, r) => (v === 'hourly' ? `${money(r.p.rate)} / hour` : v === 'monthly' ? `${money(r.p.monthly_salary)} / month` : 'not set') },
+    ...money_([{ key: 'payType', label: 'Paid', fmt: (v, r) => (v === 'hourly' ? `${money(r.p.rate)} / hour` : v === 'monthly' ? `${money(r.p.monthly_salary)} / month` : 'not set') }]),
     { key: 'dayCount', label: 'Days', align: 'r', fmt: int, total: 'sum' },
     { key: 'schedH', label: 'Scheduled', align: 'r', fmt: hoursFmt, total: 'sum', csv: (r) => r.schedH.toFixed(2) },
     { key: 'hours', label: 'Worked', align: 'r', fmt: hoursFmt, total: 'sum', csv: (r) => r.hours.toFixed(2) },
     { key: 'missing', label: 'No clock-out', align: 'r', fmt: (v) => (v ? int(v) : '–'), cls: (r) => (r.missing ? 'down' : '') },
-    { key: 'gross', label: 'Salary earned', align: 'r', fmt: (v) => (v == null ? '–' : money2(v)), total: 'sum', csv: (r) => (r.gross == null ? '' : r.gross.toFixed(2)) },
+    ...money_([{ key: 'gross', label: 'Salary earned', align: 'r', fmt: (v) => (v == null ? '–' : money2(v)), total: 'sum', csv: (r) => (r.gross == null ? '' : r.gross.toFixed(2)) },
     { key: 'advances', label: 'Advances', align: 'r', fmt: money2, total: 'sum', csv: (r) => r.advances.toFixed(2) },
     { key: 'paid', label: 'Salary paid', align: 'r', fmt: money2, total: 'sum', csv: (r) => r.paid.toFixed(2) },
     { key: 'balance', label: 'Still to pay', align: 'r', fmt: (v) => (v == null ? '–' : money2(v)), total: 'sum', cls: (r) => (r.balance > 0.5 ? 'down' : r.balance < -0.5 ? 'up' : ''), csv: (r) => (r.balance == null ? '' : r.balance.toFixed(2)) },
-    { key: 'planned', label: 'Planned payments', align: 'r', fmt: (v) => (v ? money2(v) : '–'), total: 'sum' },
+    { key: 'planned', label: 'Planned payments', align: 'r', fmt: (v) => (v ? money2(v) : '–'), total: 'sum' }]),
   ];
   const detail = result?.list.find((r) => r.key === open);
   return (
     <div className="stack">
       <div className="card">
         <div className="card-head">
-          <div><h2>Salaries · {monthLabel(month)}</h2>
-            <p>Hourly staff: worked hours from the timesheets × hourly rate. Monthly staff: their monthly salary. Advances and salary payments come from Accounting (records with the employee’s name). Set pay in <b>Team</b>.</p></div>
+          <div><h2>{finance ? 'Salaries' : 'Monthly hours'} · {monthLabel(month)}</h2>
+            <p>{!finance ? 'Days and hours worked per employee, from the timesheets.' : <>Hourly staff: worked hours from the timesheets × hourly rate. Monthly staff: their monthly salary. Advances and salary payments come from Accounting (records with the employee’s name). Set pay in <b>Team</b>.</>}</p></div>
           <label className="field"><span>Month</span><select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
         </div>
         {error && <div className="error" role="alert">{error}</div>}
         {!result ? <p className="muted">Loading…</p> : result.list.length ? (
-          <DataTable columns={columns} rows={result.list} defaultSort={{ key: 'name', dir: 'asc' }} exportName={`salaries-${month}`} footerNote="click a name for the details; “Still to pay” in red = the café still owes, green = paid more than earned" />
+          <DataTable columns={columns} rows={result.list} defaultSort={{ key: 'name', dir: 'asc' }} exportName={`salaries-${month}`} footerNote={finance ? 'click a name for the details; “Still to pay” in red = the café still owes, green = paid more than earned' : 'click a name for the days worked'} />
         ) : <p className="muted">Nobody is on the payroll yet. In <b>Team</b>, edit a person and choose “Per hour” or “Monthly salary”.</p>}
       </div>
       {detail && (
@@ -118,7 +120,7 @@ export default function Salaries() {
               </table></div>
             ) : <p className="muted">No clock-ins this month.</p>}
           </div>
-          <div className="card">
+          {finance && <div className="card">
             <div className="card-head"><div><h2>{detail.name}: payments</h2><p>From Accounting</p></div></div>
             {detail.payments.length ? (
               <div className="table-wrap"><table>
@@ -128,10 +130,10 @@ export default function Salaries() {
                     <td>{p.status === 'paid' ? 'paid' : p.status === 'scheduled' ? `due ${longDate(p.due_date)}` : 'unpaid'}</td><td className="r num">{money2(p.amount + (p.fees || 0))}</td></tr>))}</tbody>
               </table></div>
             ) : <p className="muted">No salary payments or advances recorded for this month.</p>}
-          </div>
+          </div>}
         </div>
       )}
-      {result?.others.length > 0 && (
+      {finance && result?.others.length > 0 && (
         <div className="card">
           <div className="card-head"><div><h2>Other people paid this month</h2><p>Names in Accounting that are not a website account (so no timesheet). Give them an account in Team to link them.</p></div></div>
           <DataTable rows={result.others} exportName={`other-payments-${month}`} defaultSort={{ key: 'paid', dir: 'desc' }}

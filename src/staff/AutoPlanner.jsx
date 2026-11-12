@@ -80,7 +80,11 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
         const sentencesLeft = left.map((u) => u.slice(0, u.lastIndexOf(': ')));
         const r = await api('plan-parse', { method: 'POST', body: { text: sentencesLeft.join('\n'), week, hours } });
         found = [...found, ...r.rules];
-        left = r.unclear;
+        // a sentence the AI neither turned into a rule nor listed as unclear must not disappear
+        const said = (x) => x.toLowerCase().replace(/\s+/g, ' ').trim();
+        const covered = (sen) => r.rules.some((q) => q.text && (said(q.text).includes(said(sen)) || said(sen).includes(said(q.text))))
+          || r.unclear.some((u) => said(u).includes(said(sen).slice(0, 25)));
+        left = [...r.unclear, ...sentencesLeft.filter((sen) => !covered(sen)).map((sen) => `${sen}: not understood`)];
         if (r.rules.length) aiNote = ` ${r.rules.length} read by ${r.by}: please check those.`;
       } catch (e) {
         aiNote = ` (${e.message})`;

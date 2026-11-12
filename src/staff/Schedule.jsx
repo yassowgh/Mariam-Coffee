@@ -11,6 +11,20 @@ export default function Schedule({ go }) {
   const [edit, setEdit] = useState(null);
   const [error, setError] = useState('');
   const [auto, setAuto] = useState(false);
+  const [mailing, setMailing] = useState(false);
+  const [mailMsg, setMailMsg] = useState(null);
+  async function emailWeek() {
+    if (!confirm(`Email every barista their shifts for the week of ${longDate(week)}?`)) return;
+    setMailing(true); setMailMsg(null);
+    try {
+      const r = await api('schedule-email', { method: 'POST', body: { week } });
+      const parts = [];
+      if (r.sent.length) parts.push(`Sent to ${r.sent.join(', ')}.`);
+      if (r.noEmail.length) parts.push(`No email address for ${r.noEmail.join(', ')} (add it in Team).`);
+      if (r.failed.length) parts.push(`Failed: ${r.failed.map((f) => `${f.name} (${f.error})`).join('; ')}.`);
+      setMailMsg({ ok: !r.failed.length && r.sent.length > 0, text: parts.join(' ') || 'Nobody to send to.' });
+    } catch (e) { setMailMsg({ ok: false, text: e.message }); } finally { setMailing(false); }
+  }
   const demandState = useDemand(auto);
   const demand = demandState.demand;
   const dayOrders = (d) => (demand ? demand.days[new Date(d + 'T00:00:00Z').getUTCDay()].orders : null);
@@ -76,12 +90,14 @@ export default function Schedule({ go }) {
               <button onClick={() => setWeek(addDaysLocal(week, 7))} aria-label="Next week">Next ›</button>
             </div>
             <button className="btn primary" onClick={() => setAuto(true)} disabled={!people}>✨ Create automatically</button>
+            <button className="btn" onClick={emailWeek} disabled={!shifts?.length || mailing}>{mailing ? 'Sending…' : '✉ Email each barista their shifts'}</button>
             <button className="btn" onClick={copyLastWeek} disabled={!shifts}>Copy last week</button>
             <button className="btn ghost" onClick={clearWeek} disabled={!shifts?.length}>Clear week</button>
             <button className="btn ghost" onClick={() => window.print()}>Print</button>
           </div>
         </div>
         {error && <div className="error" role="alert">{error}</div>}
+        {mailMsg && <div className={'banner ' + (mailMsg.ok ? 'ok' : 'bad')} role="status"><span>{mailMsg.text}</span><button className="btn small ghost" onClick={() => setMailMsg(null)} aria-label="Dismiss">✕</button></div>}
         {people && !people.length && (
           <div className="notice">No baristas yet. Add them in <button className="linklike" style={{ textDecoration: 'underline' }} onClick={() => go('team')}>Team</button> first.</div>
         )}

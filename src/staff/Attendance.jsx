@@ -60,7 +60,8 @@ function build(s, r, s0, s1, nowMs) {
   };
 }
 
-export default function Attendance() {
+export default function Attendance({ user }) {
+  const finance = !!user && (user.roles.includes('owner') || user.roles.includes('accountant'));
   const today = todayLocal();
   const ws = weekStart(today);
   const presets = [
@@ -133,7 +134,7 @@ export default function Attendance() {
 
       {data && (
         <div className="card">
-          <div className="card-head"><div><h2>Per barista</h2><p>{longDate(range.from)} – {longDate(range.to)}. Pay = worked hours × hourly rate (set the rate in Team).</p></div></div>
+          <div className="card-head"><div><h2>Per barista</h2><p>{longDate(range.from)} – {longDate(range.to)}.{finance ? ' Pay = worked hours × hourly rate (set the rate in Team).' : ''}</p></div></div>
           <DataTable rows={people} exportName="attendance-summary" defaultSort={{ key: 'worked', dir: 'desc' }}
             columns={[
               { key: 'name', label: 'Barista' },
@@ -145,8 +146,10 @@ export default function Attendance() {
               { key: 'noShows', label: 'No-shows', align: 'r', fmt: int, total: 'sum', cls: (r) => (r.noShows ? 'down' : '') },
               { key: 'missing', label: 'No clock-out', align: 'r', fmt: int, total: 'sum', cls: (r) => (r.missing ? 'down' : '') },
               { key: 'extra', label: 'Unscheduled', align: 'r', fmt: int, total: 'sum' },
-              { key: 'rate', label: 'Rate / hour', align: 'r', fmt: (v) => (v == null ? '–' : money(v)) },
-              { key: 'pay', label: 'Pay', align: 'r', fmt: (v) => (v == null ? '–' : money(v)), total: 'sum', csv: (r) => (r.pay == null ? '' : r.pay.toFixed(2)) },
+              ...(finance ? [
+                { key: 'rate', label: 'Rate / hour', align: 'r', fmt: (v) => (v == null ? '–' : money(v)) },
+                { key: 'pay', label: 'Pay', align: 'r', fmt: (v) => (v == null ? '–' : money(v)), total: 'sum', csv: (r) => (r.pay == null ? '' : r.pay.toFixed(2)) },
+              ] : []),
             ]} />
         </div>
       )}

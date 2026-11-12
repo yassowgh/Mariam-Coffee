@@ -65,8 +65,21 @@ function readNumber(s, unit) {
   return NUMS[m[1]] ?? Number(m[1]);
 }
 
-/** Find the people named in a sentence (first name, full name or username). */
+const EVERYONE = /\b(everyone|everybody|all baristas|all the baristas|every barista|each barista|all staff|all employees|each one|each of them|all of them)\b/;
+
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+const NOT_NAMES = new Set(['after', 'before', 'from', 'until', 'only', 'work', 'works', 'shift', 'shifts', 'hours', 'days', 'week', 'with', 'they', 'them', 'have', 'there', 'each', 'every', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'morning', 'evening', 'night', 'close', 'open', 'least', 'most', 'baristas', 'barista', 'people', 'weekend', 'weekdays']);
+
+/** Find the people named in a sentence (first name, full name or username, small typos allowed, or "everyone"). */
 function readPeople(s, people) {
+  if (EVERYONE.test(s)) return [...people];
   const hits = [];
   for (const p of people) {
     const names = new Set([p.username, p.name, ...p.name.split(/\s+/)].map((n) => n.toLowerCase()).filter((n) => n.length >= 3));
@@ -75,6 +88,15 @@ function readPeople(s, people) {
       if (re.test(s)) { hits.push(p); break; }
     }
   }
+  // typos such as "esissa" for Essa: a word close to exactly one first name
+  for (const w of s.match(/[a-zçğıöşü]{4,}/g) || []) {
+    if (NOT_NAMES.has(w)) continue;
+    const close = people.filter((p) => {
+      const f = p.name.split(/\s+/)[0].toLowerCase();
+      return f.length >= 4 && w[0] === f[0] && editDistance(w, f) <= (f.length >= 5 ? 2 : 2) && editDistance(w, f) > 0;
+    });
+    if (close.length === 1 && !hits.includes(close[0])) hits.push(close[0]);
+  }
   return hits;
 }
 
@@ -82,19 +104,32 @@ function sentences(text) {
   return text.split(/\n|;|\.(?=\s|$)(?!\d)/).map((x) => x.trim()).filter(Boolean);
 }
 
+// "Jawad is off on Wednesday and works only after 4 PM" = two conditions for the same person
+const CLAUSE = /\s+(?:and|but|,)\s+(?=(?:is|are|works?|can|cant|cannot|only|off|not|does|doesnt|dont|wont|will|should|must|has|have|max|maximum|at|no)\b)/;
+
 export function parseConditions(text, people) {
   const rules = [], unclear = [];
   for (const original of sentences(text)) {
-    const s = ' ' + original.toLowerCase().replace(/[’']/g, '').replace(/\s+/g, ' ') + ' ';
-    const r = readOne(s, people);
-    if (r.error) unclear.push(`${original}: ${r.error}`);
-    else for (const rule of r.rules) rules.push({ ...rule, text: original, source: 'built-in' });
+    const norm = (x) => ' ' + x.toLowerCase().replace(/[’']/g, '').replace(/\s+/g, ' ') + ' ';
+    const clauses = norm(original).trim().split(CLAUSE);
+    let subject = null;
+    const errors = [];
+    for (const c of clauses) {
+      let s = ' ' + c + ' ';
+      const named = readPeople(s, people);
+      if (named.length) subject = named;
+      const r = readOne(s, people, named.length ? null : subject);
+      if (r.error) errors.push(r.error);
+      else for (const rule of r.rules) rules.push({ ...rule, text: original, source: 'built-in' });
+    }
+    if (errors.length) unclear.push(`${original}: ${errors[0]}`);
   }
   return { rules, unclear };
 }
 
-function readOne(s, people) {
-  const who = readPeople(s, people);
+function readOne(s, people, inherited) {
+  const found = readPeople(s, people);
+  const who = found.length ? found : inherited || [];
   const { days, found: hasDays } = readDays(s);
   const between = new RegExp(`(?:from|between)?\\s*${TIME}\\s*(?:-|–|to|till|until|and)\\s*${TIME}`).exec(s);
   const after = new RegExp(`\\b(?:after|from|starting(?: at)?|not before)\\s+${TIME}`).exec(s);
@@ -109,7 +144,13 @@ function readOne(s, people) {
     const to = between ? readTime(between[2]) : before ? readTime(before[1]) : null;
     return { rules: [{ type: 'minStaff', person: null, days, from, to, number: n }] };
   }
-  if (!who.length) return { error: 'no barista name found (use the names in Team)' };
+  // opening hours: "we close at 1 am", "we open at 9 on fridays"
+  const closeAt = new RegExp(`\\b(?:close|closes|closing|shut)\\b(?:\\s+at)?\\s+${TIME}`).exec(s);
+  const openAt = new RegExp(`\\b(?:open|opens|opening)\\b(?:\\s+at)?\\s+${TIME}`).exec(s);
+  if ((closeAt || openAt) && !found.length) {
+    return { rules: [{ type: 'hours', person: null, days, from: openAt ? readTime(openAt[1]) : null, to: closeAt ? readTime(closeAt[1]) : null, number: null }] };
+  }
+  if (!who.length) return { error: 'no barista name found (use the names in Team, or “everyone”)' };
   const each = (rule) => ({ rules: who.map((p) => ({ person: p.username, days: [], from: null, to: null, number: null, ...rule })) });
 
   // weekly limits
@@ -119,9 +160,12 @@ function readOne(s, people) {
   const least = /\b(at least|min|minimum|no less than|not less than|more than)\b/.test(s);
   if (hours != null && !between && !after && !before) {
     if (least) return each({ type: 'minHours', number: hours });
-    if (most || /\b(a|per|this) week\b/.test(s)) return each({ type: 'maxHours', number: hours });
-    return { error: `say “at most ${hours} hours” or “at least ${hours} hours”` };
+    void most;
+    return each({ type: 'maxHours', number: hours }); // "can work 40 hours a week" = at most 40
   }
+  // "has one day off" / "two days off a week" = works at most 7 − N days
+  const daysOff = /\b(\d|one|two|three)\s+days?\s+off\b/.exec(s);
+  if (daysOff && !hasDays) return each({ type: 'maxDays', number: 7 - (NUMS[daysOff[1]] ?? Number(daysOff[1])) });
   if (nDays != null && !hasDays && !between) {
     if (least) return { error: 'a minimum number of days is not supported; use “at least N hours”' };
     return each({ type: 'maxDays', number: nDays });
@@ -143,9 +187,9 @@ function readOne(s, people) {
   if (between) {
     const from = readTime(between[1]), to = readTime(between[2]);
     if (!from || !to) return { error: 'the times could not be read; write them like 08:00 or 4pm' };
-    const flexible = /\b(can|could|available|only|between|prefers?|free to)\b/.test(s);
-    if (!hasDays && !flexible) return { error: 'which days? (e.g. “works Tuesday 08:00–16:00”)' };
-    return each({ type: flexible ? 'available' : 'fixed', days, from, to });
+    // a fixed shift needs a day and a clear "works / shift / must"; otherwise it is the time they can work
+    const fixed = hasDays && /\b(works?|working|shift|must|will work|has to)\b/.test(s) && !/\b(can|could|available|only|between|prefers?|free to)\b/.test(s);
+    return each({ type: fixed ? 'fixed' : 'available', days, from, to });
   }
   if (after || before) {
     const from = after ? readTime(after[1]) : null, to = before ? readTime(before[1]) : null;
@@ -164,4 +208,7 @@ export const PARSER_EXAMPLES = [
   'Abrar at most 30 hours',
   'Essa at most 5 days',
   'At least 2 baristas on Friday from 17:00',
+  'We close at 1am',
+  'Everyone has one day off',
+  'Everyone at most 40 hours',
 ];

@@ -19,14 +19,16 @@ const AREAS = [
   ['clock', 'Clock in / out', ['barista']],
   ['accounting', 'Accounting', ['accountant']],
   ['finance', 'Finance', ['accountant']],
-  ['salaries', 'Salaries', ['manager', 'accountant']],
   ['schedule', 'Schedule', ['manager']],
   ['attendance', 'Timesheets', ['manager']],
-  ['team', 'Team', ['manager']],
+  ['team', 'Team', ['manager', 'accountant']],
+  ['salaries', 'Salaries', ['manager', 'accountant']],
   ['settings', 'Settings', []],
 ];
 // owner: everything; accountant: sales, accounting, salaries; manager: schedule, timesheets, team, salaries; barista: clock
-const allowed = (user) => AREAS.filter(([, , roles]) => hasRole(user, ...roles));
+// a manager who is not an accountant sees hours, not salaries
+const allowed = (user) => AREAS.filter(([, , roles]) => hasRole(user, ...roles))
+  .map(([k, label, roles]) => [k, k === 'salaries' && !hasRole(user, 'accountant') ? 'Monthly hours' : label, roles]);
 
 /** Signs people in and shows only the parts of the site their role allows. */
 export default function Root() {

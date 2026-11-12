@@ -71,6 +71,7 @@ export function describeRule(r, people) {
     case 'minHours': return `${who} works at least ${r.number} hours this week`;
     case 'maxDays': return `${who} works at most ${r.number} days this week`;
     case 'minStaff': return `At least ${r.number} baristas ${span ? span + ' ' : ''}on ${days}`;
+    case 'hours': return `Café ${[r.from && `opens ${r.from}`, r.to && `closes ${r.to}`].filter(Boolean).join(' and ')} on ${days}`;
     default: return r.text || r.type;
   }
 }
@@ -81,7 +82,17 @@ export function describeRule(r, people) {
  */
 export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
   const s = { ...DEFAULT_SETTINGS, ...s0 };
-  const hours = s.hours || hoursFromDemand(demand);
+  // opening hours: settings or the sales pattern, then "we close at 1am"-type conditions
+  const hours = (s.hours || hoursFromDemand(demand)).map((h, dow) => {
+    let out = h ? { ...h } : null;
+    for (const r of rules) {
+      if (r.type !== 'hours' || !appliesTo(r, dow)) continue;
+      if (!out) { if (r.from && r.to) out = { open: r.from, close: r.to }; continue; }
+      if (r.from) out.open = r.from;
+      if (r.to) out.close = r.to;
+    }
+    return out;
+  });
   const warnings = [];
   const byUser = (name) => people.find((p) => p.username.toLowerCase() === String(name || '').toLowerCase());
 
@@ -157,7 +168,8 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
   const target = Math.max(1, totalNeed / Math.max(1, people.length));
   const minLen = s.minShift * 2, maxLen = s.maxShift * 2;
   const weight = (day, k) => 1 + day.orders[k] / Math.max(1, s.perBarista / 2) * 0.25;
-  const greedy = (wastePenalty) => {
+  // shiftCost: each extra shift uses up one of the person's days, so longer shifts are preferred
+  const greedy = (wastePenalty, shiftCost) => {
   for (let guard = 0; guard < 200; guard++) {
     let best = null;
     for (const x of st.values()) {
@@ -177,7 +189,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
             const len = b - a;
             if (len < lo || x.hours + len / 2 > x.maxHours) continue;
             if (gain <= 0) continue;
-            const score = (gain - wastePenalty * waste) / (1 + 0.6 * (x.hours / target)) - 0.01 * len;
+            const score = (gain - wastePenalty * waste - shiftCost) / (1 + 1.0 * (x.hours / target)) - 0.01 * len;
             if (!best || score > best.score) best = { score, x, di, a, b };
           }
         }
@@ -187,7 +199,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
     add(best.x, best.di, best.a, best.b, 'auto');
   }
   };
-  greedy(0.35);
+  greedy(0.35, 3);
 
   // ---- small gaps: stretch a neighbouring shift (up to 1 hour past the longest shift) before adding new ones
   const stretch = () => {
@@ -214,7 +226,95 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
     }
   };
   stretch();
-  greedy(0.15);
+  greedy(0.15, 0.25);
+
+  // ---- share the work: move whole shifts from the person with the most hours to one with far fewer
+  for (let guard = 0; guard < 60; guard++) {
+    const order = [...st.values()].sort((p, q) => p.hours - q.hours);
+    let moved = false;
+    for (const lo of order) {
+      for (const hi of [...order].reverse()) {
+        if (hi === lo || hi.hours - lo.hours < s.minShift) continue;
+        const cand = shifts.filter((sh) => sh.user_id === hi.p.id && sh.kind === 'auto' && !lo.days.has(sh.di) && lo.days.size < lo.maxDays
+          && lo.hours + (sh.b - sh.a) / 2 <= lo.maxHours && hi.hours - (sh.b - sh.a) / 2 >= lo.hours);
+        const sh = cand.find((c) => { const w = windowFor(lo, days[c.di]); return w && w[0] <= c.a && w[1] >= c.b; });
+        if (!sh) continue;
+        const len = (sh.b - sh.a) / 2;
+        hi.hours -= len; hi.days.delete(sh.di);
+        lo.hours += len; lo.days.add(sh.di);
+        sh.user_id = lo.p.id;
+        moved = true;
+        break;
+      }
+      if (moved) break;
+    }
+    if (!moved) break;
+  }
+
+  // ---- repair: a gap only one person could cover, but they have no hours left.
+  // Give part of one of their other shifts to someone free that day, then use the freed hours for the gap.
+  const gapsOf = (day) => {
+    const out = [];
+    if (day.open == null) return out;
+    for (let k = day.open; k < day.close; k++) {
+      if (day.cover[k] >= day.need[k]) continue;
+      let e = k;
+      while (e < day.close && day.cover[e] < day.need[e]) e++;
+      out.push([k, e]);
+      k = e;
+    }
+    return out;
+  };
+  const coverRange = (day, a, b, d) => { for (let k = a; k < b; k++) day.cover[k] += d; };
+  for (let guard = 0; guard < 20; guard++) {
+    let fixed = false;
+    for (const [gi, gday] of days.entries()) {
+      for (const [ga, gb] of gapsOf(gday)) {
+        for (const p of st.values()) {
+          if (p.days.has(gi) || p.days.size >= p.maxDays && !p.days.has(gi)) continue;
+          const pw = windowFor(p, gday);
+          if (!pw) continue;
+          // the shift P would work on the gap day: the gap, widened to the shortest shift inside P's window
+          let na = Math.max(pw[0], ga), nb = Math.min(pw[1], gb);
+          if (nb <= na) continue;
+          while (nb - na < minLen && (na > pw[0] || nb < pw[1])) { if (nb < pw[1]) nb++; else na--; }
+          const needH = (nb - na) / 2 - (p.maxHours - p.hours);
+          if (needH <= 0) continue; // not an hours problem
+          for (const sh of shifts.filter((x) => x.user_id === p.p.id && x.kind === 'auto' && x.di !== gi)) {
+            const day = days[sh.di];
+            for (const q of st.values()) {
+              if (q === p || q.days.has(sh.di) || q.days.size >= q.maxDays) continue;
+              const qw = windowFor(q, day);
+              if (!qw) continue;
+              // Q takes the start or the end of P's shift
+              const opts = [[sh.a, Math.min(sh.b, qw[1])], [Math.max(sh.a, qw[0]), sh.b]].filter(([ta, tb]) => ta >= qw[0] && tb <= qw[1] && tb - ta >= minLen);
+              for (const [ta, tb] of opts) {
+                const rest = ta === sh.a ? [tb, sh.b] : [sh.a, ta];
+                const restLen = rest[1] - rest[0];
+                if (restLen > 0 && restLen < Math.min(minLen, 4)) continue;
+                const freed = (sh.b - sh.a - Math.max(0, restLen)) / 2;
+                if (freed < needH || q.hours + (tb - ta) / 2 > q.maxHours) continue;
+                // apply: Q gets [ta, tb), P keeps the rest, P works the gap
+                coverRange(day, sh.a, sh.b, -1);
+                if (restLen > 0) { sh.a = rest[0]; sh.b = rest[1]; coverRange(day, sh.a, sh.b, 1); } else { shifts.splice(shifts.indexOf(sh), 1); p.days.delete(sh.di); }
+                p.hours -= freed;
+                add(q, sh.di, ta, tb, 'auto');
+                add(p, gi, na, nb, 'auto');
+                fixed = true;
+                break;
+              }
+              if (fixed) break;
+            }
+            if (fixed) break;
+          }
+          if (fixed) break;
+        }
+        if (fixed) break;
+      }
+      if (fixed) break;
+    }
+    if (!fixed) break;
+  }
 
   // ---- top up minimum hours on the busiest free times
   for (const x of st.values()) {
@@ -274,7 +374,18 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
       if (day.cover[k] >= day.need[k]) { k++; continue; }
       const a = k, needMax = day.need[k], have = day.cover[k];
       while (k < day.close && day.cover[k] < day.need[k]) k++;
-      warnings.push(`${DAY_NAMES[day.dow]} ${fromSlot(a)}–${fromSlot(k)}: ${have} barista${have === 1 ? '' : 's'} but ${needMax} needed (nobody else is free).`);
+      // say why nobody else could take it
+      const di = days.indexOf(day);
+      const why = [...st.values()].filter((x) => !shifts.some((sh) => sh.user_id === x.p.id && sh.di === di && sh.a <= a && sh.b >= k)).map((x) => {
+        const w = windowFor(x, day);
+        if (x.rules.some((r) => r.type === 'off' && appliesTo(r, day.dow))) return `${x.p.name.split(' ')[0]} is off`;
+        if (shifts.some((sh) => sh.user_id === x.p.id && sh.di === di)) return `${x.p.name.split(' ')[0]} already has a shift that day`;
+        if (!w || w[0] > a || w[1] < k) return `${x.p.name.split(' ')[0]} is not available then`;
+        if (x.days.size >= x.maxDays) return `${x.p.name.split(' ')[0]} already works ${x.days.size} days`;
+        if (x.hours >= x.maxHours - 0.01) return `${x.p.name.split(' ')[0]} is at ${x.maxHours} hours`;
+        return `${x.p.name.split(' ')[0]} would need a shift shorter than ${s.minShift} hours`;
+      });
+      warnings.push(`${DAY_NAMES[day.dow]} ${fromSlot(a)}–${fromSlot(k)}: ${have} barista${have === 1 ? '' : 's'} but ${needMax} needed. ${why.join('; ')}.`);
     }
   }
 

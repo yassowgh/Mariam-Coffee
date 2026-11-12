@@ -307,7 +307,7 @@ async function costSummary({ env, h }) {
 }
 
 /** Hours worked and salary payments for one month. */
-async function salaries({ request, env, h }) {
+async function salaries({ request, env, me, h }) {
   const db = env.DB;
   const month = new URL(request.url).searchParams.get('month');
   if (!h.isMonth(month)) h.fail(400, 'Choose a month.');
@@ -323,7 +323,10 @@ async function salaries({ request, env, h }) {
     db.prepare(`${SELECT} WHERE e.deleted = 0 AND ((e.date >= ? AND e.date < ?) OR (e.paid_date >= ? AND e.paid_date < ?))
       AND (e.kind = 'advance' OR e.employee_user_id IS NOT NULL OR (e.employee IS NOT NULL AND e.employee <> '') OR c.name LIKE 'Salar%')`).bind(first, next, first, next).all(),
   ]);
-  return h.json({ month, people: people.results.map((p) => ({ ...p, roles: (p.roles || '').split(',') })), attendance: rec.results, shifts: sh.results, payments: pay.results });
+  // a manager sees hours only: no pay, no payments
+  const fin = h.has(me, 'accountant');
+  const list = people.results.map((p) => ({ ...p, roles: (p.roles || '').split(','), ...(fin ? {} : { rate: null, monthly_salary: null }) }));
+  return h.json({ month, finance: fin, people: list, attendance: rec.results, shifts: sh.results, payments: fin ? pay.results : [] });
 }
 
 export const ACCOUNTING_ROUTES = ['categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries'];
