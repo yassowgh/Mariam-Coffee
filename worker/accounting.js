@@ -42,6 +42,7 @@ export async function handleAccounting(ctx) {
       need(me, 'accountant');
       if (sub === 'import') return importRecords(ctx);
       if (sub === 'payees') return payees(ctx);
+      if (sub === 'extract') return extract(ctx);
       return records(ctx, sub && /^\d+$/.test(sub) ? Number(sub) : null);
     case 'receipts':
       need(me, 'accountant');
@@ -52,6 +53,12 @@ export async function handleAccounting(ctx) {
     case 'salaries':
       need(me, 'manager', 'accountant');
       return salaries(ctx);
+    case 'documents':
+      need(me, 'accountant');
+      return documents(ctx, sub || null);
+    case 'finance-advice':
+      need(me, 'accountant');
+      return financeAdvice(ctx);
     default:
       return fail(404, 'Not found');
   }
@@ -329,4 +336,119 @@ async function salaries({ request, env, me, h }) {
   return h.json({ month, finance: fin, people: list, attendance: rec.results, shifts: sh.results, payments: fin ? pay.results : [] });
 }
 
-export const ACCOUNTING_ROUTES = ['categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries'];
+export const ACCOUNTING_ROUTES = ['categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
+
+// ---------- expenses from free text (PDF, TXT, Word), read by AI ----------
+async function extract({ request, env, me, h }) {
+  const b = await h.body(request);
+  const text = String(b.text || '').slice(0, 24000);
+  if (!text.trim()) h.fail(400, 'The file has no text.');
+  if (!env.AI) h.fail(501, 'No AI is connected, so free text cannot be read.');
+  const cats = (await env.DB.prepare('SELECT name FROM categories WHERE active = 1').all()).results.map((c) => c.name);
+  const prompt = `Extract every expense / payment from this document of a café in Istanbul (amounts in Turkish lira).
+For each one give: name (what it was for, short), date (YYYY-MM-DD, or "" if not shown; dates like 03/04/2026 are day/month/year),
+amount (number, no currency), category (one of: ${cats.join(', ')}; or "" if unsure), payee (shop, company or person paid, or ""),
+status ("paid", or "unpaid" if the document says it is not paid yet).
+Skip totals, subtotals, VAT summary lines and anything that is not a single expense. Do not invent anything.
+Answer with JSON: {"records": [...]}
+
+Document:
+${text}`;
+  let out = null;
+  try {
+    const res = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_schema', json_schema: { type: 'object', required: ['records'], properties: { records: { type: 'array', items: { type: 'object', required: ['name', 'date', 'amount', 'category', 'payee', 'status'], properties: { name: { type: 'string' }, date: { type: 'string' }, amount: { type: 'number' }, category: { type: 'string' }, payee: { type: 'string' }, status: { type: 'string' } } } } } } },
+      max_tokens: 4000, temperature: 0,
+    });
+    out = res?.response;
+    if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
+  } catch (e) { console.error('extract', e); h.fail(503, 'The AI could not read the file right now. Try again, or use an Excel/CSV file.'); }
+  if (!out || !Array.isArray(out.records)) h.fail(502, 'The AI answer could not be read. Try again.');
+  const records = out.records.map((r) => ({
+    name: h.str(r.name, 160) || 'Expense', amount: Math.abs(Number(r.amount) || 0), date: h.isDate(r.date) ? r.date : '',
+    category: cats.includes(r.category) ? r.category : '', payee: h.str(r.payee, 120), status: r.status === 'unpaid' ? 'unpaid' : 'paid',
+  })).filter((r) => r.amount > 0);
+  await h.audit(env.DB, me, 'expense.extract', { records: records.length });
+  return h.json({ records });
+}
+
+// ---------- uploaded expense files (kept for the records) ----------
+const MAX_DOC_BYTES = 15 * 1024 * 1024;
+async function documents({ request, env, me, h }, id) {
+  if (!env.DATA) h.fail(503, 'File storage is not configured.');
+  if (request.method === 'GET' && !id) {
+    const list = await env.DATA.list({ prefix: 'doc:' });
+    return h.json({ documents: list.keys.map((k) => ({ id: k.name.slice(4), ...(k.metadata || {}) })).sort((a, b) => (a.at < b.at ? 1 : -1)) });
+  }
+  if (request.method === 'POST' && !id) {
+    const name = decodeURIComponent(request.headers.get('x-filename') || 'file').slice(0, 160);
+    const type = (request.headers.get('content-type') || 'application/octet-stream').slice(0, 120);
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength) h.fail(400, 'The file is empty.');
+    if (buf.byteLength > MAX_DOC_BYTES) h.fail(413, 'The file is too large (limit 15 MB).');
+    const docId = 'd_' + h.newToken().slice(0, 24);
+    const meta = { name, type, size: buf.byteLength, by: me.name, at: h.nowIso(), records: 0 };
+    await env.DATA.put('doc:' + docId, buf, { metadata: meta });
+    await h.audit(env.DB, me, 'document.upload', { name, size: buf.byteLength });
+    return h.json({ document: { id: docId, ...meta } });
+  }
+  if (id && !/^d_[a-f0-9]{24}$/.test(id)) h.fail(404, 'Not found');
+  if (request.method === 'GET') {
+    const { value, metadata } = await env.DATA.getWithMetadata('doc:' + id, { type: 'arrayBuffer' });
+    if (!value) h.fail(404, 'The file was not found.');
+    return new Response(value, { headers: { 'content-type': metadata?.type || 'application/octet-stream',
+      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(metadata?.name || 'file')}`, 'cache-control': 'private, max-age=3600' } });
+  }
+  if (request.method === 'PATCH') {
+    // remember how many records were imported from the file
+    const b = await h.body(request);
+    const { value, metadata } = await env.DATA.getWithMetadata('doc:' + id, { type: 'arrayBuffer' });
+    if (!value) h.fail(404, 'The file was not found.');
+    await env.DATA.put('doc:' + id, value, { metadata: { ...metadata, records: Number(b.records) || 0 } });
+    return h.json({ ok: true });
+  }
+  if (request.method === 'DELETE') {
+    if (!h.isOwner(me)) h.fail(403, 'Only the owner can delete a stored file.');
+    await env.DATA.delete('doc:' + id);
+    await h.audit(env.DB, me, 'document.delete', { id });
+    return h.json({ ok: true });
+  }
+  return h.fail(405, 'Not allowed.');
+}
+
+// ---------- 5 recommendations for a month, written by AI from the month's figures ----------
+async function financeAdvice({ request, env, me, h }) {
+  const db = env.DB;
+  const b = await h.body(request);
+  if (!h.isMonth(b.month) || !b.summary) h.fail(400, 'Missing month or figures.');
+  const lang = b.lang === 'ar' ? 'ar' : 'en';
+  const key = `advice:${b.month}:${lang}`;
+  const sig = JSON.stringify(b.summary).length + ':' + JSON.stringify(b.summary).slice(0, 2000).split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  const cached = await h.getSetting(db, key);
+  if (cached && cached.sig === sig && !b.refresh) return h.json(cached);
+  const prompt = `You advise the owner of Mariam Coffee, a small café in Istanbul (amounts in Turkish lira, TL).
+Here are the café's figures for ${b.month} (JSON):
+${JSON.stringify(b.summary).slice(0, 6000)}
+Write exactly 5 short, concrete recommendations to reduce costs, pay bills on time or improve profit, based only on these figures.
+Each one sentence or two, plain words, mention the category or bill and the amount when useful. Do not invent figures.
+${lang === 'ar' ? 'Write them in Arabic.' : 'Write them in English.'} Answer with JSON: {"recommendations": ["...", "...", "...", "...", "..."]}`;
+  let recs = null;
+  try {
+    if (env.AI) {
+      const res = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_schema', json_schema: { type: 'object', required: ['recommendations'], properties: { recommendations: { type: 'array', items: { type: 'string' } } } } },
+        max_tokens: 1200, temperature: 0.3,
+      });
+      let out = res?.response;
+      if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
+      recs = Array.isArray(out?.recommendations) ? out.recommendations.map(String).filter(Boolean).slice(0, 5) : null;
+    }
+  } catch (e) { console.error('advice', e); }
+  if (!recs || !recs.length) h.fail(503, 'The AI could not write recommendations right now. The key figures above are still correct.');
+  const result = { month: b.month, recommendations: recs, sig, at: h.nowIso(), by: 'Cloudflare AI' };
+  await h.setSetting(db, key, result);
+  await h.audit(db, me, 'finance.advice', { month: b.month });
+  return h.json(result);
+}

@@ -9,7 +9,7 @@
 //   manager    adds/removes baristas, plans shifts, sees and corrects attendance, salaries
 //   barista    sees their own shifts, clocks in and out at the café
 import { PLANNER_ROUTES, handlePlanner } from './planner.js';
-import { EMAIL_ROUTES, handleEmail, sendWelcome } from './email.js';
+import { EMAIL_ROUTES, PUBLIC_EMAIL_ROUTES, handleEmail, handlePublicEmail, sendWelcome } from './email.js';
 import { ACCOUNTING_ROUTES, ACCOUNTING_SCHEMA, DEFAULT_ACCOUNTS, EXPENSE_COLUMNS, handleAccounting } from './accounting.js';
 import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
 
@@ -43,6 +43,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS attendance_in ON attendance(in_at)`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, user_id INTEGER, action TEXT NOT NULL, detail TEXT)`,
+  `CREATE TABLE IF NOT EXISTS password_links (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, kind TEXT NOT NULL)`,
 ];
 // [name, stock]: stock = ingredients / goods for sale, already counted in the recipe costs (COGS)
 const DEFAULT_CATEGORIES = [['Coffee beans', 1], ['Milk & dairy', 1], ['Cups & packaging', 1], ['Syrups & sauces', 1],
@@ -55,7 +56,7 @@ function ensureSchema(db) {
     schemaReady = (async () => {
       await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA].map((s) => db.prepare(s)));
       // columns added after the first release
-      const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL']], ['expenses', EXPENSE_COLUMNS]];
+      const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL', "lang TEXT NOT NULL DEFAULT 'en'"]], ['expenses', EXPENSE_COLUMNS]];
       for (const [table, list] of cols) {
         const have = new Set((await db.prepare(`PRAGMA table_info(${table})`).all()).results.map((c) => c.name));
         for (const col of list) if (!have.has(col.split(' ')[0])) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col}`).run();
@@ -126,7 +127,7 @@ export function distanceM(a, b) {
 
 const publicUser = (u) => u && ({
   id: u.id, username: u.username, name: u.name, roles: rolesOf(u), active: !!u.active,
-  rate: u.rate, pay_type: u.pay_type || null, monthly_salary: u.monthly_salary ?? null, phone: u.phone || '', color: u.color || '', email: u.email || '', mustChange: !!u.must_change, created_at: u.created_at,
+  rate: u.rate, pay_type: u.pay_type || null, monthly_salary: u.monthly_salary ?? null, phone: u.phone || '', color: u.color || '', email: u.email || '', mustChange: !!u.must_change, lang: u.lang || 'en', created_at: u.created_at,
 });
 
 async function audit(db, user, action, detail) {
@@ -502,8 +503,17 @@ export async function handleStaff(request, env, path, passwordOk) {
     if (head === 'login' && m === 'POST') return await login(request, env, passwordOk);
     if (head === 'logout' && m === 'POST') return await logout(request, env);
     const me = await currentUser(request, env);
+    const h = { need, has, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken, getSetting, setSetting, hashPassword };
+    // no sign-in needed: forgotten password and the link from the email
+    if (PUBLIC_EMAIL_ROUTES.includes(head) && m === 'POST') return await handlePublicEmail({ head, request, env, h });
     if (head === 'me') {
       if (sub === 'password' && m === 'POST') { need(me); return await changeOwnPassword(request, env, me); }
+      if (sub === 'lang' && m === 'POST') {
+        need(me);
+        const lang = (await body(request)).lang === 'ar' ? 'ar' : 'en';
+        await env.DB.prepare('UPDATE users SET lang = ? WHERE id = ?').bind(lang, me.id).run();
+        return json({ ok: true, lang });
+      }
       if (!me) {
         const { n } = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
         return json({ user: null, firstRun: !n });
@@ -514,7 +524,6 @@ export async function handleStaff(request, env, path, passwordOk) {
       return await handlePlanner({ request, env, head, me, need, isOwner, passwordOk, getSetting, setSetting, audit, fail });
     }
     need(me);
-    const h = { need, has, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken, getSetting, setSetting };
     if (ACCOUNTING_ROUTES.includes(head)) return await handleAccounting({ head, sub, request, env, me, h });
     if (EMAIL_ROUTES.includes(head)) return await handleEmail({ head, request, env, me, h });
     switch (head) {
@@ -537,4 +546,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity'];
+export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity'];

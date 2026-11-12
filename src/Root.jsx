@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import App from './App.jsx';
 import Header from './components/Header.jsx';
 import { api, hasRole, ROLE_LABELS } from './lib/api.js';
-import Login from './staff/Login.jsx';
+import { applyLang, chosenHere, getLang, setLangSaver } from './lib/i18n.js';
+import Login, { SetPassword } from './staff/Login.jsx';
 import Accounting from './staff/Accounting.jsx';
 import Finance from './staff/Finance.jsx';
 import Salaries from './staff/Salaries.jsx';
@@ -33,6 +34,8 @@ const allowed = (user) => AREAS.filter(([, , roles]) => hasRole(user, ...roles))
 /** Signs people in and shows only the parts of the site their role allows. */
 export default function Root() {
   const [state, setState] = useState({ status: 'checking' });
+  // link from an invitation or password email: /staff?set=TOKEN or ?reset=TOKEN
+  const [linkToken, setLinkToken] = useState(() => { const q = new URLSearchParams(location.search); return q.get('set') || q.get('reset'); });
   const [area, setArea] = useState(null);
   const [showAccount, setShowAccount] = useState(false);
   const [wantLogin, setWantLogin] = useState(false);
@@ -48,6 +51,11 @@ export default function Root() {
     }
   }
   function signedIn(user) {
+    // the language saved on the account wins; the switch saves new choices to the account
+    const save = (lang) => api('me/lang', { method: 'POST', body: { lang } }).catch(() => {});
+    if (chosenHere()) { if (getLang() !== user.lang) save(getLang()); } // chosen on this device: keep it, remember it on the account
+    else if (user.lang && user.lang !== getLang()) applyLang(user.lang, false);
+    setLangSaver(save);
     setState({ status: 'ready', user });
     setWantLogin(false);
     const list = allowed(user).map(([k]) => k);
@@ -70,6 +78,7 @@ export default function Root() {
   }
   async function logout() {
     try { await api('logout', { method: 'POST' }); } catch { /* ignore */ }
+    setLangSaver(null);
     setState({ status: 'login' });
     setShowAccount(false);
   }
@@ -80,6 +89,13 @@ export default function Root() {
   }
   // /staff = the staff link: straight to sign-in, never the sales
   const staffLink = /^\/staff\/?$/.test(location.pathname);
+  if (linkToken) {
+    return (<><Header title="Mariam Coffee" subtitle="Staff" /><main><SetPassword token={linkToken} onDone={() => {
+      setLinkToken(null);
+      try { history.replaceState(null, '', '/staff'); } catch { /* ignore */ }
+      setState({ status: 'login' });
+    }} /></main></>);
+  }
   if (state.status === 'login') {
     if (staffLink) {
       return (<><Header title="Mariam Coffee" subtitle="Staff sign-in" /><main><Login firstRun={state.firstRun} error={state.error} onDone={signedIn} /></main></>);

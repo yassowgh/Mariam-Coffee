@@ -74,7 +74,7 @@ export default function Clock() {
               <li key={s.id} className={s.date === today ? 'today' : ''}>
                 <span><b>{s.date === today ? 'Today' : dowOf(s.date)}</b> {longDate(s.date)}</span>
                 <span className="num">{s.start}–{s.end} <span className="faint">({hoursFmt(shiftHours(s))})</span></span>
-                {s.note && <small className="muted">{s.note}</small>}
+                {s.note && !s.note.startsWith('auto ·') && <small className="muted">{s.note}</small>}
               </li>
             ))}
           </ul>

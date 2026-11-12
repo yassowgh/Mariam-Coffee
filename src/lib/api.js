@@ -4,14 +4,14 @@ export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-export async function api(path, { method = 'GET', body, raw, type } = {}) {
+export async function api(path, { method = 'GET', body, raw, type, headers: extra } = {}) {
   let res;
   try {
     res = await fetch('/api/' + path, {
       method,
       credentials: 'same-origin',
       cache: 'no-store',
-      headers: raw ? { 'content-type': type } : body !== undefined ? { 'content-type': 'application/json' } : undefined,
+      headers: { ...(raw ? { 'content-type': type } : body !== undefined ? { 'content-type': 'application/json' } : {}), ...(extra || {}) },
       body: raw || (body !== undefined ? JSON.stringify(body) : undefined),
     });
   } catch {

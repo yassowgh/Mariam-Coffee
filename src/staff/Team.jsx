@@ -47,6 +47,20 @@ export default function Team({ user }) {
     try { await api('users/' + p.id, { method: 'PATCH', body: { active: !p.active } }); load(); } catch (e) { alert(e.message); }
   }
   const shown = (list || []).filter((p) => showOld || p.active);
+  const [inv, setInv] = useState(null);
+  async function invite(ids, label) {
+    if (!confirm(`Send ${label} an invitation email with their username and a link to choose a password (English and Arabic)?`)) return;
+    setInv({ busy: true });
+    try {
+      const r = await api('invite', { method: 'POST', body: ids ? { user_ids: ids } : {} });
+      const parts = [];
+      if (r.sent.length) parts.push(`Sent to ${r.sent.join(', ')}.`);
+      if (r.noEmail.length) parts.push(`No email address: ${r.noEmail.join(', ')}.`);
+      if (r.skipped.length) parts.push(`Only the owner can invite: ${r.skipped.join(', ')}.`);
+      if (r.failed.length) parts.push(`Failed: ${r.failed.map((f) => `${f.name} (${f.error})`).join('; ')}.`);
+      setInv({ ok: !r.failed.length && r.sent.length > 0, text: parts.join(' ') || 'Nobody to send to.' });
+    } catch (e) { setInv({ ok: false, text: e.message }); }
+  }
 
   return (
     <div className="stack">
@@ -55,10 +69,12 @@ export default function Team({ user }) {
           <div><h2>{owner ? 'Team and accounts' : 'Baristas'}</h2><p>Each person signs in with their own username and password. {owner ? 'One person can have several roles.' : 'You can add and remove baristas.'}</p></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <label className="check-inline"><input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} />Show removed</label>
+            {canEdit && <button className="btn" onClick={() => invite(null, owner ? 'everyone (except you)' : 'every barista')} disabled={inv?.busy}>✉ {owner ? 'Invite everyone' : 'Invite all baristas'}</button>}
             {canEdit && <button className="btn primary" onClick={() => setEdit({ name: '', username: '', password: '', roles: owner ? [] : ['barista'], rate: '', phone: '', color: COLORS[(list?.length || 0) % COLORS.length] })}>＋ Add a person</button>}
           </div>
         </div>
         {error && <div className="error" role="alert">{error}</div>}
+        {inv?.text && <div className={'banner ' + (inv.ok ? 'ok' : 'bad')} role="status"><span>{inv.text}</span><button className="btn small ghost" onClick={() => setInv(null)} aria-label="Dismiss">✕</button></div>}
         {edit && <Editor edit={edit} setEdit={setEdit} roleChoices={roleChoices} self={user} finance={finance} onSaved={() => { setEdit(null); load(); }} />}
         {list == null ? <p className="muted">Loading…</p> : (
           <div className="table-wrap">
@@ -76,6 +92,7 @@ export default function Team({ user }) {
                     <td>{longDate(p.created_at.slice(0, 10))}</td>
                     <td style={{ display: 'flex', gap: 4 }}>
                       {canEdit && <button className="btn small ghost" onClick={() => setEdit({ ...p, password: '', rate: p.rate ?? '', monthly_salary: p.monthly_salary ?? '' })}>Edit</button>}
+                      {canEdit && p.id !== user.id && p.email && p.active && <button className="btn small ghost" onClick={() => invite([p.id], p.name)} title="Email a link to choose a (new) password">✉ Invite / reset</button>}
                       {canEdit && p.id !== user.id && <button className="btn small ghost" onClick={() => toggleActive(p)}>{p.active ? 'Remove' : 'Bring back'}</button>}
                     </td>
                   </tr>

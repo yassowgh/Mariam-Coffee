@@ -1,3 +1,18 @@
+import { useEffect, useState } from 'react';
+import { chooseLang, getLang } from '../lib/i18n.js';
+
+/** English / العربية switch (shown on every page). */
+function LangSwitch() {
+  const [lang, setLang] = useState(getLang());
+  useEffect(() => { const f = () => setLang(getLang()); window.addEventListener('mc-lang', f); return () => window.removeEventListener('mc-lang', f); }, []);
+  return (
+    <div className="seg lang-switch" role="group" aria-label="Language" data-no-i18n>
+      <button aria-pressed={lang === 'en'} onClick={() => chooseLang('en')}>EN</button>
+      <button aria-pressed={lang === 'ar'} onClick={() => chooseLang('ar')} lang="ar">عربي</button>
+    </div>
+  );
+}
+
 /** Top bar: brand, optional actions, the signed-in person, the area switcher and the report tabs. */
 export default function Header({ title = 'Mariam Coffee · Sales', subtitle, onReset, tabs, areas, account }) {
   return (
@@ -13,6 +28,7 @@ export default function Header({ title = 'Mariam Coffee · Sales', subtitle, onR
           </div>
         </div>
         <span className="spacer" />
+        <LangSwitch />
         {onReset && <button className="btn small" onClick={onReset} title="Upload new database files">⤒ Update data</button>}
         {account}
       </div>

@@ -136,6 +136,25 @@ export async function handleEmail({ head, request, env, me, h }) {
     return h.json(out);
   }
 
+  if (head === 'invite') {
+    // owner: anyone; manager: baristas. Each person gets their username and a link to choose a password.
+    h.need(me, 'manager');
+    const b = await h.body(request);
+    const { results } = await db.prepare('SELECT * FROM users WHERE active = 1').all();
+    const ids = Array.isArray(b.user_ids) ? new Set(b.user_ids.map(Number)) : null;
+    const out = { sent: [], noEmail: [], failed: [], skipped: [] };
+    for (const u of results) {
+      if (ids ? !ids.has(u.id) : u.id === me.id) continue;
+      const roles = (u.roles || '').split(',');
+      if (!h.isOwner(me) && !roles.every((r) => r === 'barista')) { out.skipped.push(u.name); continue; }
+      if (!u.email) { out.noEmail.push(u.name); continue; }
+      try { await sendInvite(env, h, u, new URL(request.url).origin); out.sent.push(u.name); } catch (e) { out.failed.push({ name: u.name, error: e.message }); }
+      await sleep(600);
+    }
+    await h.audit(db, me, 'account.invite', { sent: out.sent.length, failed: out.failed.length });
+    return h.json(out);
+  }
+
   if (head === 'send-login') {
     h.need(me, 'manager');
     const b = await h.body(request);
@@ -152,4 +171,91 @@ export async function handleEmail({ head, request, env, me, h }) {
   return h.fail(404, 'Not found');
 }
 
-export const EMAIL_ROUTES = ['email-settings', 'email-test', 'schedule-email', 'send-login'];
+export const EMAIL_ROUTES = ['email-settings', 'email-test', 'schedule-email', 'send-login', 'invite'];
+export const PUBLIC_EMAIL_ROUTES = ['password-forgot', 'password-reset'];
+
+// ---------- password links (invitation: 7 days, reset: 1 hour) ----------
+const DAY_MS = 86400000;
+async function makeLink(db, h, userId, kind) {
+  const token = h.newToken();
+  const life = kind === 'invite' ? 7 * DAY_MS : DAY_MS / 24;
+  await db.batch([
+    db.prepare('DELETE FROM password_links WHERE expires < ? OR (user_id = ? AND kind = ?)').bind(Date.now(), userId, kind),
+    db.prepare('INSERT INTO password_links (token, user_id, expires, kind) VALUES (?, ?, ?, ?)').bind(token, userId, Date.now() + life, kind),
+  ]);
+  return token;
+}
+const button = (href, label) => `<p style="margin:16px 0"><a href="${esc(href)}" style="display:inline-block;background:#6b4226;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:bold">${esc(label)}</a></p>`;
+const arabic = (inner) => `<div dir="rtl" lang="ar" style="border-top:1px solid #e3e0da;margin-top:20px;padding-top:16px;font-family:Tahoma,Arial,sans-serif;text-align:right">${inner}</div>`;
+
+/** Invitation: username + a link to choose a password (English and Arabic). */
+async function sendInvite(env, h, u, origin) {
+  const cfg = await config(env, h, env.DB);
+  if (!cfg.key) throw new Error('Email is not set up (Settings → Email).');
+  if (!u.email) throw new Error('No email address.');
+  const token = await makeLink(env.DB, h, u.id, 'invite');
+  const link = `${origin}/staff?set=${token}`;
+  const site = `${origin}/staff`;
+  const first = u.name.split(' ')[0];
+  const barista = String(u.roles || '').split(',').every((r) => r === 'barista');
+  const en = barista
+    ? 'On the staff website you see your shifts and clock in when you arrive and clock out when you leave. Clocking in only works inside the café, so allow the website to use your location.'
+    : 'Use the staff website for your work at Mariam Coffee.';
+  const ar = barista
+    ? 'من خلال موقع الموظفين ترى ورديّاتك وتسجّل الحضور عند وصولك والانصراف عند مغادرتك. يعمل تسجيل الحضور داخل المقهى فقط، لذا اسمح للموقع باستخدام موقعك.'
+    : 'استخدم موقع الموظفين لعملك في مريم كافيه.';
+  const html = layout('Welcome to Mariam Coffee', `<p>Hi ${esc(first)},</p><p>You are invited to the Mariam Coffee staff website. ${esc(en)}</p>
+    <p>Your username: <b>${esc(u.username)}</b></p><p>Choose your password with this button (the link works for 7 days):</p>${button(link, 'Choose my password')}
+    <p style="color:#52514e;font-size:13px">After that, sign in at <a href="${esc(site)}">${esc(site)}</a>. Tip: add it to your phone’s home screen.</p>
+    ${arabic(`<h2 style="font-size:18px;margin:0 0 8px">أهلاً بك في مريم كافيه</h2><p>مرحباً ${esc(first)}،</p><p>تمت دعوتك إلى موقع موظفي مريم كافيه. ${esc(ar)}</p>
+    <p>اسم المستخدم: <b dir="ltr">${esc(u.username)}</b></p><p>اختر كلمة المرور من خلال هذا الزر (الرابط صالح لمدة 7 أيام):</p>${button(link, 'اختيار كلمة المرور')}
+    <p style="color:#52514e;font-size:13px">بعد ذلك سجّل الدخول من <a href="${esc(site)}" dir="ltr">${esc(site)}</a>. يمكنك إضافة الموقع إلى الشاشة الرئيسية في هاتفك.</p>`)}`, site);
+  const text = `Hi ${first},\n\nYou are invited to the Mariam Coffee staff website. ${en}\n\nUsername: ${u.username}\nChoose your password (link works for 7 days): ${link}\nThen sign in at ${site}\n\n---\nمرحباً ${first}، تمت دعوتك إلى موقع موظفي مريم كافيه.\nاسم المستخدم: ${u.username}\nاختر كلمة المرور (الرابط صالح لمدة 7 أيام): ${link}`;
+  await send(cfg, { to: u.email, subject: 'Welcome to Mariam Coffee / أهلاً بك في مريم كافيه', html, text });
+}
+
+/** Forgotten password and the links from the emails: no sign-in needed. */
+export async function handlePublicEmail({ head, request, env, h }) {
+  const db = env.DB;
+  const b = await h.body(request);
+  if (head === 'password-forgot') {
+    const who = h.str(b.who, 120).toLowerCase();
+    if (!who) h.fail(400, 'Enter your username or email address.');
+    const u = await db.prepare('SELECT * FROM users WHERE active = 1 AND (username = ? OR LOWER(email) = ?)').bind(who, who).first();
+    // the answer is the same whether or not the account exists
+    const generic = { ok: true, message: 'If an account with an email address matches, a link to choose a new password has been sent. Ask your manager if you have no email address on your account.' };
+    if (!u || !u.email) { await new Promise((r) => setTimeout(r, 300)); return h.json(generic); }
+    const cfg = await config(env, h, db);
+    if (!cfg.key) h.fail(503, 'Email is not set up on this website. Ask the owner or your manager to reset your password.');
+    const token = await makeLink(db, h, u.id, 'reset');
+    const origin = new URL(request.url).origin;
+    const link = `${origin}/staff?reset=${token}`;
+    const first = u.name.split(' ')[0];
+    const html = layout('Choose a new password', `<p>Hi ${esc(first)},</p><p>Someone asked to reset the password of your Mariam Coffee account (<b>${esc(u.username)}</b>). The link works for 1 hour.</p>${button(link, 'Choose a new password')}
+      <p style="color:#52514e;font-size:13px">If it was not you, ignore this email; your password stays the same.</p>
+      ${arabic(`<p>مرحباً ${esc(first)}،</p><p>طلب أحدهم إعادة تعيين كلمة المرور لحسابك في مريم كافيه (<b dir="ltr">${esc(u.username)}</b>). الرابط صالح لمدة ساعة واحدة.</p>${button(link, 'اختيار كلمة مرور جديدة')}
+      <p style="color:#52514e;font-size:13px">إذا لم تطلب ذلك، تجاهل هذه الرسالة وستبقى كلمة المرور كما هي.</p>`)}`, origin + '/staff');
+    try {
+      await send(cfg, { to: u.email, subject: 'Mariam Coffee: choose a new password / كلمة مرور جديدة', html, text: `Hi ${first},\n\nChoose a new password for ${u.username} (link works for 1 hour): ${link}\n\nIf it was not you, ignore this email.` });
+    } catch (e) { h.fail(502, 'The email could not be sent. Ask your manager to reset your password.'); }
+    await h.audit(db, u, 'account.reset-requested', { username: u.username });
+    return h.json(generic);
+  }
+  if (head === 'password-reset') {
+    const token = h.str(b.token, 100);
+    const row = token ? await db.prepare('SELECT * FROM password_links WHERE token = ? AND expires > ?').bind(token, Date.now()).first() : null;
+    if (!row) h.fail(400, 'This link has expired or was already used. Ask for a new one.');
+    const u = await db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').bind(row.user_id).first();
+    if (!u) h.fail(400, 'This account is no longer active.');
+    if (b.check) return h.json({ ok: true, username: u.username, name: u.name, kind: row.kind });
+    if (!b.password || String(b.password).length < 6) h.fail(400, 'The password needs at least 6 characters.');
+    await db.batch([
+      db.prepare('UPDATE users SET pass = ?, must_change = 0 WHERE id = ?').bind(await h.hashPassword(String(b.password)), u.id),
+      db.prepare('DELETE FROM password_links WHERE user_id = ?').bind(u.id),
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(u.id),
+    ]);
+    await h.audit(db, u, 'account.password', row.kind === 'invite' ? 'Chose a password from the invitation' : 'Reset the password from the email link');
+    return h.json({ ok: true, username: u.username });
+  }
+  return h.fail(404, 'Not found');
+}

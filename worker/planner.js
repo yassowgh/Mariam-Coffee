@@ -63,7 +63,7 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
   const url = new URL(request.url);
   if (head === 'demand') {
     if (request.method === 'GET') {
-      need(me, 'manager');
+      need(me, 'manager', 'accountant');
       const d = await getSetting(db, 'demand');
       return d ? json({ demand: d }) : json({ error: 'No sales pattern saved yet.' }, 404);
     }

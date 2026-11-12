@@ -431,3 +431,21 @@ table.schedule .today { background: color-mix(in srgb, var(--accent) 7%, transpa
 .month-strip { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--text-2); margin-bottom: 10px; }
 .three-even { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1000px) { .three-even { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.cell-input { min-height: 34px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: 0 6px; font: inherit; font-size: 13px; color: inherit; max-width: 220px; }
+.recs { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+[dir="rtl"] .recs { padding-left: 0; padding-right: 20px; }
+
+/* language switch and right-to-left */
+.lang-switch button { min-height: 34px; padding: 0 10px; font-size: 13px; }
+.lang-switch { flex: none; }
+[dir="rtl"] th, [dir="rtl"] td { text-align: right; }
+[dir="rtl"] td.r, [dir="rtl"] th.r { text-align: left; }
+[dir="rtl"] th.r button { justify-content: flex-start; }
+[dir="rtl"] .barlist button.name, [dir="rtl"] .linklike, [dir="rtl"] .shift { text-align: right; }
+[dir="rtl"] .barlist .val { text-align: left; }
+[dir="rtl"] .account-menu { right: auto; left: 0; }
+[dir="rtl"] .shift { border-left-width: 1px; border-right: 4px solid var(--series-1); }
+[dir="rtl"] .insights li { direction: rtl; }
+[dir="rtl"] input[type="number"], [dir="rtl"] input[inputmode="decimal"] { direction: ltr; text-align: right; }
+[dir="rtl"] .chart svg { direction: ltr; }
+[dir="rtl"] .num, [dir="rtl"] .shift, [dir="rtl"] .cov-time { direction: ltr; unicode-bidi: isolate; }

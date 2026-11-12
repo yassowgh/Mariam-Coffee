@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { api, todayLocal } from '../lib/api.js';
 import { ACCOUNT_TYPES, Loans, MarkPaid, RecordForm, Tile, total, useAccountingData } from './Accounting.jsx';
 import DataTable from '../components/DataTable.jsx';
+import Insights from './Insights.jsx';
 import { BarLineChart } from '../components/charts.jsx';
 import { longDate, money, money2, monthLabel } from '../format.js';
 
@@ -59,12 +60,12 @@ export default function Finance({ user, go }) {
   // copy this month's planned payments (rent, salaries, bills…) to the next month
   async function planNext() {
     const next = shiftMonth(month, 1);
-    const already = new Set(records.filter((r) => inMonth(r.due_date, next)).map((r) => r.name.toLowerCase()));
+    const already = new Set(records.filter((r) => inMonth(r.due_date, next)).map((r) => (r.name || '').toLowerCase()));
     const rename = (name) => {
       const [y, mo] = month.split('-').map(Number), [ny, nmo] = next.split('-').map(Number);
       return name.replace(new RegExp(`${MONTH_NAMES[mo - 1]}(\\s+${y})?`, 'i'), (_, yr) => MONTH_NAMES[nmo - 1] + (yr ? ' ' + ny : ''));
     };
-    const list = v.due.map((r) => ({ ...r, name: rename(r.name) })).filter((r) => !already.has(r.name.toLowerCase()));
+    const list = v.due.map((r) => ({ ...r, name: rename(r.name) })).filter((r) => !already.has((r.name || '').toLowerCase()));
     if (!list.length) { setMsg({ ok: false, text: `Nothing to copy: ${monthLabel(next)} already has these payments, or ${monthLabel(month)} has none planned.` }); return; }
     if (!confirm(`Plan ${list.length} payments for ${monthLabel(next)} (${money(list.reduce((t, r) => t + r.total, 0))}), on the same day of the month?`)) return;
     const lastDay = new Date(Date.UTC(Number(next.slice(0, 4)), Number(next.slice(5, 7)), 0)).getUTCDate();
@@ -129,6 +130,8 @@ export default function Finance({ user, go }) {
           <Tile label={`Paid out in ${monthLabel(month)}`} value={money(v.paidTotal)} sub={`${v.paidOut.length} payments`} />
         </div>
       </div>
+
+      <Insights records={records} month={month} today={today} />
 
       <div className="card">
         <div className="card-head"><div><h2>Month by month</h2><p>Each payment counts in the month it is due (or, if it had no due date, the month it was paid).</p></div></div>

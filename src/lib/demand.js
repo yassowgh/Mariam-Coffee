@@ -23,7 +23,16 @@ export function computeDemand(model, weeks = DEMAND_WEEKS) {
     for (const h of day.hours) { h.orders = +(h.orders / n).toFixed(2); h.sales = Math.round(h.sales / n); }
     day.orders = +day.orders.toFixed(1); day.sales = Math.round(day.sales);
   }
-  return { from, to, weeks, days };
+  // sales per month (all data), for Finance: spending compared with sales
+  const months = new Map();
+  for (const i of v.invoices) {
+    const m = months.get(i.month) || { month: i.month, net: 0, profit: 0, costedNet: 0, orders: 0, days: new Set() };
+    m.net += i.net; m.profit += i.profit || 0; m.costedNet += i.costedNet || 0; if (i.sign > 0) m.orders++; m.days.add(i.date);
+    months.set(i.month, m);
+  }
+  const salesMonths = [...months.values()].map((m) => ({ month: m.month, net: Math.round(m.net), profit: Math.round(m.profit), costedNet: Math.round(m.costedNet), orders: m.orders, days: m.days.size }))
+    .sort((a, b) => (a.month < b.month ? -1 : 1));
+  return { from, to, weeks, days, salesMonths };
 }
 
 /** Save the pattern (owner signed in, or with the upload password). Errors are ignored. */
