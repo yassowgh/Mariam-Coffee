@@ -14,7 +14,6 @@
 import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
 import { safeEqual, sha256Hex } from './auth.js';
 import { handleMenu, refreshMenuPrices } from './menu.js';
-import { handleMigrate } from './migrate.js';
 
 const KEY = 'dataset';
 const MAX_BYTES = 24 * 1024 * 1024; // Workers KV value limit is 25 MiB
@@ -143,6 +142,7 @@ function secure(response) {
 
 const SITE_HOST = 'mariamcoffeeshop.com';
 const APP = '/management';
+const OLD_HOST = 'mariam-coffee-db-reader.yassow.workers.dev';
 
 export default {
   async fetch(request, env, ctx) {
@@ -157,6 +157,11 @@ export default {
     if (url.hostname === 'www.' + SITE_HOST) {
       url.hostname = SITE_HOST;
       return new Response(null, { status: 301, headers: { Location: url.toString() } });
+    }
+    // The app moved to another Cloudflare account. The old deployment forwards every API call
+    // (POS uploader, old links) to the new one, so nothing is written to the old database any more.
+    if (url.hostname === OLD_HOST && url.pathname.startsWith('/api/')) {
+      return fetch(new Request(`https://${SITE_HOST}${url.pathname}${url.search}`, request));
     }
     // Old address (workers.dev): pages move to mariamcoffeeshop.com/management/…
     // The API keeps answering there so POS uploaders that still use the old address keep working.
@@ -174,7 +179,6 @@ async function route(request, env, url, ctx) {
   if (path === '/api/data') return handleData(request, env, ctx);
   if (path === '/api/costs') return handleCosts(request, env);
   if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
-  if (path.startsWith('/api/migrate/')) return handleMigrate(request, env, path, passwordOk);
   if (path === '/api/auth' && request.method === 'POST') {
     return (await allowed(request, env))
       ? new Response(null, { status: 204 })
