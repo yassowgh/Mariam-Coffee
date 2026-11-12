@@ -4,24 +4,23 @@ import { isNotionExport, notionRecords } from '../lib/notionImport.js';
 import DataTable from '../components/DataTable.jsx';
 import { int, longDate, money, money2, monthLabel } from '../format.js';
 
-const ACCOUNT_TYPES = { cash: 'Cash', bank: 'Bank', person_loan: 'Loan from a person', bank_loan: 'Bank loan / credit' };
+export const ACCOUNT_TYPES = { cash: 'Cash', bank: 'Bank', person_loan: 'Loan from a person', bank_loan: 'Bank loan / credit' };
 const KINDS = { regular: 'Regular', old_debt: 'Paying an old debt', advance: 'Advance (avans) to an employee', loan_repayment: 'Paying back a loan' };
 const KIND_SHORT = { old_debt: 'old debt', advance: 'advance', loan_repayment: 'loan repayment' };
 const PAYEE_TYPES = ['Vendor', 'Service Provider', 'Restaurant', 'Landlord', 'Gov', 'Hospital', 'Partner', 'Employee'];
 const NEW = '__new';
-const total = (r) => r.amount + (r.fees || 0);
-const statusText = (r) => (r.status === 'paid' ? `Paid${r.account ? ' · ' + r.account : ''}` : r.status === 'scheduled' ? `Due ${longDate(r.due_date)}` : 'Unpaid, no date');
+export const total = (r) => r.amount + (r.fees || 0);
+export const statusText = (r) => (r.status === 'paid' ? `Paid${r.account ? ' · ' + r.account : ''}` : r.status === 'scheduled' ? `Due ${longDate(r.due_date)}` : 'Unpaid, no date');
 
-export default function Accounting({ user }) {
+/** Records, categories, accounts and name suggestions, shared by Accounting and Finance. */
+export function useAccountingData(user) {
   const owner = user.roles.includes('owner');
-  const [view, setView] = useState('add');
   const [data, setData] = useState(null); // { records, today }
   const [cats, setCats] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [names, setNames] = useState({ payees: [], employees: [], paidBy: [] });
   const [staff, setStaff] = useState([]);
   const [error, setError] = useState('');
-  const [editing, setEditing] = useState(null); // a record being edited, or a prefilled new one
 
   async function load() {
     try {
@@ -30,33 +29,37 @@ export default function Accounting({ user }) {
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { load(); }, []);
-
   const records = data?.records || [];
   const today = data?.today || todayLocal();
-  const open = records.filter((r) => r.status !== 'paid');
-  const overdue = open.filter((r) => r.status === 'scheduled' && r.due_date < today);
-  const ctx = { user, owner, records, today, cats, setCats, accounts, setAccounts, names, staff, reload: load, edit: (r) => { setEditing(r); setView('add'); window.scrollTo(0, 0); } };
+  return { loaded: !!data, error, ctx: { user, owner, records, today, cats, setCats, accounts, setAccounts, names, staff, reload: load } };
+}
 
+/** Bookkeeping: add and correct records, categories and accounts, import. */
+export default function Accounting({ user, go }) {
+  const [view, setView] = useState('add');
+  const [editing, setEditing] = useState(null); // a record being edited, or a prefilled new one
+  const { loaded, error, ctx: base } = useAccountingData(user);
+  const records = base.records;
+  const open = records.filter((r) => r.status !== 'paid');
+  const overdue = open.filter((r) => r.status === 'scheduled' && r.due_date < base.today);
+  const ctx = { ...base, edit: (r) => { setEditing(r); setView('add'); window.scrollTo(0, 0); } };
   const tabs = [
     ['add', editing?.id ? 'Edit record' : '＋ New record'],
     ['records', `Records${records.length ? ` (${records.length})` : ''}`],
-    ['topay', `To pay${open.length ? ` (${open.length})` : ''}`],
-    ['loans', 'Loans'],
     ['accounts', 'Accounts & categories'],
     ['import', 'Import'],
   ];
   return (
     <div className="stack">
       <nav className="chips sub-tabs" aria-label="Accounting">
-        {tabs.map(([k, l]) => <button key={k} className="chip" aria-pressed={view === k} onClick={() => setView(k)}>{l}{k === 'topay' && overdue.length > 0 && <span className="pill bad" style={{ marginLeft: 6 }}>{overdue.length} late</span>}</button>)}
+        {tabs.map(([k, l]) => <button key={k} className="chip" aria-pressed={view === k} onClick={() => setView(k)}>{l}</button>)}
+        {open.length > 0 && go && <button className="chip" onClick={() => go('finance')}>Finance: {open.length} to pay{overdue.length ? `, ${overdue.length} late` : ''} →</button>}
       </nav>
       {error && <div className="error" role="alert">{error}</div>}
-      {!data ? <div className="card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div> : (
+      {!loaded ? <div className="card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div> : (
         <>
           {view === 'add' && <RecordForm ctx={ctx} initial={editing} onDone={(rec) => { setEditing(null); load(); if (rec) setView('records'); }} onCancel={editing ? () => { setEditing(null); setView('records'); } : null} />}
           {view === 'records' && <Records ctx={ctx} />}
-          {view === 'topay' && <ToPay ctx={ctx} />}
-          {view === 'loans' && <Loans ctx={ctx} onRepay={(acc) => { setEditing({ kind: 'loan_repayment', loan_account_id: acc.id, name: `Paying back ${acc.name}`, status: 'paid' }); setView('add'); }} />}
           {view === 'accounts' && <AccountsSetup ctx={ctx} />}
           {view === 'import' && <Import ctx={ctx} onDone={() => { load(); setView('records'); }} />}
         </>
@@ -70,7 +73,7 @@ function emptyForm(user) {
   return { name: '', category_id: '', amount: '', fees: '', date: todayLocal(), status: 'paid', account_id: '', paid_date: '', due_date: addDaysLocal(todayLocal(), 7), kind: 'regular', loan_account_id: '', payee: '', payee_type: '', employee: '', employee_user_id: '', paid_by: user.name, reason: '', receipt: null };
 }
 
-function RecordForm({ ctx, initial, onDone, onCancel }) {
+export function RecordForm({ ctx, initial, onDone, onCancel }) {
   const { user, cats, setCats, accounts, setAccounts, names, staff } = ctx;
   const isEdit = !!initial?.id;
   const [f, setF] = useState(() => ({ ...emptyForm(user), ...(initial ? clean(initial) : {}) }));
@@ -119,7 +122,9 @@ function RecordForm({ ctx, initial, onDone, onCancel }) {
       if (photo) receipt = (await api('receipts', { method: 'POST', raw: photo.blob, type: 'image/jpeg' })).receipt;
       const body = { ...f, receipt, category_id: Number(f.category_id), account_id: f.account_id ? Number(f.account_id) : null,
         loan_account_id: f.loan_account_id ? Number(f.loan_account_id) : null, employee_user_id: f.employee_user_id ? Number(f.employee_user_id) : null,
-        paid_date: f.paid_date || f.date };
+        paid_date: f.paid_date || f.date,
+        // a bill that was planned keeps its due date after it is paid (Finance shows it in that month)
+        due_date: f.status === 'scheduled' ? f.due_date : initial?.due_date || null };
       const { record } = isEdit ? await api('expenses/' + initial.id, { method: 'PATCH', body }) : await api('expenses', { method: 'POST', body });
       setMsg({ ok: true, text: `${isEdit ? 'Saved' : 'Added'}: ${record.name}, ${money2(total(record))}, ${statusText(record).toLowerCase()}.` });
       if (photo) URL.revokeObjectURL(photo.url);
@@ -311,7 +316,7 @@ function Breakdown({ rows }) {
   return <div className="grid three-even">{block('By category', by('category'))}{block('By paid from', by('account'))}{block('By paid to', by('payee'))}</div>;
 }
 
-function MarkPaid({ ctx, record, onClose }) {
+export function MarkPaid({ ctx, record, onClose }) {
   const [acc, setAcc] = useState('');
   const [date, setDate] = useState(ctx.today);
   const [err, setErr] = useState('');
@@ -336,45 +341,8 @@ function MarkPaid({ ctx, record, onClose }) {
   );
 }
 
-// ---------------------------------------------------------------- to pay
-function ToPay({ ctx }) {
-  const { records, today } = ctx;
-  const [payFor, setPayFor] = useState(null);
-  const open = records.filter((r) => r.status !== 'paid').map((r) => ({ ...r, key: r.id, total: total(r) }));
-  const late = open.filter((r) => r.status === 'scheduled' && r.due_date < today);
-  const week = open.filter((r) => r.status === 'scheduled' && r.due_date >= today && r.due_date <= addDaysLocal(today, 7));
-  const month = open.filter((r) => r.status === 'scheduled' && r.due_date >= today && r.due_date <= addDaysLocal(today, 30));
-  const nodate = open.filter((r) => r.status === 'unpaid');
-  const sum = (l) => l.reduce((t, r) => t + r.total, 0);
-  const columns = [
-    { key: 'due_date', label: 'Due', render: (r) => (r.due_date ? <span className={r.due_date < today ? 'down' : ''}>{longDate(r.due_date)}{r.due_date < today ? ` · ${Math.round((Date.parse(today) - Date.parse(r.due_date)) / 86400000)} days late` : ''}</span> : <span className="faint">no date</span>), sortValue: (r) => r.due_date || '9999', csv: (r) => r.due_date || '' },
-    { key: 'name', label: 'What', render: (r) => <span className="wrap-cell">{r.name}</span> },
-    { key: 'category', label: 'Category' },
-    { key: 'payee', label: 'To', fmt: (v, r) => v || r.employee || '–' },
-    { key: 'total', label: 'Amount', align: 'r', fmt: money2, total: 'sum', csv: (r) => r.total.toFixed(2) },
-    { key: 'act', label: '', render: (r) => <span style={{ display: 'flex', gap: 2 }}><button className="btn small" onClick={() => setPayFor(r)}>Mark paid</button><button className="btn small ghost" onClick={() => ctx.edit(r)}>Edit</button></span>, csv: () => '' },
-  ];
-  return (
-    <>
-      <div className="kpis" style={{ marginBottom: 0 }}>
-        <Tile label="Late" value={money(sum(late))} sub={`${late.length} bills`} bad={late.length > 0} />
-        <Tile label="Due in 7 days" value={money(sum(week))} sub={`${week.length} bills`} />
-        <Tile label="Due in 30 days" value={money(sum(month))} sub={`${month.length} bills`} />
-        <Tile label="Unpaid, no date" value={money(sum(nodate))} sub={`${nodate.length} bills`} />
-        <Tile label="All open" value={money(sum(open))} sub={`${open.length} bills`} />
-      </div>
-      {payFor && <MarkPaid ctx={ctx} record={payFor} onClose={() => setPayFor(null)} />}
-      <div className="card">
-        <div className="card-head"><div><h2>To pay</h2><p>Everything not paid yet, earliest first. Red = late.</p></div></div>
-        {open.length ? <DataTable columns={columns} rows={open} defaultSort={{ key: 'due_date', dir: 'asc' }} exportName="to-pay" filters={{ search: 'name' }} />
-          : <p className="muted">Nothing to pay. 🎉</p>}
-      </div>
-    </>
-  );
-}
-
 // ---------------------------------------------------------------- loans
-function Loans({ ctx, onRepay }) {
+export function Loans({ ctx, onRepay }) {
   const { records, accounts } = ctx;
   const loans = accounts.filter((a) => a.type === 'person_loan' || a.type === 'bank_loan').map((a) => {
     const borrowed = records.filter((r) => r.status === 'paid' && r.account_id === a.id);
@@ -491,7 +459,7 @@ function Import({ onDone }) {
   );
 }
 
-function Tile({ label, value, sub, bad }) {
+export function Tile({ label, value, sub, bad }) {
   return (
     <div className="card kpi" style={bad ? { borderColor: 'var(--bad)' } : undefined}>
       <div className="label">{label}</div>

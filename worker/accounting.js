@@ -161,7 +161,8 @@ async function clean(db, b, h, { partial = false, current = null } = {}) {
       out.account_id = acc ? acc.id : null;
       if (b.paid_date && !h.isDate(b.paid_date)) h.fail(400, 'The payment date is not valid.');
       out.paid_date = b.paid_date || current?.paid_date || out.date || b.date || current?.date || null;
-      out.due_date = null;
+      // a planned bill keeps its due date once paid, so it stays in that month's list
+      out.due_date = h.isDate(b.due_date) ? b.due_date : current?.due_date ?? null;
     } else if (status === 'scheduled') {
       if (!h.isDate(b.due_date)) h.fail(400, 'Choose the date it will be paid.');
       out.due_date = b.due_date; out.account_id = null; out.paid_date = null;
