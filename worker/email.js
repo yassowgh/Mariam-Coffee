@@ -105,6 +105,58 @@ export async function handleEmail({ head, request, env, me, h }) {
   const cfg = await config(env, h, db);
   if (!cfg.key) h.fail(501, 'Email is not set up yet. The owner can add the Resend API key in Settings → Email.');
 
+  // Sending domain in Resend (owner): GET status + DNS records, POST {action:'add'|'verify', name}
+  if (head === 'email-domain') {
+    h.need(me, 'owner');
+    const R = (path, init = {}) => fetch('https://api.resend.com' + path, { ...init, headers: { authorization: `Bearer ${cfg.key}`, 'content-type': 'application/json' } })
+      .then(async (r) => { const b = await r.json().catch(() => ({})); if (!r.ok) h.fail(502, b?.message || `Resend: HTTP ${r.status}`); return b; });
+    const b = request.method === 'POST' ? await h.body(request) : {};
+    const name = String(b.name || new URL(request.url).searchParams.get('name') || 'mariamcoffeeshop.com').toLowerCase();
+    let d = ((await R('/domains')).data || []).find((x) => x.name === name);
+    if (b.action === 'add' && !d) d = await R('/domains', { method: 'POST', body: JSON.stringify({ name, region: 'eu-west-1' }) });
+    if (!d) return h.json({ name, exists: false });
+    if (b.action === 'verify') await R(`/domains/${d.id}/verify`, { method: 'POST' });
+    const full = await R(`/domains/${d.id}`);
+    return h.json({ name, exists: true, status: full.status, records: (full.records || []).map((x) => ({ record: x.record, type: x.type, name: x.name, value: x.value, priority: x.priority, status: x.status })) });
+  }
+
+  // "We moved" announcement (owner): everyone with an email gets the new link and their username.
+  // People who never chose a password get a fresh invitation link instead.
+  if (head === 'announce-move') {
+    h.need(me, 'owner');
+    const b = await h.body(request);
+    const ids = Array.isArray(b.user_ids) ? new Set(b.user_ids.map(Number)) : null;
+    const { results } = await db.prepare('SELECT * FROM users WHERE active = 1').all();
+    const out = { sent: [], invited: [], noEmail: [], failed: [] };
+    const origin = new URL(request.url).origin;
+    const site = appUrl(origin) + '/staff';
+    for (const u of results) {
+      if (ids && !ids.has(u.id)) continue;
+      if (!u.email) { out.noEmail.push(u.name); continue; }
+      try {
+        if (u.must_change) { await sendInvite(env, h, u, origin); out.invited.push(u.name); }
+        else {
+          const first = u.name.split(' ')[0];
+          const html = layout('Mariam Coffee has a new address', `<p>Hi ${esc(first)},</p>
+            <p>The Mariam Coffee staff website has moved to a new address. Your username and password stay the same; you only need to sign in once more.</p>
+            <p>New address: <a href="${esc(site)}"><b>${esc(site)}</b></a><br>Your username: <b>${esc(u.username)}</b></p>
+            <p style="color:#52514e;font-size:13px">Forgot your password? Tap “Forgot your password?” on the sign-in page. Tip: add the new address to your phone’s home screen and remove the old one.</p>
+            <p style="color:#52514e;font-size:13px">Our new website for customers: <a href="https://mariamcoffeeshop.com">mariamcoffeeshop.com</a></p>
+            ${arabic(`<h2 style="font-size:18px;margin:0 0 8px">عنوان جديد لموقع مريم كافيه</h2><p>مرحباً ${esc(first)}،</p>
+            <p>انتقل موقع موظفي مريم كافيه إلى عنوان جديد. يبقى اسم المستخدم وكلمة المرور كما هما، فقط سجّل الدخول مرة واحدة من جديد.</p>
+            <p>العنوان الجديد: <a href="${esc(site)}" dir="ltr"><b>${esc(site)}</b></a><br>اسم المستخدم: <b dir="ltr">${esc(u.username)}</b></p>
+            <p style="color:#52514e;font-size:13px">نسيت كلمة المرور؟ اضغط «نسيت كلمة المرور؟» في صفحة الدخول. أضف العنوان الجديد إلى الشاشة الرئيسية في هاتفك واحذف القديم.</p>`)}`, site);
+          const text = `Hi ${first},\n\nThe Mariam Coffee staff website has moved. Your username and password stay the same; sign in once more at the new address:\n${site}\nUsername: ${u.username}\n\nCustomer website: https://mariamcoffeeshop.com\n\n---\nانتقل موقع موظفي مريم كافيه إلى عنوان جديد: ${site}\nاسم المستخدم: ${u.username}`;
+          await send(cfg, { to: u.email, subject: 'Mariam Coffee: new website address / عنوان جديد', html, text });
+          out.sent.push(u.name);
+        }
+      } catch (e) { out.failed.push({ name: u.name, error: e.message }); }
+      await sleep(600);
+    }
+    await h.audit(db, me, 'account.announce', { sent: out.sent.length, invited: out.invited.length, failed: out.failed.length });
+    return h.json(out);
+  }
+
   if (head === 'email-test') {
     h.need(me, 'owner');
     if (!me.email) h.fail(400, 'Your account has no email address. Add it in Team first.');
@@ -190,7 +242,7 @@ export async function notify(env, h, origin, user, subject, text, html) {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
-export const EMAIL_ROUTES = ['email-settings', 'email-test', 'schedule-email', 'send-login', 'invite'];
+export const EMAIL_ROUTES = ['email-settings', 'email-test', 'schedule-email', 'send-login', 'invite', 'email-domain', 'announce-move'];
 export const PUBLIC_EMAIL_ROUTES = ['password-forgot', 'password-reset'];
 
 // ---------- password links (invitation: 7 days, reset: 1 hour) ----------
