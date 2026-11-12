@@ -70,9 +70,24 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
   const hours = settings.hours || (demand ? hoursFromDemand(demand) : null);
 
   // 1) the built-in reader (free, instant); 2) only the sentences it could not read go to the AI on the server
+  // general rules (every week) are kept in the planner settings
+  const general = settings.generalRules || [];
+  async function readGeneral() {
+    const r = await read(settings.generalText || '');
+    setSettings((x) => ({ ...x, generalRules: r.found }));
+    api('plan-settings', { method: 'PUT', body: { ...settings, generalRules: r.found } }).catch(() => {});
+    setUnclear(r.left);
+    setMsg({ ok: !r.left.length, text: `General rules: understood ${r.found.length}.${r.aiNote}${r.left.length ? ' Some sentences were not understood (see below).' : ' Saved for every week.'}` });
+  }
   async function readText() {
+    const r = await read(text);
+    setRules(r.found);
+    setUnclear(r.left);
+    setMsg({ ok: !r.left.length, text: `Understood ${r.found.length} condition${r.found.length === 1 ? '' : 's'}.${r.aiNote}${r.left.length ? ' Some sentences were not understood (see below).' : ''}` });
+  }
+  async function read(source) {
     setMsg(null);
-    const local = parseConditions(text, people);
+    const local = parseConditions(source, people);
     let found = local.rules, left = local.unclear, aiNote = '';
     if (left.length) {
       setBusy('Asking the AI about ' + left.length + ' sentence' + (left.length === 1 ? '' : 's') + '…');
@@ -90,13 +105,13 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
         aiNote = ` (${e.message})`;
       } finally { setBusy(''); }
     }
-    setRules(found);
-    setUnclear(left);
-    setMsg({ ok: !left.length, text: `Understood ${found.length} condition${found.length === 1 ? '' : 's'}.${aiNote}${left.length ? ' Some sentences were not understood (see below).' : ''}` });
+    return { found, left, aiNote };
   }
   function create() {
     if (!demand) return;
-    const r = buildSchedule({ dates, people, demand, settings, rules });
+    // re-read the general rules each time, so "everyone" includes baristas added since
+    const g = settings.generalText ? [...parseConditions(settings.generalText, people).rules, ...general.filter((x) => x.source && x.source !== 'built-in')] : general;
+    const r = buildSchedule({ dates, people, demand, settings, rules: [...g, ...rules] });
     setPlan(r);
     api('plan-rules?week=' + week, { method: 'PUT', body: { text, rules } }).catch(() => {});
     api('plan-settings', { method: 'PUT', body: settings }).catch(() => {});
@@ -129,7 +144,13 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
         </p>
       )}
 
-      <label className="field"><span>Conditions for this week{copied ? ` (copied from the week of ${longDate(copied)})` : ''}</span>
+      <label className="field"><span>General rules (every week)</span>
+        <textarea rows={3} value={settings.generalText || ''} onChange={(e) => setSettings({ ...settings, generalText: e.target.value })} placeholder={'Working hours are from 8 am to 1 am\nEveryone has one day off\nEveryone at most 45 hours'} /></label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '8px 0 4px', alignItems: 'center' }}>
+        <button className="btn" onClick={readGeneral} disabled={!!busy || !(settings.generalText || '').trim()}>Read and save general rules</button>
+        {general.length > 0 && <span className="faint" style={{ fontSize: 12.5 }}>In use: {general.map((r) => describeRule(r, people)).join(' · ')}</span>}
+      </div>
+      <label className="field" style={{ marginTop: 12 }}><span>Conditions for this week{copied ? ` (copied from the week of ${longDate(copied)})` : ''}</span>
         <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={EXAMPLE} /></label>
       <details className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>
         <summary style={{ cursor: 'pointer' }}>How to write conditions</summary>

@@ -42,6 +42,26 @@ const layout = (title, inner, siteUrl) => `<!doctype html><html><body style="mar
 <p style="margin:20px 0 0"><a href="${esc(siteUrl)}" style="display:inline-block;background:#6b4226;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold">Open the staff website</a></p>
 </div></div></body></html>`;
 
+/** Welcome email with the sign-in details. Throws with a readable message if it cannot be sent. */
+export async function sendWelcome(env, h, u, password, origin) {
+  const cfg = await config(env, h, env.DB);
+  if (!cfg.key) throw new Error('Email is not set up (Settings → Email).');
+  if (!u.email) throw new Error('No email address.');
+  const site = origin + '/staff';
+  const first = u.name.split(' ')[0];
+  const roles = String(u.roles || '').split(',');
+  const what = roles.length === 1 && roles[0] === 'barista'
+    ? 'On this website you see your shifts and clock in when you arrive and clock out when you leave. Clocking in only works inside the café, so allow the website to use your location.'
+    : 'Use this website for your work at Mariam Coffee.';
+  const text = `Hi ${first},\n\nWelcome to Mariam Coffee! Your account for the staff website is ready.\n\n${what}\n\nWebsite: ${site}\nUsername: ${u.username}\nPassword: ${password}\n\nThe first time you sign in, you will be asked to choose your own password.\nTip: add the website to your phone's home screen so it opens like an app.\n\nMariam Coffee`;
+  const html = layout('Welcome to Mariam Coffee', `<p>Hi ${esc(first)},</p><p>Your account for the staff website is ready. ${esc(what)}</p>
+    <table style="font-size:15px;border-collapse:collapse"><tr><td style="padding:4px 12px 4px 0;color:#52514e">Username</td><td style="font-weight:bold">${esc(u.username)}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#52514e">Password</td><td style="font-weight:bold">${esc(password)}</td></tr></table>
+    <p style="color:#52514e;font-size:13px">The first time you sign in, you will be asked to choose your own password. Tip: add the website to your phone’s home screen so it opens like an app.</p>`, site);
+  await send(cfg, { to: u.email, subject: 'Welcome to Mariam Coffee: your staff account', text, html });
+  await h.audit(env.DB, null, 'account.email', { username: u.username, welcome: true });
+}
+
 export async function handleEmail({ head, request, env, me, h }) {
   const db = env.DB;
   const site = new URL(request.url).origin + '/staff';
@@ -125,13 +145,7 @@ export async function handleEmail({ head, request, env, me, h }) {
     if (!h.isOwner(me) && !roles.every((r) => r === 'barista')) h.fail(403, 'Only the owner can send this for that account.');
     if (!u.email) h.fail(400, 'This person has no email address. Add it with Edit.');
     if (!b.password) h.fail(400, 'The password is needed for the email.');
-    const first = u.name.split(' ')[0];
-    const text = `Hi ${first},\n\nYour account for the Mariam Coffee staff website is ready.\n\nWebsite: ${site}\nUsername: ${u.username}\nPassword: ${b.password}\n\nThe first time you sign in, you will be asked to choose your own password.\n\nMariam Coffee`;
-    const html = layout('Your Mariam Coffee account', `<p>Hi ${esc(first)},</p><p>Your account for the staff website is ready.</p>
-      <table style="font-size:15px;border-collapse:collapse"><tr><td style="padding:4px 12px 4px 0;color:#52514e">Username</td><td style="font-weight:bold">${esc(u.username)}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#52514e">Password</td><td style="font-weight:bold">${esc(b.password)}</td></tr></table>
-      <p style="color:#52514e;font-size:13px">The first time you sign in, you will be asked to choose your own password.</p>`, site);
-    try { await send(cfg, { to: u.email, subject: 'Your Mariam Coffee account', text, html }); } catch (e) { h.fail(502, e.message); }
+    try { await sendWelcome(env, h, u, b.password, new URL(request.url).origin); } catch (e) { h.fail(502, e.message); }
     await h.audit(db, me, 'account.email', { username: u.username });
     return h.json({ ok: true, to: u.email });
   }

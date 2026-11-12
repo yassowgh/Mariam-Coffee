@@ -9,7 +9,7 @@
 //   manager    adds/removes baristas, plans shifts, sees and corrects attendance, salaries
 //   barista    sees their own shifts, clocks in and out at the café
 import { PLANNER_ROUTES, handlePlanner } from './planner.js';
-import { EMAIL_ROUTES, handleEmail } from './email.js';
+import { EMAIL_ROUTES, handleEmail, sendWelcome } from './email.js';
 import { ACCOUNTING_ROUTES, ACCOUNTING_SCHEMA, DEFAULT_ACCOUNTS, EXPENSE_COLUMNS, handleAccounting } from './accounting.js';
 import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
 
@@ -251,7 +251,17 @@ async function users(request, env, me, id) {
     const r = await db.prepare('INSERT INTO users (username, name, roles, pass, rate, phone, color, email, pay_type, monthly_salary, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
       .bind(username, str(b.name, 80), roles.join(','), await hashPassword(String(b.password)), rate, str(b.phone, 30), color, cleanEmail(b.email), payType, salary, nowIso()).run();
     await audit(db, me, 'account.create', { username, roles });
-    return json({ id: r.meta.last_row_id });
+    // welcome email with the sign-in details, when the person has an email address
+    let emailed = null, emailError = null;
+    const email = cleanEmail(b.email);
+    if (email && b.sendWelcome !== false) {
+      try {
+        const h = { getSetting, audit, str };
+        await sendWelcome(env, h, { username, name: str(b.name, 80), roles: roles.join(','), email }, String(b.password), new URL(request.url).origin);
+        emailed = email;
+      } catch (e) { emailError = e.message; }
+    }
+    return json({ id: r.meta.last_row_id, emailed, emailError });
   }
   if (request.method === 'PATCH' && target) {
     if (target.id === me.id && roles && !roles.includes('owner') && isOwner(me)) fail(400, 'You cannot remove your own owner role.');

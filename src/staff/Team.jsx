@@ -102,10 +102,14 @@ function Editor({ edit, setEdit, roleChoices, self, finance, onSaved }) {
     try {
       const body = { name: edit.name, roles: edit.roles, phone: edit.phone, color: edit.color, email: edit.email,
         ...(finance ? { rate: edit.rate, pay_type: edit.pay_type || null, monthly_salary: edit.monthly_salary } : {}) };
-      let id = edit.id;
-      if (isNew) id = (await api('users', { method: 'POST', body: { ...body, username: edit.username, password: edit.password } })).id;
+      let id = edit.id, mail = {};
+      if (isNew) {
+        const r = await api('users', { method: 'POST', body: { ...body, username: edit.username, password: edit.password } });
+        id = r.id;
+        mail = { emailed: r.emailed, emailError: r.emailError };
+      }
       else await api('users/' + edit.id, { method: 'PATCH', body: { ...body, ...(edit.password ? { password: edit.password } : {}) } });
-      if (isNew || edit.password) setDone({ id, username: edit.username, password: edit.password, name: edit.name, email: edit.email });
+      if (isNew || edit.password) setDone({ id, username: edit.username, password: edit.password, name: edit.name, email: edit.email, ...mail });
       else onSaved();
     } catch (x) { setErr(x.message); }
   }
@@ -116,8 +120,11 @@ function Editor({ edit, setEdit, roleChoices, self, finance, onSaved }) {
         <p>Send these to {done.name} (they can change the password after signing in):</p>
         <p className="notice" style={{ fontSize: 14 }}>Website: <b>{location.origin}/staff</b><br />Username: <b>{done.username}</b><br />Password: <b>{done.password}</b></p>
         <p className="faint" style={{ fontSize: 12.5 }}>They will be asked to choose their own password the first time they sign in.</p>
+        {done.emailed && <div className="banner ok" style={{ marginBottom: 10 }}><span>✉ Welcome email with the website link and these details sent to {done.emailed}.</span></div>}
+        {done.emailError && <div className="banner bad" style={{ marginBottom: 10 }}><span>The welcome email could not be sent: {done.emailError}</span></div>}
+        {!done.email && <p className="faint" style={{ fontSize: 12.5 }}>No email address was given, so no welcome email was sent. Add it with Edit to send one.</p>}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {done.email && <button className="btn" onClick={() => sendLogin(done, setSent)} disabled={sent?.busy}>✉ Send the login details by email</button>}
+          {done.email && <button className="btn" onClick={() => sendLogin(done, setSent)} disabled={sent?.busy}>{done.emailed ? '✉ Send again' : '✉ Send the login details by email'}</button>}
           {done.email && <a className="btn ghost" href={loginMail(done)}>Write it in my email app</a>}
           <button className="btn primary" onClick={onSaved}>Done</button>
         </div>
@@ -142,7 +149,7 @@ function Editor({ edit, setEdit, roleChoices, self, finance, onSaved }) {
           </div></div>}
         {finance && edit.pay_type === 'hourly' && <label className="field"><span>Hourly rate (TL)</span><input inputMode="decimal" value={edit.rate ?? ''} onChange={(e) => set({ rate: e.target.value })} /></label>}
         {finance && edit.pay_type === 'monthly' && <label className="field"><span>Monthly salary (TL)</span><input inputMode="decimal" value={edit.monthly_salary ?? ''} onChange={(e) => set({ monthly_salary: e.target.value })} /></label>}
-        <label className="field"><span>Email (optional)</span><input type="email" value={edit.email || ''} onChange={(e) => set({ email: e.target.value.trim() })} maxLength={120} /></label>
+        <label className="field"><span>Email (for the welcome email)</span><input type="email" value={edit.email || ''} onChange={(e) => set({ email: e.target.value.trim() })} maxLength={120} /></label>
         <label className="field"><span>Phone (optional)</span><input type="tel" value={edit.phone} onChange={(e) => set({ phone: e.target.value })} maxLength={30} /></label>
         <div className="field"><span>Colour on the schedule</span>
           <div className="chips">{COLORS.map((c) => <button type="button" key={c} className="swatch" aria-pressed={edit.color === c} aria-label={c} style={{ background: c }} onClick={() => set({ color: c })} />)}</div></div>

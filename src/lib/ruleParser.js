@@ -147,6 +147,10 @@ function readOne(s, people, inherited) {
   // opening hours: "we close at 1 am", "we open at 9 on fridays"
   const closeAt = new RegExp(`\\b(?:close|closes|closing|shut)\\b(?:\\s+at)?\\s+${TIME}`).exec(s);
   const openAt = new RegExp(`\\b(?:open|opens|opening)\\b(?:\\s+at)?\\s+${TIME}`).exec(s);
+  // "working hours are from 8 am to 1 am", "we are open 9–23"
+  if (between && !found.length && !EVERYONE.test(s) && /\b(working hours|opening hours|open|we work|hours are|business hours|cafe hours|café hours)\b/.test(s)) {
+    return { rules: [{ type: 'hours', person: null, days, from: readTime(between[1]), to: readTime(between[2]), number: null }] };
+  }
   if ((closeAt || openAt) && !found.length) {
     return { rules: [{ type: 'hours', person: null, days, from: openAt ? readTime(openAt[1]) : null, to: closeAt ? readTime(closeAt[1]) : null, number: null }] };
   }
@@ -208,6 +212,7 @@ export const PARSER_EXAMPLES = [
   'Abrar at most 30 hours',
   'Essa at most 5 days',
   'At least 2 baristas on Friday from 17:00',
+  'Working hours are from 8 am to 1 am',
   'We close at 1am',
   'Everyone has one day off',
   'Everyone at most 40 hours',

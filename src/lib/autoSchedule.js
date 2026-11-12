@@ -236,7 +236,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
       for (const hi of [...order].reverse()) {
         if (hi === lo || hi.hours - lo.hours < s.minShift) continue;
         const cand = shifts.filter((sh) => sh.user_id === hi.p.id && sh.kind === 'auto' && !lo.days.has(sh.di) && lo.days.size < lo.maxDays
-          && lo.hours + (sh.b - sh.a) / 2 <= lo.maxHours && hi.hours - (sh.b - sh.a) / 2 >= lo.hours);
+          && lo.hours + (sh.b - sh.a) / 2 <= lo.maxHours && (sh.b - sh.a) / 2 < hi.hours - lo.hours); // only if it makes them closer
         const sh = cand.find((c) => { const w = windowFor(lo, days[c.di]); return w && w[0] <= c.a && w[1] >= c.b; });
         if (!sh) continue;
         const len = (sh.b - sh.a) / 2;
@@ -248,8 +248,47 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
       }
       if (moved) break;
     }
+    if (!moved) {
+      // no whole shift fits: split one. The person with fewer hours takes the start or the end of a long shift
+      // (at least the shortest shift length); the busy person keeps at least 2 hours of it.
+      for (const hi of [...order].reverse()) {
+        for (const lo of order) {
+          if (hi === lo || hi.hours - lo.hours < s.minShift || lo.days.size >= lo.maxDays) continue;
+          for (const sh of shifts.filter((x) => x.user_id === hi.p.id && x.kind === 'auto' && !lo.days.has(x.di))) {
+            const day = days[sh.di];
+            const w = windowFor(lo, day);
+            if (!w) continue;
+            const opts = [[sh.a, Math.min(sh.b, w[1])], [Math.max(sh.a, w[0]), sh.b]]
+              .filter(([ta, tb]) => ta >= w[0] && tb <= w[1] && tb - ta >= minLen && tb - ta <= maxLen && (ta === sh.a || tb === sh.b));
+            for (const [ta, tb] of opts) {
+              const rest = ta === sh.a ? [tb, sh.b] : [sh.a, ta];
+              if (rest[1] - rest[0] < 4) continue;
+              const give = (tb - ta) / 2, keep = (rest[1] - rest[0]) / 2;
+              const before = Math.abs(hi.hours - lo.hours);
+              const after = Math.abs((hi.hours - (sh.b - sh.a) / 2 + keep) - (lo.hours + give));
+              if (after >= before || lo.hours + give > lo.maxHours) continue;
+              hi.hours -= (sh.b - sh.a) / 2 - keep;
+              sh.a = rest[0]; sh.b = rest[1];
+              shifts.push({ user_id: lo.p.id, di: sh.di, a: ta, b: tb, kind: 'auto' });
+              for (let k = ta; k < tb; k++) day.cover[k]++; // the overlap part is now covered twice; the trimmed part stays covered by lo
+              for (let k = ta; k < tb; k++) if (k < rest[0] || k >= rest[1]) day.cover[k]--;
+              lo.hours += give; lo.days.add(sh.di);
+              moved = true;
+              break;
+            }
+            if (moved) break;
+          }
+          if (moved) break;
+        }
+        if (moved) break;
+      }
+    }
     if (!moved) break;
   }
+
+  // the moves above can leave small gaps: close them again
+  stretch();
+  greedy(0.15, 0.25);
 
   // ---- repair: a gap only one person could cover, but they have no hours left.
   // Give part of one of their other shifts to someone free that day, then use the freed hours for the gap.
