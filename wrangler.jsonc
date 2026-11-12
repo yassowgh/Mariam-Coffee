@@ -8,6 +8,8 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-09-01",
   // Website at mariamcoffeeshop.com, management app at mariamcoffeeshop.com/management/
+  // workers.dev stays on: old links redirect from it and POS uploaders still upload to it.
+  "workers_dev": true,
   "routes": [
     { "pattern": "mariamcoffeeshop.com", "custom_domain": true },
     { "pattern": "www.mariamcoffeeshop.com", "custom_domain": true }
