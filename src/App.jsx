@@ -36,7 +36,8 @@ const TABS = [
 /** shell (when signed in): { user, areas, account } from Root.jsx */
 export default function App({ shell }) {
   const owner = !!shell?.user?.roles.includes('owner');
-  const tabs = owner ? TABS : TABS.filter(([k]) => k !== 'net');
+  const finance = owner || !!shell?.user?.roles.includes('accountant');
+  const tabs = finance ? TABS : TABS.filter(([k]) => k !== 'net');
   const [stage, setStage] = useState('upload');
   const [progress, setProgress] = useState({ msg: '', frac: 0 });
   const [error, setError] = useState('');

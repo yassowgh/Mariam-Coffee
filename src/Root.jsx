@@ -3,8 +3,8 @@ import App from './App.jsx';
 import Header from './components/Header.jsx';
 import { api, hasRole, ROLE_LABELS } from './lib/api.js';
 import Login from './staff/Login.jsx';
-import Expenses from './staff/Expenses.jsx';
-import FixedCosts from './staff/FixedCosts.jsx';
+import Accounting from './staff/Accounting.jsx';
+import Salaries from './staff/Salaries.jsx';
 import Schedule from './staff/Schedule.jsx';
 import Clock from './staff/Clock.jsx';
 import Attendance from './staff/Attendance.jsx';
@@ -14,16 +14,16 @@ import Account from './staff/Account.jsx';
 
 // [key, label, roles allowed (owner always)]
 const AREAS = [
-  ['reports', 'Sales reports', []],
+  ['reports', 'Sales reports', ['accountant']],
   ['clock', 'Clock in / out', ['barista']],
-  ['expenses', 'Expenses', ['expenses']],
-  ['fixed', 'Fixed costs', []],
-  ['schedule', 'Schedule', ['scheduler']],
-  ['attendance', 'Attendance', ['scheduler']],
-  ['team', 'Team', ['scheduler']],
+  ['accounting', 'Accounting', ['accountant']],
+  ['salaries', 'Salaries', ['manager', 'accountant']],
+  ['schedule', 'Schedule', ['manager']],
+  ['attendance', 'Timesheets', ['manager']],
+  ['team', 'Team', ['manager']],
   ['settings', 'Settings', []],
 ];
-// only the owner sees the sales (and net profit) inside the staff menu
+// owner: everything; accountant: sales, accounting, salaries; manager: schedule, timesheets, team, salaries; barista: clock
 const allowed = (user) => AREAS.filter(([, , roles]) => hasRole(user, ...roles));
 
 /** Signs people in and shows only the parts of the site their role allows. */
@@ -131,7 +131,7 @@ export default function Root() {
   const shell = { user, areas, account };
   const title = list.find(([k]) => k === area)?.[1] || 'Mariam Coffee';
   if (area === 'reports') return <App shell={shell} />;
-  const View = { clock: Clock, expenses: Expenses, fixed: FixedCosts, schedule: Schedule, attendance: Attendance, team: Team, settings: Settings }[area];
+  const View = { clock: Clock, accounting: Accounting, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, settings: Settings }[area];
   return (
     <>
       <Header title={`Mariam Coffee · ${title}`} subtitle={`Signed in as ${user.name}`} areas={areas} account={account} />

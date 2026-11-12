@@ -60,13 +60,13 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
   const url = new URL(request.url);
   if (head === 'demand') {
     if (request.method === 'GET') {
-      need(me, 'scheduler');
+      need(me, 'manager');
       const d = await getSetting(db, 'demand');
       return d ? json({ demand: d }) : json({ error: 'No sales pattern saved yet.' }, 404);
     }
     if (request.method === 'PUT') {
       // the owner's browser saves it after loading the sales; an admin's browser can too (worked out from the saved sales)
-      const canSave = isOwner(me) || (me && (',' + me.roles + ',').includes(',scheduler,')) || (await passwordOk(env, request.headers.get('x-upload-password')));
+      const canSave = isOwner(me) || (me && (',' + me.roles + ',').includes(',manager,')) || (await passwordOk(env, request.headers.get('x-upload-password')));
       if (!canSave) fail(401, 'Only the owner or an admin can save the sales pattern.');
       const b = await request.json().catch(() => null);
       if (!b || !Array.isArray(b.days) || b.days.length !== 7) fail(400, 'Not a sales pattern.');
@@ -74,7 +74,7 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
       return json({ ok: true });
     }
   }
-  need(me, 'scheduler');
+  need(me, 'manager');
   if (head === 'plan-settings') {
     if (request.method === 'GET') return json({ settings: await getSetting(db, 'planSettings') });
     const b = await request.json().catch(() => null);

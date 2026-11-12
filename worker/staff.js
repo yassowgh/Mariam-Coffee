@@ -1,16 +1,18 @@
-// Staff side of the site: accounts and roles, expenses, fixed costs, shifts and
+// Staff side of the site: accounts and roles, shifts and
 // clock-in / clock-out with a location check. Stored in the D1 database "DB";
 // receipt photos go to the KV namespace "DATA".
 //
 // Roles (one person can have several):
-//   owner      everything: reports, accounts, expenses, fixed costs, schedule, attendance, settings
+//   owner      everything: reports, accounts, accounting, schedule, attendance, salaries, settings
+//   accountant accounting records, sales reports, net profit, salaries
 //   expenses   records spending and sees what they recorded
-//   scheduler  adds/removes baristas, plans shifts, sees and corrects attendance
+//   manager    adds/removes baristas, plans shifts, sees and corrects attendance, salaries
 //   barista    sees their own shifts, clocks in and out at the café
 import { PLANNER_ROUTES, handlePlanner } from './planner.js';
+import { ACCOUNTING_ROUTES, ACCOUNTING_SCHEMA, DEFAULT_ACCOUNTS, EXPENSE_COLUMNS, handleAccounting } from './accounting.js';
 import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
 
-export const ROLES = ['owner', 'expenses', 'scheduler', 'barista'];
+export const ROLES = ['owner', 'accountant', 'manager', 'barista'];
 const TZ_OFFSET_MIN = 180; // Türkiye is UTC+3 all year (no daylight saving since 2016)
 const MAX_RECEIPT_BYTES = 4 * 1024 * 1024;
 const MAX_OPEN_HOURS = 16; // an open clock-in older than this counts as "forgot to clock out"
@@ -50,10 +52,19 @@ let schemaReady = null;
 function ensureSchema(db) {
   if (!schemaReady) {
     schemaReady = (async () => {
-      await db.batch(SCHEMA.map((s) => db.prepare(s)));
-      // columns added after the first release (ALTER fails harmlessly when they exist)
-      for (const col of ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0']) {
-        try { await db.prepare(`ALTER TABLE users ADD COLUMN ${col}`).run(); } catch { /* already there */ }
+      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA].map((s) => db.prepare(s)));
+      // columns added after the first release
+      const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL']], ['expenses', EXPENSE_COLUMNS]];
+      for (const [table, list] of cols) {
+        const have = new Set((await db.prepare(`PRAGMA table_info(${table})`).all()).results.map((c) => c.name));
+        for (const col of list) if (!have.has(col.split(' ')[0])) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col}`).run();
+      }
+      // role names used before: scheduler -> manager, expenses -> accountant
+      await db.prepare("UPDATE users SET roles = REPLACE(REPLACE(roles, 'scheduler', 'manager'), 'expenses', 'accountant') WHERE roles LIKE '%scheduler%' OR roles LIKE '%expenses%'").run();
+      const accs = await db.prepare('SELECT COUNT(*) AS n FROM money_accounts').first();
+      if (!accs.n) {
+        const now = new Date().toISOString();
+        await db.batch(DEFAULT_ACCOUNTS.map(([name, type]) => db.prepare('INSERT OR IGNORE INTO money_accounts (name, type, created_at) VALUES (?, ?, ?)').bind(name, type, now)));
       }
       const { n } = await db.prepare('SELECT COUNT(*) AS n FROM categories').first();
       if (!n) {
@@ -84,8 +95,15 @@ const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isMonth = (s) => typeof s === 'string' && /^\d{4}-\d{2}$/.test(s);
 const isTime = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 const str = (v, max = 300) => (v == null ? '' : String(v).trim().slice(0, max));
+// accepts 1250.5, 1,250.50 and Turkish 1.250,50
 const money = (v) => {
-  const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[^\d.,-]/g, '').replace(',', '.'));
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.round(v * 100) / 100 : NaN;
+  let t = String(v ?? '').replace(/[^\d.,-]/g, '');
+  if (!t) return NaN;
+  if (t.includes(',') && t.lastIndexOf(',') > t.lastIndexOf('.')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, ''); // 12.500 = twelve thousand five hundred
+  else t = t.replace(/,/g, '');
+  const n = Number(t);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 };
 const cleanEmail = (v) => {
@@ -107,7 +125,7 @@ export function distanceM(a, b) {
 
 const publicUser = (u) => u && ({
   id: u.id, username: u.username, name: u.name, roles: rolesOf(u), active: !!u.active,
-  rate: u.rate, phone: u.phone || '', color: u.color || '', email: u.email || '', mustChange: !!u.must_change, created_at: u.created_at,
+  rate: u.rate, pay_type: u.pay_type || null, monthly_salary: u.monthly_salary ?? null, phone: u.phone || '', color: u.color || '', email: u.email || '', mustChange: !!u.must_change, created_at: u.created_at,
 });
 
 async function audit(db, user, action, detail) {
@@ -192,7 +210,7 @@ async function changeOwnPassword(request, env, me) {
 /** Owner manages every account; a scheduler manages barista-only accounts. */
 function canManage(me, target, roles) {
   if (isOwner(me)) return true;
-  if (!has(me, 'scheduler')) return false;
+  if (!has(me, 'manager')) return false;
   const onlyBarista = (r) => r.length > 0 && r.every((x) => x === 'barista');
   return (!target || onlyBarista(rolesOf(target))) && (!roles || onlyBarista(roles));
 }
@@ -200,7 +218,7 @@ function canManage(me, target, roles) {
 async function users(request, env, me, id) {
   const db = env.DB;
   if (request.method === 'GET') {
-    need(me, 'scheduler');
+    need(me, 'manager', 'accountant');
     const { results } = await db.prepare('SELECT * FROM users ORDER BY active DESC, name COLLATE NOCASE').all();
     return json({ users: results.filter((u) => isOwner(me) || rolesOf(u).includes('barista')).map(publicUser) });
   }
@@ -212,6 +230,9 @@ async function users(request, env, me, id) {
   const rate = b.rate === '' || b.rate == null ? null : money(b.rate);
   if (rate != null && (Number.isNaN(rate) || rate < 0)) fail(400, 'The hourly rate is not a number.');
   const color = /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : null;
+  const payType = ['hourly', 'monthly'].includes(b.pay_type) ? b.pay_type : null;
+  const salary = b.monthly_salary === '' || b.monthly_salary == null ? null : money(b.monthly_salary);
+  if (salary != null && (Number.isNaN(salary) || salary < 0)) fail(400, 'The monthly salary is not a number.');
 
   if (request.method === 'POST' && !id) {
     const username = str(b.username, 40).toLowerCase();
@@ -222,8 +243,8 @@ async function users(request, env, me, id) {
     const exists = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
     if (exists) fail(400, 'That username is taken.');
     // a password chosen by someone else must be changed at the first sign-in
-    const r = await db.prepare('INSERT INTO users (username, name, roles, pass, rate, phone, color, email, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
-      .bind(username, str(b.name, 80), roles.join(','), await hashPassword(String(b.password)), rate, str(b.phone, 30), color, cleanEmail(b.email), nowIso()).run();
+    const r = await db.prepare('INSERT INTO users (username, name, roles, pass, rate, phone, color, email, pay_type, monthly_salary, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
+      .bind(username, str(b.name, 80), roles.join(','), await hashPassword(String(b.password)), rate, str(b.phone, 30), color, cleanEmail(b.email), payType, salary, nowIso()).run();
     await audit(db, me, 'account.create', { username, roles });
     return json({ id: r.meta.last_row_id });
   }
@@ -237,6 +258,8 @@ async function users(request, env, me, id) {
     if ('phone' in b) { sets.push('phone = ?'); vals.push(str(b.phone, 30)); }
     if ('email' in b) { sets.push('email = ?'); vals.push(cleanEmail(b.email)); }
     if ('color' in b) { sets.push('color = ?'); vals.push(color); }
+    if ('pay_type' in b) { sets.push('pay_type = ?'); vals.push(payType); }
+    if ('monthly_salary' in b) { sets.push('monthly_salary = ?'); vals.push(salary); }
     if (b.active != null) { sets.push('active = ?'); vals.push(b.active ? 1 : 0); }
     if (b.password) {
       if (String(b.password).length < 6) fail(400, 'The password needs at least 6 characters.');
@@ -254,198 +277,21 @@ async function users(request, env, me, id) {
   fail(405, 'Not allowed.');
 }
 
-// ---------- expenses ----------
-async function categories(request, env, me) {
-  const db = env.DB;
-  if (request.method === 'GET') {
-    need(me, 'expenses');
-    const { results } = await db.prepare('SELECT id, name, stock, active FROM categories ORDER BY name COLLATE NOCASE').all();
-    return json({ categories: results });
-  }
-  if (request.method === 'POST') {
-    need(me, 'expenses');
-    const name = str((await body(request)).name, 60);
-    if (!name) fail(400, 'Enter a name for the new item.');
-    const found = await db.prepare('SELECT id, name, stock, active FROM categories WHERE name = ?').bind(name).first();
-    if (found) {
-      if (!found.active) await db.prepare('UPDATE categories SET active = 1 WHERE id = ?').bind(found.id).run();
-      return json({ category: { ...found, active: 1 } });
-    }
-    const r = await db.prepare('INSERT INTO categories (name, created_at) VALUES (?, ?)').bind(name, nowIso()).run();
-    await audit(db, me, 'category.create', name);
-    return json({ category: { id: r.meta.last_row_id, name, stock: 0, active: 1 } });
-  }
-  fail(405, 'Not allowed.');
-}
-
-async function categoryEdit(request, env, me, id) {
-  need(me, 'owner');
-  const b = await body(request);
-  const sets = [], vals = [];
-  if (b.name != null) { if (!str(b.name, 60)) fail(400, 'Enter a name.'); sets.push('name = ?'); vals.push(str(b.name, 60)); }
-  if (b.active != null) { sets.push('active = ?'); vals.push(b.active ? 1 : 0); }
-  if (b.stock != null) { sets.push('stock = ?'); vals.push(b.stock ? 1 : 0); }
-  if (sets.length) await env.DB.prepare(`UPDATE categories SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, id).run();
-  await audit(env.DB, me, 'category.update', { id, ...b });
-  return json({ ok: true });
-}
-
-const EXPENSE_SELECT = `SELECT e.id, e.date, e.created_at, e.amount, e.reason, e.receipt, e.payment, e.category_id, e.user_id,
-  c.name AS category, u.name AS user_name FROM expenses e JOIN categories c ON c.id = e.category_id
-  LEFT JOIN users u ON u.id = e.user_id`;
-
-async function expenses(request, env, me, id) {
-  const db = env.DB;
-  const url = new URL(request.url);
-  need(me, 'expenses');
-  if (request.method === 'GET') {
-    const today = localParts().date;
-    let from = url.searchParams.get('from'), to = url.searchParams.get('to') || today;
-    if (!isOwner(me)) from = from && from > addDaysIso(today, -90) ? from : addDaysIso(today, -90);
-    if (!isDate(from)) from = addDaysIso(today, -30);
-    if (!isDate(to)) to = today;
-    const mine = !isOwner(me);
-    const { results } = await db.prepare(`${EXPENSE_SELECT} WHERE e.deleted = 0 AND e.date >= ? AND e.date <= ?${mine ? ' AND e.user_id = ?' : ''}
-      ORDER BY e.date DESC, e.id DESC`).bind(...[from, to, ...(mine ? [me.id] : [])]).all();
-    return json({ expenses: results, from, to });
-  }
-  if (request.method === 'POST' && !id) {
-    const b = await body(request);
-    const amount = money(b.amount);
-    if (!Number.isFinite(amount) || amount <= 0) fail(400, 'Enter the amount spent (more than 0 TL).');
-    if (amount > 10000000) fail(400, 'That amount looks too large.');
-    const cat = await db.prepare('SELECT id, active FROM categories WHERE id = ?').bind(Number(b.category_id)).first();
-    if (!cat || !cat.active) fail(400, 'Choose what the money was spent on.');
-    const receipt = b.receipt && /^r_[a-f0-9]{32}$/.test(b.receipt) ? b.receipt : null;
-    const payment = ['cash', 'card', 'transfer'].includes(b.payment) ? b.payment : null;
-    const created = nowIso();
-    // the date is set by the server (today in Türkiye); only the owner may enter an earlier date
-    const date = isOwner(me) && isDate(b.date) && b.date <= localParts(created).date ? b.date : localParts(created).date;
-    const r = await db.prepare('INSERT INTO expenses (date, created_at, user_id, category_id, amount, reason, receipt, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(date, created, me.id, cat.id, amount, str(b.reason, 500), receipt, payment).run();
-    await audit(db, me, 'expense.create', { id: r.meta.last_row_id, amount, category_id: cat.id, date });
-    const row = await db.prepare(`${EXPENSE_SELECT} WHERE e.id = ?`).bind(r.meta.last_row_id).first();
-    return json({ expense: row });
-  }
-  if (request.method === 'DELETE' && id) {
-    const row = await db.prepare('SELECT * FROM expenses WHERE id = ? AND deleted = 0').bind(id).first();
-    if (!row) fail(404, 'That expense does not exist.');
-    // the person who entered it can remove it on the same day; the owner any time
-    if (!isOwner(me) && (row.user_id !== me.id || row.date !== localParts().date)) fail(403, 'Only the owner can remove an expense after the day it was entered.');
-    await db.prepare('UPDATE expenses SET deleted = 1 WHERE id = ?').bind(id).run();
-    await audit(db, me, 'expense.delete', { id, amount: row.amount, date: row.date });
-    return json({ ok: true });
-  }
-  fail(405, 'Not allowed.');
-}
-
-async function receipts(request, env, me, key) {
-  need(me, 'expenses');
-  if (!env.DATA) fail(503, 'Photo storage is not configured.');
-  if (request.method === 'POST' && !key) {
-    const type = request.headers.get('content-type') || '';
-    if (!/^image\/(jpeg|png|webp)$/.test(type)) fail(400, 'The receipt must be a photo (JPEG, PNG or WebP).');
-    const buf = await request.arrayBuffer();
-    if (!buf.byteLength) fail(400, 'The photo is empty.');
-    if (buf.byteLength > MAX_RECEIPT_BYTES) fail(413, 'The photo is too large (limit 4 MB).');
-    const id = 'r_' + newToken().slice(0, 32);
-    await env.DATA.put('receipt:' + id, buf, { metadata: { type, by: me.id, at: nowIso() } });
-    return json({ receipt: id });
-  }
-  if (request.method === 'GET' && key && /^r_[a-f0-9]{32}$/.test(key)) {
-    if (!isOwner(me)) {
-      const row = await env.DB.prepare('SELECT user_id FROM expenses WHERE receipt = ?').bind(key).first();
-      if (!row || row.user_id !== me.id) fail(403, 'Only the owner can see other people’s receipts.');
-    }
-    const { value, metadata } = await env.DATA.getWithMetadata('receipt:' + key, { type: 'arrayBuffer' });
-    if (!value) fail(404, 'The photo was not found.');
-    return new Response(value, { headers: { 'content-type': metadata?.type || 'image/jpeg', 'cache-control': 'private, max-age=86400' } });
-  }
-  fail(405, 'Not allowed.');
-}
-
-// ---------- fixed costs (owner) ----------
-async function fixedCosts(request, env, me, id) {
-  need(me, 'owner');
-  const db = env.DB;
-  if (request.method === 'GET') {
-    const { results } = await db.prepare('SELECT * FROM fixed_costs ORDER BY month DESC, item COLLATE NOCASE').all();
-    return json({ fixed: results });
-  }
-  if (request.method === 'POST' && !id) {
-    const b = await body(request);
-    const rows = Array.isArray(b.rows) ? b.rows : [b];
-    if (rows.length > 2000) fail(400, 'Too many rows (limit 2,000).');
-    const clean = rows.map((r, i) => {
-      const month = str(r.month, 7), item = str(r.item, 80), amount = money(r.amount);
-      if (!isMonth(month)) fail(400, `Row ${i + 1}: the month must look like 2026-11.`);
-      if (!item) fail(400, `Row ${i + 1}: the cost item has no name.`);
-      if (!Number.isFinite(amount)) fail(400, `Row ${i + 1}: the amount is not a number.`);
-      return { month, item, amount, note: str(r.note, 200) };
-    });
-    const now = nowIso(), source = str(b.source, 120) || 'manual';
-    const stmts = [];
-    // importing a file replaces the fixed costs of the months it contains
-    if (b.replaceMonths) for (const m of new Set(clean.map((r) => r.month))) stmts.push(db.prepare('DELETE FROM fixed_costs WHERE month = ?').bind(m));
-    for (const r of clean) {
-      stmts.push(db.prepare('INSERT INTO fixed_costs (month, item, amount, note, source, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .bind(r.month, r.item, r.amount, r.note, source, now, me.id));
-    }
-    await db.batch(stmts);
-    await audit(db, me, 'fixed.import', { rows: clean.length, months: [...new Set(clean.map((r) => r.month))], source });
-    return json({ ok: true, rows: clean.length });
-  }
-  if (request.method === 'PATCH' && id) {
-    const b = await body(request);
-    const amount = money(b.amount);
-    if (!Number.isFinite(amount)) fail(400, 'The amount is not a number.');
-    await db.prepare('UPDATE fixed_costs SET item = COALESCE(?, item), amount = ?, note = COALESCE(?, note) WHERE id = ?')
-      .bind(b.item ? str(b.item, 80) : null, amount, b.note != null ? str(b.note, 200) : null, id).run();
-    await audit(db, me, 'fixed.update', { id, amount });
-    return json({ ok: true });
-  }
-  if (request.method === 'DELETE' && id) {
-    await db.prepare('DELETE FROM fixed_costs WHERE id = ?').bind(id).run();
-    await audit(db, me, 'fixed.delete', { id });
-    return json({ ok: true });
-  }
-  if (request.method === 'DELETE') {
-    const month = new URL(request.url).searchParams.get('month');
-    if (!isMonth(month)) fail(400, 'Choose a month.');
-    await db.prepare('DELETE FROM fixed_costs WHERE month = ?').bind(month).run();
-    await audit(db, me, 'fixed.delete-month', { month });
-    return json({ ok: true });
-  }
-  fail(405, 'Not allowed.');
-}
-
-/** Monthly totals of fixed costs and expenses, for the profit report (owner). */
-async function costSummary(request, env, me) {
-  need(me, 'owner');
-  const db = env.DB;
-  const [fixed, exp] = await Promise.all([
-    db.prepare('SELECT month, item, SUM(amount) AS amount FROM fixed_costs GROUP BY month, item').all(),
-    db.prepare(`SELECT e.date, c.name AS category, c.stock, SUM(e.amount) AS amount, COUNT(*) AS n
-      FROM expenses e JOIN categories c ON c.id = e.category_id WHERE e.deleted = 0 GROUP BY e.date, c.id`).all(),
-  ]);
-  return json({ fixed: fixed.results, expenses: exp.results });
-}
-
 // ---------- shifts ----------
 async function shifts(request, env, me, id) {
   const db = env.DB;
   const url = new URL(request.url);
   if (request.method === 'GET') {
-    need(me, 'barista', 'scheduler');
+    need(me, 'barista', 'manager');
     const today = localParts().date;
     const from = isDate(url.searchParams.get('from')) ? url.searchParams.get('from') : addDaysIso(today, -7);
     const to = isDate(url.searchParams.get('to')) ? url.searchParams.get('to') : addDaysIso(today, 28);
-    const all = has(me, 'scheduler');
+    const all = has(me, 'manager');
     const { results } = await db.prepare(`SELECT s.*, u.name AS user_name, u.color FROM shifts s JOIN users u ON u.id = s.user_id
       WHERE s.date >= ? AND s.date <= ?${all ? '' : ' AND s.user_id = ?'} ORDER BY s.date, s.start`).bind(...[from, to, ...(all ? [] : [me.id])]).all();
     return json({ shifts: results, from, to });
   }
-  need(me, 'scheduler');
+  need(me, 'manager');
   const check = async (s) => {
     if (!isDate(s.date)) fail(400, 'Choose a date for the shift.');
     if (!isTime(s.start) || !isTime(s.end)) fail(400, 'Enter start and end times like 08:00.');
@@ -548,8 +394,8 @@ async function attendance(request, env, me, id) {
   const db = env.DB;
   const url = new URL(request.url);
   if (request.method === 'GET') {
-    need(me, 'barista', 'scheduler');
-    const all = has(me, 'scheduler');
+    need(me, 'barista', 'manager');
+    const all = has(me, 'manager');
     const today = localParts().date;
     const from = isDate(url.searchParams.get('from')) ? url.searchParams.get('from') : addDaysIso(today, -13);
     const to = isDate(url.searchParams.get('to')) ? url.searchParams.get('to') : today;
@@ -564,7 +410,7 @@ async function attendance(request, env, me, id) {
     const { results: people } = all ? await db.prepare('SELECT id, name, rate, active FROM users').all() : { results: [{ id: me.id, name: me.name, rate: me.rate }] };
     return json({ from, to, now: nowIso(), records: rec.results, shifts: sh.results, people: people.map((p) => ({ id: p.id, name: p.name, rate: all ? p.rate : null })) });
   }
-  need(me, 'scheduler');
+  need(me, 'manager');
   if (request.method === 'POST' && !id) {
     // manual record (e.g. a phone problem); always marked as edited
     const b = await body(request);
@@ -653,13 +499,12 @@ export async function handleStaff(request, env, path, passwordOk) {
       return await handlePlanner({ request, env, head, me, need, isOwner, passwordOk, getSetting, setSetting, audit, fail });
     }
     need(me);
+    if (ACCOUNTING_ROUTES.includes(head)) {
+      const h = { need, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken };
+      return await handleAccounting({ head, sub, request, env, me, h });
+    }
     switch (head) {
       case 'users': return await users(request, env, me, idOf(sub));
-      case 'categories': return sub ? await categoryEdit(request, env, me, idOf(sub)) : await categories(request, env, me);
-      case 'expenses': return await expenses(request, env, me, idOf(sub));
-      case 'receipts': return await receipts(request, env, me, sub);
-      case 'fixed-costs': return await fixedCosts(request, env, me, idOf(sub));
-      case 'cost-summary': return await costSummary(request, env, me);
       case 'shifts': return await shifts(request, env, me, idOf(sub));
       case 'clock':
         if (!sub && m === 'GET') { need(me, 'barista'); return await clockStatus(env, me); }
@@ -678,5 +523,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, 'login', 'logout', 'me', 'users', 'categories', 'expenses', 'receipts', 'fixed-costs',
-  'cost-summary', 'shifts', 'clock', 'attendance', 'site', 'activity'];
+export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity'];

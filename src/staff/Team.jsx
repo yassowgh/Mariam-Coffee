@@ -3,10 +3,10 @@ import { api, ROLE_LABELS } from '../lib/api.js';
 import { money, longDate } from '../format.js';
 
 const ROLE_HELP = {
-  owner: 'everything, including sales reports and fixed costs',
-  expenses: 'records spending',
-  scheduler: 'below the owner: manages baristas, makes schedules (also automatically from conditions) and checks attendance; no sales',
-  barista: 'sees own shifts, clocks in and out',
+  owner: 'super admin: everything, adds and removes any account, uploads sales files',
+  accountant: 'accounting records, sales reports, net profit, salaries',
+  manager: 'barista schedules, timesheets, salaries per employee, adds/removes baristas',
+  barista: 'clocks in and out (and sees own shifts)',
 };
 /** A ready-to-send email (opens the phone's or computer's email app). */
 export function loginMail({ name, email, username, password }) {
@@ -52,19 +52,19 @@ export default function Team({ user }) {
         {list == null ? <p className="muted">Loading…</p> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Username</th><th>Roles</th><th className="r">Rate / hour</th><th>Email</th><th>Phone</th><th>Since</th><th /></tr></thead>
+              <thead><tr><th>Name</th><th>Username</th><th>Roles</th><th className="r">Pay</th><th>Email</th><th>Phone</th><th>Since</th><th /></tr></thead>
               <tbody>
                 {shown.map((p) => (
                   <tr key={p.id} style={p.active ? undefined : { opacity: 0.55 }}>
                     <td><i className="dot" style={{ background: p.color || 'var(--series-1)' }} />{p.name}{!p.active && <span className="pill" style={{ marginLeft: 6 }}>removed</span>}</td>
                     <td>@{p.username}</td>
                     <td>{p.roles.map((r) => ROLE_LABELS[r]).join(', ')}</td>
-                    <td className="r num">{p.rate == null ? '–' : money(p.rate)}</td>
+                    <td className="r num">{p.pay_type === 'monthly' ? `${money(p.monthly_salary)} / month` : p.pay_type === 'hourly' || p.rate != null ? `${money(p.rate)} / hour` : '–'}</td>
                     <td>{p.email ? <a href={`mailto:${p.email}`}>{p.email}</a> : '–'}{p.mustChange && <span className="pill warn" style={{ marginLeft: 6 }} title="Has not chosen their own password yet">not signed in yet</span>}</td>
                     <td>{p.phone ? <a href={`tel:${p.phone}`}>{p.phone}</a> : '–'}</td>
                     <td>{longDate(p.created_at.slice(0, 10))}</td>
                     <td style={{ display: 'flex', gap: 4 }}>
-                      <button className="btn small ghost" onClick={() => setEdit({ ...p, password: '', rate: p.rate ?? '' })}>Edit</button>
+                      <button className="btn small ghost" onClick={() => setEdit({ ...p, password: '', rate: p.rate ?? '', monthly_salary: p.monthly_salary ?? '' })}>Edit</button>
                       {p.id !== user.id && <button className="btn small ghost" onClick={() => toggleActive(p)}>{p.active ? 'Remove' : 'Bring back'}</button>}
                     </td>
                   </tr>
@@ -88,7 +88,7 @@ function Editor({ edit, setEdit, roleChoices, self, onSaved }) {
     e.preventDefault();
     setErr('');
     try {
-      const body = { name: edit.name, roles: edit.roles, rate: edit.rate, phone: edit.phone, color: edit.color, email: edit.email };
+      const body = { name: edit.name, roles: edit.roles, rate: edit.rate, phone: edit.phone, color: edit.color, email: edit.email, pay_type: edit.pay_type || null, monthly_salary: edit.monthly_salary };
       if (isNew) await api('users', { method: 'POST', body: { ...body, username: edit.username, password: edit.password } });
       else await api('users/' + edit.id, { method: 'PATCH', body: { ...body, ...(edit.password ? { password: edit.password } : {}) } });
       if (isNew || edit.password) setDone({ username: edit.username, password: edit.password, name: edit.name, email: edit.email });
@@ -118,7 +118,14 @@ function Editor({ edit, setEdit, roleChoices, self, onSaved }) {
           <input value={edit.username} onChange={(e) => set({ username: e.target.value.toLowerCase().replace(/\s/g, '') })} required disabled={!isNew} autoCapitalize="none" pattern="[a-z0-9._\-]{3,40}" title="3–40 letters, numbers, dots or dashes" /></label>
         <label className="field"><span>{isNew ? 'Password (6+ characters)' : 'New password (leave empty to keep)'}</span>
           <input type="text" autoComplete="new-password" value={edit.password} onChange={(e) => set({ password: e.target.value })} required={isNew} minLength={6} /></label>
-        <label className="field"><span>Hourly rate (TL, optional)</span><input inputMode="decimal" value={edit.rate} onChange={(e) => set({ rate: e.target.value })} /></label>
+        <div className="field"><span>Paid</span>
+          <div className="seg" role="group" aria-label="How the person is paid">
+            <button type="button" aria-pressed={edit.pay_type === 'hourly'} onClick={() => set({ pay_type: 'hourly' })}>Per hour</button>
+            <button type="button" aria-pressed={edit.pay_type === 'monthly'} onClick={() => set({ pay_type: 'monthly' })}>Monthly salary</button>
+            <button type="button" aria-pressed={!edit.pay_type} onClick={() => set({ pay_type: null })}>Not on payroll</button>
+          </div></div>
+        {edit.pay_type === 'hourly' && <label className="field"><span>Hourly rate (TL)</span><input inputMode="decimal" value={edit.rate ?? ''} onChange={(e) => set({ rate: e.target.value })} /></label>}
+        {edit.pay_type === 'monthly' && <label className="field"><span>Monthly salary (TL)</span><input inputMode="decimal" value={edit.monthly_salary ?? ''} onChange={(e) => set({ monthly_salary: e.target.value })} /></label>}
         <label className="field"><span>Email (optional)</span><input type="email" value={edit.email || ''} onChange={(e) => set({ email: e.target.value.trim() })} maxLength={120} /></label>
         <label className="field"><span>Phone (optional)</span><input type="tel" value={edit.phone} onChange={(e) => set({ phone: e.target.value })} maxLength={30} /></label>
         <div className="field"><span>Colour on the schedule</span>
