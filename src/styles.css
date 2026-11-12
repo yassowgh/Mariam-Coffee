@@ -233,9 +233,9 @@ tfoot td { font-weight: 650; background: var(--surface-2); border-bottom: 0; }
 td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .table-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
 .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; background: var(--surface-2); color: var(--text-2); font-weight: 600; }
-.pill.ok { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good-text); }
-.pill.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }
-.pill.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); }
+.pill.ok { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good-text); }
+.pill.bad { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }
+.pill.warn { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); }
 
 /* ---------- charts ---------- */
 .chart { position: relative; width: 100%; }
@@ -273,7 +273,7 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .progress-card { max-width: 560px; margin: 60px auto; }
 .progress { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; margin: 14px 0 8px; }
 .progress > div { height: 100%; background: var(--accent); border-radius: 5px; transition: width .15s linear; }
-.error { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); border-radius: 10px; padding: 12px 14px; margin-top: 16px; }
+.error { border: 1px solid var(--bad); background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); border-radius: 10px; padding: 12px 14px; margin-top: 16px; }
 .busy { position: fixed; inset: auto 16px 16px auto; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.12); width: 240px; font-size: 12.5px; }
 .busy .progress { margin: 8px 0 0; height: 6px; }
 .busy .progress > div { width: 40%; animation: indet 1s ease-in-out infinite; }
@@ -299,13 +299,13 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 
 .periods { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 6px; font-size: 12.5px; background: var(--surface-2); border-radius: 8px; padding: 6px 10px; }
 .banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 10px; padding: 8px 8px 8px 14px; margin-bottom: 12px; font-size: 13.5px; border: 1px solid var(--border); background: var(--surface); }
-.banner.ok { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
-.banner.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--surface)); }
+.banner.ok { border-color: var(--good); background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
+.banner.bad { border-color: var(--bad); background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--bad) 10%, var(--surface)); }
 .save-box { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .save-box label.check { display: flex; gap: 8px; align-items: center; min-height: 44px; cursor: pointer; }
 .save-box input[type="checkbox"] { width: 18px; height: 18px; }
 .save-box .field { width: min(280px, 100%); text-align: left; }
-.banner.info { border-color: var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, var(--surface)); }
+.banner.info { border-color: var(--series-1); background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--series-1) 8%, var(--surface)); }
 .seg button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ---------- profit ---------- */
@@ -320,10 +320,10 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .menu-cell.mc-workhorse { border-top-color: var(--series-1); }
 .menu-cell.mc-puzzle { border-top-color: var(--warn); }
 .menu-cell.mc-dog { border-top-color: var(--bad); }
-.pill.mc-star { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good-text); }
-.pill.mc-workhorse { background: color-mix(in srgb, var(--series-1) 15%, transparent); color: var(--text); }
-.pill.mc-puzzle { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); }
-.pill.mc-dog { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }
+.pill.mc-star { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good-text); }
+.pill.mc-workhorse { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--series-1) 15%, transparent); color: var(--text); }
+.pill.mc-puzzle { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--text); }
+.pill.mc-dog { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad-text); }
 .check-inline { display: inline-flex; gap: 8px; align-items: center; min-height: 40px; font-size: 13px; cursor: pointer; }
 .check-inline input { width: 18px; height: 18px; }
 .line-toggles { display: flex; flex-wrap: wrap; gap: 0 16px; }
@@ -371,7 +371,7 @@ td.name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 table.schedule th, table.schedule td { vertical-align: top; }
 table.schedule td.cell { min-width: 110px; padding: 6px; }
 table.schedule td.who { font-weight: 600; }
-table.schedule .today { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+table.schedule .today { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .shift {
   display: block; width: 100%; text-align: left; border: 1px solid var(--border); border-left: 4px solid var(--series-1);
   background: var(--surface); border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; cursor: pointer;
@@ -421,9 +421,9 @@ table.schedule .today { background: color-mix(in srgb, var(--accent) 7%, transpa
 .cov-time { font-size: 11.5px; }
 .cov-cells { display: flex; gap: 1px; min-width: 0; }
 .cov { flex: 1; min-width: 0; height: 18px; border-radius: 2px; font-size: 10px; line-height: 18px; text-align: center; color: var(--text); overflow: hidden; }
-.cov.ok { background: color-mix(in srgb, var(--good) 45%, transparent); }
-.cov.short { background: color-mix(in srgb, var(--bad) 55%, transparent); }
-.cov.over { background: color-mix(in srgb, var(--series-1) 30%, transparent); }
+.cov.ok { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--good) 45%, transparent); }
+.cov.short { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--bad) 55%, transparent); }
+.cov.over { background: rgba(128,128,128,.14); background: color-mix(in srgb, var(--series-1) 30%, transparent); }
 
 /* accounting */
 .sub-tabs { gap: 8px; }

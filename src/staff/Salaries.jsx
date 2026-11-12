@@ -223,6 +223,7 @@ function printSlip(r, month, closed) {
   const { html } = payslip(r, month, closed);
   const w = window.open('', '_blank');
   if (!w) { alert('Allow pop-ups for this site to open the payslip.'); return; }
-  w.document.write(html + '<script>setTimeout(function(){window.print()},300)</' + 'script>');
+  w.document.write(html);
   w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch { /* window closed */ } }, 300);
 }

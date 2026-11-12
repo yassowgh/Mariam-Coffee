@@ -107,9 +107,50 @@ async function handleCosts(request, env) {
   return json({ error: 'Method not allowed' }, 405);
 }
 
+// Security headers on every response (pages, files and API).
+const SECURITY_HEADERS = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-Frame-Options': 'DENY',
+  'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    'upgrade-insecure-requests',
+  ].join('; '),
+};
+
+function secure(response) {
+  const r = new Response(response.body, response);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) r.headers.set(k, v);
+  return r;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // Always use HTTPS: plain http:// links are sent to the https:// address.
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if (url.protocol === 'http:' && !local) {
+      url.protocol = 'https:';
+      return new Response(null, { status: 301, headers: { Location: url.toString() } });
+    }
+    return secure(await route(request, env, url));
+  },
+};
+
+async function route(request, env, url) {
+  {
     if (url.pathname === '/api/data') return handleData(request, env);
     if (url.pathname === '/api/costs') return handleCosts(request, env);
     if (url.pathname === '/api/auth' && request.method === 'POST') {
@@ -121,5 +162,5 @@ export default {
     if (STAFF_ROUTES.includes(head)) return handleStaff(request, env, url.pathname, passwordOk);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     return env.ASSETS.fetch(request);
-  },
-};
+  }
+}
