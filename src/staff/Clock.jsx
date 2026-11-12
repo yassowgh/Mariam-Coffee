@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, distFmt, dowOf, getLocation, hoursFmt, shiftHours, toLocal } from '../lib/api.js';
 import { longDate } from '../format.js';
+import { BaristaCosts } from './DayCosts.jsx';
 
 /** Barista page: clock in / out (only inside the café) and see your shifts and hours. */
 export default function Clock() {
@@ -85,6 +86,7 @@ export default function Clock() {
         ) : <p className="muted" style={{ margin: 0 }}>No shifts planned yet.</p>}
       </div>
       {swaps && <SwapInbox swaps={swaps} onChange={() => { loadSwaps(); load(); }} />}
+      <BaristaCosts />
 
       <div className="card">
         <div className="card-head"><div><h2>My recent hours</h2><p>Last 7 days: <b>{hoursFmt(weekHours)}</b></p></div></div>

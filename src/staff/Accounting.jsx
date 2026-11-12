@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { addDaysLocal, api, compressPhoto, todayLocal } from '../lib/api.js';
 import { isNotionExport, notionRecords } from '../lib/notionImport.js';
 import FileImport from './FileImport.jsx';
+import { CostApprovals } from './DayCosts.jsx';
 import DataTable from '../components/DataTable.jsx';
 import { int, longDate, money, money2, monthLabel } from '../format.js';
 
@@ -49,6 +50,7 @@ export default function Accounting({ user, go }) {
     ['records', `Records${records.length ? ` (${records.length})` : ''}`],
     ['accounts', 'Accounts & categories'],
     ['import', 'Upload files'],
+    ['costs', 'Barista costs'],
   ];
   return (
     <div className="stack">
@@ -59,6 +61,7 @@ export default function Accounting({ user, go }) {
       {error && <div className="error" role="alert">{error}</div>}
       {!loaded ? <div className="card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div> : (
         <>
+          {view === 'costs' ? <CostApprovals ctx={ctx} onChange={() => base.reload()} /> : <CostApprovals ctx={ctx} compact onChange={() => base.reload()} />}
           {view === 'add' && <RecordForm ctx={ctx} initial={editing} onDone={(rec) => { setEditing(null); base.reload(); if (rec) setView('records'); }} onCancel={editing ? () => { setEditing(null); setView('records'); } : null} />}
           {view === 'records' && <Records ctx={ctx} />}
           {view === 'accounts' && <AccountsSetup ctx={ctx} />}

@@ -452,3 +452,11 @@ table.schedule .today { background: rgba(128,128,128,.14); background: color-mix
 .swap-line { flex-basis: 100%; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .swap-form { flex-basis: 100%; display: grid; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .swap-form select, .swap-form input { min-height: 40px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 0 8px; font-size: 15px; }
+
+/* Finance: per-day spending tick boxes */
+.checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; }
+.checks .check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.checks input { width: 16px; height: 16px; accent-color: var(--accent); }
+.cat-checks { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px 10px; }
+.cat-checks legend { font-size: 13px; font-weight: 650; padding: 0 4px; }
+.daily-cat th, .daily-cat td { white-space: nowrap; }

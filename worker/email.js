@@ -2,6 +2,7 @@
 
 // Staff links in emails always point at the main address.
 export const SITE = 'https://mariamcoffeeshop.com';
+export const ADMIN_EMAIL = 'admin@mariamcoffeeshop.com';
 export const appUrl = (origin) => (/workers\.dev$|mariamcoffeeshop\.com$/.test(new URL(origin).hostname) ? SITE : origin) + '/management';
 // Email through Resend (https://resend.com).
 // The API key comes from the RESEND_API_KEY secret, or from Settings (stored in the database, never sent back).
@@ -226,6 +227,21 @@ export async function handleEmail({ head, request, env, me, h }) {
     return h.json({ ok: true, to: u.email });
   }
   return h.fail(404, 'Not found');
+}
+
+/** One plain notification to several addresses. Never throws: returns { sent, failed }. */
+export async function sendMany(env, h, to, subject, text) {
+  const out = { sent: 0, failed: [] };
+  try {
+    const cfg = await config(env, h, env.DB);
+    if (!cfg.key) return { sent: 0, failed: ['Email is not set up.'] };
+    const html = layout(subject.replace(/^Mariam Coffee: /, ''), text.split('\n\n').map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join(''), SITE + '/management/staff');
+    for (const addr of to) {
+      try { await send(cfg, { to: addr, subject, html, text }); out.sent++; } catch (e) { out.failed.push(`${addr}: ${e.message}`); }
+      await sleep(300);
+    }
+  } catch (e) { out.failed.push(e.message); }
+  return out;
 }
 
 /** A short notification email. Never throws: returns { ok, error }. */

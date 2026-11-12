@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL, appUrl, notify, sendMany } from './email.js';
 // Accounting records (expenses and bills), money accounts, loans, receipts and salary data.
 //
 // A record: what (name), category, amount (+ transfer fees), the date of the expense, and its status:
@@ -14,7 +15,13 @@ const KINDS = ['regular', 'old_debt', 'advance', 'loan_repayment'];
 const STATUSES = ['paid', 'scheduled', 'unpaid'];
 const MAX_RECEIPT_BYTES = 4 * 1024 * 1024;
 
+export const BARISTA_COST_LIMIT = 400; // TL, per purchase
+
 export const ACCOUNTING_SCHEMA = [
+  // Day-to-day costs a barista paid (e.g. milk from the shop): waiting for an accountant or owner to approve.
+  `CREATE TABLE IF NOT EXISTS cost_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL,
+    name TEXT NOT NULL, amount REAL NOT NULL, category_id INTEGER, receipt TEXT, note TEXT, status TEXT NOT NULL DEFAULT 'pending',
+    decided_by INTEGER, decided_at TEXT, reason TEXT, expense_id INTEGER, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS money_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
     type TEXT NOT NULL DEFAULT 'bank', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL)`,
 ];
@@ -56,6 +63,8 @@ export async function handleAccounting(ctx) {
     case 'documents':
       need(me, 'accountant');
       return documents(ctx, sub || null);
+    case 'cost-requests':
+      return costRequests(ctx, sub);
     case 'finance-advice':
       need(me, 'accountant');
       return financeAdvice(ctx);
@@ -336,7 +345,7 @@ async function salaries({ request, env, me, h }) {
   return h.json({ month, finance: fin, people: list, attendance: rec.results, shifts: sh.results, payments: fin ? pay.results : [] });
 }
 
-export const ACCOUNTING_ROUTES = ['categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
+export const ACCOUNTING_ROUTES = ['cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
 
 // ---------- expenses from free text (PDF, TXT, Word), read by AI ----------
 async function extract({ request, env, me, h }) {
@@ -451,4 +460,111 @@ ${lang === 'ar' ? 'Write them in Arabic.' : 'Write them in English.'} Answer wit
   await h.setSetting(db, key, result);
   await h.audit(db, me, 'finance.advice', { month: b.month });
   return h.json(result);
+}
+
+// ---------- day-to-day costs from baristas (up to BARISTA_COST_LIMIT per purchase, approved by accounting) ----------
+const isApprover = (h, me) => h.isOwner(me) || String(me.roles || '').split(',').includes('accountant');
+const REQ_SELECT = `SELECT q.*, u.name AS user_name, c.name AS category, d.name AS decided_name FROM cost_requests q
+  JOIN users u ON u.id = q.user_id LEFT JOIN categories c ON c.id = q.category_id LEFT JOIN users d ON d.id = q.decided_by`;
+
+async function costRequests({ request, env, me, h }, sub) {
+  const db = env.DB;
+  const m = request.method;
+  const approver = isApprover(h, me);
+  const roles = String(me.roles || '').split(',');
+
+  // a barista's receipt photo
+  if (sub === 'receipt' && m === 'POST') {
+    const type = request.headers.get('content-type') || '';
+    if (!/^image\/(jpeg|png|webp)$/.test(type)) h.fail(400, 'The receipt must be a photo (JPEG, PNG or WebP).');
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength) h.fail(400, 'The photo is empty.');
+    if (buf.byteLength > MAX_RECEIPT_BYTES) h.fail(413, 'The photo is too large (limit 4 MB).');
+    const id = 'r_' + h.newToken().slice(0, 32);
+    await env.DATA.put('receipt:' + id, buf, { metadata: { type, by: me.id, at: h.nowIso() } });
+    return h.json({ receipt: id });
+  }
+
+  if (m === 'GET' && !sub) {
+    const cats = (await db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all()).results;
+    const mine = (await db.prepare(`${REQ_SELECT} WHERE q.user_id = ? ORDER BY q.id DESC LIMIT 30`).bind(me.id).all()).results;
+    const all = approver ? (await db.prepare(`${REQ_SELECT} WHERE q.status = 'pending' OR q.id IN (SELECT id FROM cost_requests WHERE status <> 'pending' ORDER BY id DESC LIMIT 40) ORDER BY q.id DESC`).all()).results : null;
+    return h.json({ limit: BARISTA_COST_LIMIT, categories: cats, mine, all, today: h.localParts().date });
+  }
+
+  if (m === 'POST' && !sub) {
+    if (!roles.includes('barista') && !approver) h.fail(403, 'Only baristas send day-to-day costs.');
+    const b = await h.body(request);
+    const name = h.str(b.name, 120);
+    if (!name) h.fail(400, 'Write what you bought (e.g. “Milk, 6 litres”).');
+    const amount = h.money(b.amount);
+    if (!Number.isFinite(amount) || amount <= 0) h.fail(400, 'Enter the amount (more than 0 TL).');
+    if (amount > BARISTA_COST_LIMIT) h.fail(400, `The most you can add is ${BARISTA_COST_LIMIT} TL per purchase. For more, ask the accountant.`);
+    const today = h.localParts().date;
+    const date = h.isDate(b.date) ? b.date : today;
+    if (date > today) h.fail(400, 'The date cannot be in the future.');
+    const cat = b.category_id ? await db.prepare('SELECT id, name FROM categories WHERE id = ? AND active = 1').bind(Number(b.category_id)).first() : null;
+    const receipt = b.receipt && /^r_[a-f0-9]{32}$/.test(b.receipt) ? b.receipt : null;
+    const note = h.str(b.note, 500) || null;
+    const ins = await db.prepare('INSERT INTO cost_requests (user_id, date, name, amount, category_id, receipt, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(me.id, date, name, amount, cat ? cat.id : null, receipt, note, h.nowIso()).run();
+    const id = ins.meta.last_row_id;
+    await h.audit(db, me, 'costreq.create', { id, amount, name });
+    const mail = await tellAccounting(env, h, request, me, { id, date, name, amount, category: cat?.name, note, receipt });
+    return h.json({ request: await db.prepare(`${REQ_SELECT} WHERE q.id = ?`).bind(id).first(), mail });
+  }
+
+  const id = /^\d+$/.test(sub || '') ? Number(sub) : null;
+  const row = id ? await db.prepare('SELECT * FROM cost_requests WHERE id = ?').bind(id).first() : null;
+  if (!row) h.fail(404, 'That request does not exist.');
+
+  if (m === 'DELETE') {
+    if (row.user_id !== me.id) h.fail(403, 'You can only cancel your own requests.');
+    if (row.status !== 'pending') h.fail(400, 'It has already been answered.');
+    await db.prepare("UPDATE cost_requests SET status = 'cancelled', decided_at = ? WHERE id = ?").bind(h.nowIso(), id).run();
+    await h.audit(db, me, 'costreq.cancel', { id });
+    return h.json({ ok: true });
+  }
+
+  if (m === 'PATCH') {
+    if (!approver) h.fail(403, 'Only the accountant or the owner can approve.');
+    if (row.status !== 'pending') h.fail(400, 'It has already been answered.');
+    const b = await h.body(request);
+    const now = h.nowIso();
+    if (b.action === 'reject') {
+      const reason = h.str(b.reason, 300) || null;
+      await db.prepare("UPDATE cost_requests SET status = 'rejected', decided_by = ?, decided_at = ?, reason = ? WHERE id = ?").bind(me.id, now, reason, id).run();
+      await h.audit(db, me, 'costreq.reject', { id, reason });
+      await tellBarista(env, h, request, row, `Your cost “${row.name}” (${row.amount} TL) was not approved.${reason ? ' Reason: ' + reason : ''}`);
+      return h.json({ ok: true });
+    }
+    if (b.action !== 'approve') h.fail(400, 'Choose approve or reject.');
+    const cat = await db.prepare('SELECT id FROM categories WHERE id = ?').bind(Number(b.category_id || row.category_id)).first();
+    if (!cat) h.fail(400, 'Choose a category before approving.');
+    const acc = await db.prepare('SELECT id FROM money_accounts WHERE id = ?').bind(Number(b.account_id)).first();
+    if (!acc) h.fail(400, 'Choose where the money came from (e.g. Cash).');
+    const who = await db.prepare('SELECT name FROM users WHERE id = ?').bind(row.user_id).first();
+    const ins = await db.prepare(`INSERT INTO expenses (name, category_id, amount, date, status, paid_date, account_id, paid_by, reason, receipt, kind, created_at, user_id)
+      VALUES (?, ?, ?, ?, 'paid', ?, ?, ?, ?, ?, 'regular', ?, ?)`)
+      .bind(row.name, cat.id, row.amount, row.date, row.date, acc.id, who?.name || null, row.note ? `${row.note} (day-to-day cost from ${who?.name || 'barista'})` : `Day-to-day cost from ${who?.name || 'barista'}`, row.receipt, now, me.id).run();
+    await db.prepare("UPDATE cost_requests SET status = 'approved', decided_by = ?, decided_at = ?, expense_id = ?, category_id = ? WHERE id = ?")
+      .bind(me.id, now, ins.meta.last_row_id, cat.id, id).run();
+    await h.audit(db, me, 'costreq.approve', { id, expense: ins.meta.last_row_id, amount: row.amount });
+    await tellBarista(env, h, request, row, `Your cost “${row.name}” (${row.amount} TL) was approved.`);
+    return h.json({ ok: true, expense_id: ins.meta.last_row_id });
+  }
+  return h.fail(405, 'Not allowed.');
+}
+
+async function tellAccounting(env, h, request, me, r) {
+  const { results } = await env.DB.prepare("SELECT email FROM users WHERE active = 1 AND email IS NOT NULL AND email <> '' AND ((',' || roles || ',') LIKE '%,owner,%' OR (',' || roles || ',') LIKE '%,accountant,%')").all();
+  const to = [...new Set([...results.map((x) => x.email.toLowerCase()), ADMIN_EMAIL])];
+  const site = appUrl(new URL(request.url).origin) + '/staff';
+  const text = `${me.name} added a day-to-day cost and it is waiting for approval:\n\n${r.name}\nAmount: ${r.amount} TL\nDate: ${r.date}${r.category ? '\nCategory: ' + r.category : ''}${r.note ? '\nNote: ' + r.note : ''}\nReceipt photo: ${r.receipt ? 'yes' : 'no'}\n\nApprove or reject it in Accounting → Barista costs:\n${site}`;
+  return sendMany(env, h, to, `Mariam Coffee: ${me.name} asks to approve ${r.amount} TL`, text);
+}
+
+async function tellBarista(env, h, request, row, text) {
+  const u = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(row.user_id).first();
+  if (u?.email) await notify(env, h, new URL(request.url).origin, u, 'your day-to-day cost', text);
 }

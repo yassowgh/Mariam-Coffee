@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, todayLocal } from '../lib/api.js';
 import { ACCOUNT_TYPES, Loans, MarkPaid, RecordForm, Tile, total, useAccountingData } from './Accounting.jsx';
 import DataTable from '../components/DataTable.jsx';
@@ -160,6 +160,8 @@ export default function Finance({ user, go }) {
         </details>
       )}
 
+      <DailySpending records={records} month={month} />
+
       <div className="grid two">
         <div className="card">
           <div className="card-head"><div><h2>Paid out in {monthLabel(month)}, by account</h2><p>Cash, banks and loans used.</p></div></div>
@@ -182,5 +184,81 @@ function Bars({ list }) {
     <ul className="barlist">{list.slice(0, 12).map(([n, val]) => (
       <li key={n}><span className="name">{n}</span><span className="val">{money(val)}</span><div className="track"><div className="fill" style={{ width: `${(val / list[0][1]) * 100}%` }} /></div></li>
     ))}</ul>
+  );
+}
+
+// ---------------------------------------------------------------- per day
+const DAILY_KEY = 'mc-finance-daily';
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(DAILY_KEY)) || {}; } catch { return {}; }
+}
+
+/** Spending per day in the month, and per day by category. Tick boxes choose the views and the categories counted. */
+function DailySpending({ records, month }) {
+  const [prefs, setPrefs] = useState(() => ({ perDay: true, perDayCat: true, off: [], ...loadPrefs() }));
+  useEffect(() => { try { localStorage.setItem(DAILY_KEY, JSON.stringify(prefs)); } catch { /* private mode */ } }, [prefs]);
+  const off = new Set(prefs.off);
+  const set = (p) => setPrefs((x) => ({ ...x, ...p }));
+
+  const d = useMemo(() => {
+    // money that went out on each day (paid records; paying back a loan is not spending)
+    const list = records.filter((r) => r.status === 'paid' && r.kind !== 'loan_repayment' && inMonth(r.paid_date || r.date, month));
+    const cats = new Map();
+    for (const r of list) cats.set(r.category, (cats.get(r.category) || 0) + total(r));
+    const [y, m] = month.split('-').map(Number);
+    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const rows = [];
+    for (let i = 1; i <= days; i++) {
+      const date = `${month}-${String(i).padStart(2, '0')}`;
+      const byCat = {};
+      for (const r of list) if ((r.paid_date || r.date) === date) byCat[r.category] = (byCat[r.category] || 0) + total(r);
+      rows.push({ date, day: i, byCat });
+    }
+    return { rows, cats: [...cats].sort((a, b) => b[1] - a[1]).map(([n]) => n) };
+  }, [records, month]);
+
+  const shown = d.cats.filter((c) => !off.has(c));
+  const dayTotal = (r) => shown.reduce((t, c) => t + (r.byCat[c] || 0), 0);
+  const monthTotal = d.rows.reduce((t, r) => t + dayTotal(r), 0);
+  const active = d.rows.filter((r) => dayTotal(r) > 0);
+  const toggle = (c) => set({ off: off.has(c) ? prefs.off.filter((x) => x !== c) : [...prefs.off, c] });
+  const chart = d.rows.map((r) => {
+    const v = dayTotal(r);
+    return { key: r.date, label: String(r.day), value: v, title: longDate(r.date),
+      rows: [['Spent', money(v), 'var(--series-1)'], ...shown.filter((c) => r.byCat[c]).sort((a, b) => r.byCat[b] - r.byCat[a]).slice(0, 5).map((c) => [c, money(r.byCat[c])])] };
+  });
+
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>Spending per day · {monthLabel(month)}</h2>
+        <p>Money paid out on each day (paying back loans is not counted). Tick what to show and which categories to count.</p></div></div>
+      <div className="checks" role="group" aria-label="Views">
+        <label className="check"><input type="checkbox" checked={prefs.perDay} onChange={(e) => set({ perDay: e.target.checked })} /> Per-day spending</label>
+        <label className="check"><input type="checkbox" checked={prefs.perDayCat} onChange={(e) => set({ perDayCat: e.target.checked })} /> Per-day by category</label>
+      </div>
+      {d.cats.length ? (
+        <>
+          <fieldset className="checks cat-checks">
+            <legend>Categories <button type="button" className="linklike" onClick={() => set({ off: prefs.off.filter((c) => !d.cats.includes(c)) })}>all</button> · <button type="button" className="linklike" onClick={() => set({ off: [...new Set([...prefs.off, ...d.cats])] })}>none</button></legend>
+            {d.cats.map((c) => <label key={c} className="check"><input type="checkbox" checked={!off.has(c)} onChange={() => toggle(c)} /> {c}</label>)}
+          </fieldset>
+          <p className="muted" style={{ margin: '4px 0 12px' }}>Counted: <b>{money(monthTotal)}</b> over {active.length} days{active.length ? ` · average ${money(monthTotal / active.length)} per day with spending` : ''}.</p>
+          {prefs.perDay && (shown.length
+            ? <BarLineChart height={200} data={chart} barLabel="Spent" />
+            : <p className="muted">Tick at least one category.</p>)}
+          {prefs.perDayCat && shown.length > 0 && (
+            active.length ? (
+              <div className="table-wrap" style={{ marginTop: 14 }}><table className="daily-cat">
+                <thead><tr><th>Day</th>{shown.map((c) => <th key={c} className="r">{c}</th>)}<th className="r">Total</th></tr></thead>
+                <tbody>{active.map((r) => (
+                  <tr key={r.date}><td>{longDate(r.date)}</td>{shown.map((c) => <td key={c} className="r num">{r.byCat[c] ? money2(r.byCat[c]) : <span className="faint">–</span>}</td>)}<td className="r num"><b>{money2(dayTotal(r))}</b></td></tr>
+                ))}</tbody>
+                <tfoot><tr><th>Month</th>{shown.map((c) => <th key={c} className="r num">{money2(d.rows.reduce((t, r) => t + (r.byCat[c] || 0), 0))}</th>)}<th className="r num">{money2(monthTotal)}</th></tr></tfoot>
+              </table></div>
+            ) : <p className="muted">No spending in the ticked categories this month.</p>
+          )}
+        </>
+      ) : <p className="muted" style={{ margin: 0 }}>Nothing paid out this month yet.</p>}
+    </div>
   );
 }

@@ -4,6 +4,32 @@
 // Names, amounts and anything not in the dictionary stay as they are.
 
 const AR = {
+  'Day-to-day costs': 'المصاريف اليومية',
+  'What did you buy?': 'ماذا اشتريت؟',
+  'Amount (TL)': 'المبلغ (ليرة)',
+  'Category (optional)': 'الفئة (اختياري)',
+  'Not sure': 'لست متأكداً',
+  'Receipt photo (optional)': 'صورة الإيصال (اختياري)',
+  'Note (optional)': 'ملاحظة (اختياري)',
+  'Send for approval': 'إرسال للموافقة',
+  'Sending…': 'جارٍ الإرسال…',
+  'Waiting for approval': 'بانتظار الموافقة',
+  'Approved': 'تمت الموافقة',
+  'Not approved': 'مرفوض',
+  'Cancelled': 'ملغى',
+  'Barista costs': 'مصاريف الباريستا',
+  'Approve': 'موافقة',
+  'Reject': 'رفض',
+  'Paid from': 'دُفع من',
+  'Nothing waiting.': 'لا شيء بالانتظار.',
+  'Per-day spending': 'الصرف اليومي',
+  'Per-day by category': 'الصرف اليومي حسب الفئة',
+  'Categories': 'الفئات',
+  'all': 'الكل',
+  'none': 'لا شيء',
+  'Tick at least one category.': 'اختر فئة واحدة على الأقل.',
+  'Day': 'اليوم',
+  'Month': 'الشهر',
   // shell & sign-in
   'Loading…': 'جارٍ التحميل…', 'Mariam Coffee': 'مريم كافيه', 'Staff': 'الموظفون', '👤 Staff sign-in': '👤 دخول الموظفين', 'Staff sign-in': 'دخول الموظفين',
   'Staff and owner sign-in': 'دخول الموظفين والمالك', '← Sales reports': '← تقارير المبيعات', 'Sign out': 'تسجيل الخروج', 'Your account': 'حسابك',
@@ -124,6 +150,10 @@ const AR = {
 
 // texts with a changing part
 const PATTERNS = [
+  [/^Spending per day · (.+)$/, (m) => `الصرف اليومي · ${m[1]}`],
+  [/^Barista costs · (\d+) waiting$/, (m) => `مصاريف الباريستا · ${m[1]} بالانتظار`],
+  [/^The most is (\d+) TL per purchase\.$/, (m) => `الحد الأقصى ${m[1]} ليرة لكل عملية شراء.`],
+  [/^Paid for something for the café \(milk, ice, cleaning things…\)\? Add it here, up to (\d+) TL per purchase\. The accountant approves it\.$/, (m) => `دفعت ثمن شيء للمقهى (حليب، ثلج، مواد تنظيف…)؟ أضفه هنا، حتى ${m[1]} ليرة لكل عملية شراء. يوافق عليه المحاسب.`],
   [/^Mariam Coffee · (.+)$/, (m, t) => `مريم كافيه · ${t(m[1])}`],
   [/^Signed in as (.+)$/, (m) => `تم الدخول باسم ${m[1]}`],
   [/^Week of (.+)$/, (m) => `أسبوع ${m[1]}`],
