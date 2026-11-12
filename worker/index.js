@@ -28,10 +28,16 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 });
 
-/** Saving: owner signed in, or the upload password. */
+/** Saving: owner signed in, the upload password, or the POS computer's upload key. */
 async function allowed(request, env) {
   const me = await currentUser(request, env).catch(() => null);
   if (isOwner(me)) return true;
+  const token = request.headers.get('x-upload-token');
+  if (token && env.DB) {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'uploadToken'").first().catch(() => null);
+    const saved = row ? JSON.parse(row.value) : null;
+    if (saved?.hash && safeEqual(await sha256Hex(token), saved.hash)) return true;
+  }
   return passwordOk(env, request.headers.get('x-upload-password'));
 }
 
@@ -63,6 +69,7 @@ async function handleData(request, env) {
     const metadata = {
       uploadedAt: new Date().toISOString(),
       name: String(meta.name || '').slice(0, 120),
+      auto: request.headers.get('x-upload-token') ? true : undefined,
       from: String(meta.from || '').slice(0, 10),
       to: String(meta.to || '').slice(0, 10),
       bytes: body.byteLength,

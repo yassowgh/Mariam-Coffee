@@ -9,9 +9,10 @@
 //   manager    adds/removes baristas, plans shifts, sees and corrects attendance, salaries
 //   barista    sees their own shifts, clocks in and out at the café
 import { PLANNER_ROUTES, handlePlanner } from './planner.js';
-import { EMAIL_ROUTES, PUBLIC_EMAIL_ROUTES, handleEmail, handlePublicEmail, sendWelcome } from './email.js';
+import { EMAIL_ROUTES, PUBLIC_EMAIL_ROUTES, handleEmail, handlePublicEmail, notify, sendWelcome } from './email.js';
+import { TEAM_ROUTES, TEAM_SCHEMA, handleTeam } from './team.js';
 import { ACCOUNTING_ROUTES, ACCOUNTING_SCHEMA, DEFAULT_ACCOUNTS, EXPENSE_COLUMNS, handleAccounting } from './accounting.js';
-import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, verifyPassword } from './auth.js';
+import { COOKIE, SESSION_DAYS, hashPassword, newToken, readCookie, sessionCookie, sha256Hex, verifyPassword } from './auth.js';
 
 export const ROLES = ['owner', 'accountant', 'manager', 'barista'];
 const TZ_OFFSET_MIN = 180; // Türkiye is UTC+3 all year (no daylight saving since 2016)
@@ -54,7 +55,7 @@ let schemaReady = null;
 function ensureSchema(db) {
   if (!schemaReady) {
     schemaReady = (async () => {
-      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA].map((s) => db.prepare(s)));
+      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA, ...TEAM_SCHEMA].map((s) => db.prepare(s)));
       // columns added after the first release
       const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL', "lang TEXT NOT NULL DEFAULT 'en'"]], ['expenses', EXPENSE_COLUMNS]];
       for (const [table, list] of cols) {
@@ -526,6 +527,10 @@ export async function handleStaff(request, env, path, passwordOk) {
     need(me);
     if (ACCOUNTING_ROUTES.includes(head)) return await handleAccounting({ head, sub, request, env, me, h });
     if (EMAIL_ROUTES.includes(head)) return await handleEmail({ head, request, env, me, h });
+    if (TEAM_ROUTES.includes(head)) {
+      const origin = new URL(request.url).origin;
+      return await handleTeam({ head, sub, request, env, me, h, notify: (u, subject, text, html) => notify(env, h, origin, u, subject, text, html) });
+    }
     switch (head) {
       case 'users': return await users(request, env, me, idOf(sub));
       case 'shifts': return await shifts(request, env, me, idOf(sub));
@@ -535,6 +540,23 @@ export async function handleStaff(request, env, path, passwordOk) {
         break;
       case 'attendance': return await attendance(request, env, me, idOf(sub));
       case 'site': return await site(request, env, me);
+      case 'upload-token': {
+        // the POS computer's key for uploading the sales database (shown once)
+        need(me, 'owner');
+        if (m === 'GET') {
+          const t = await getSetting(env.DB, 'uploadToken');
+          const meta = env.DATA ? (await env.DATA.list({ prefix: 'dataset' }).catch(() => null))?.keys.find((k) => k.name === 'dataset')?.metadata : null;
+          return json({ exists: !!t, createdAt: t?.createdAt || null, lastUpload: meta || null });
+        }
+        if (m === 'POST') {
+          const token = 'mcu_' + newToken().slice(0, 40);
+          await setSetting(env.DB, 'uploadToken', { hash: await sha256Hex(token), createdAt: nowIso() });
+          await audit(env.DB, me, 'settings.upload-token', 'New POS upload key');
+          return json({ token });
+        }
+        if (m === 'DELETE') { await env.DB.prepare("DELETE FROM settings WHERE key = 'uploadToken'").run(); await audit(env.DB, me, 'settings.upload-token', 'POS upload key removed'); return json({ ok: true }); }
+        break;
+      }
       case 'activity': return await activity(request, env, me);
       default:
     }
@@ -546,4 +568,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity'];
+export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];

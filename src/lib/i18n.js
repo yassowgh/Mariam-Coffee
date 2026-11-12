@@ -101,6 +101,13 @@ const AR = {
   'Recipe costs': 'تكلفة الوصفات', 'Money spent': 'المبالغ المصروفة', 'Net margin': 'هامش الربح الصافي',
   'Mon': 'الإثنين', 'Tue': 'الثلاثاء', 'Wed': 'الأربعاء', 'Thu': 'الخميس', 'Fri': 'الجمعة', 'Sat': 'السبت', 'Sun': 'الأحد',
   'The time comes from the server.': 'الوقت يُؤخذ من الخادم.', 'Not clocked in': 'غير مسجّل حضور',
+  '⇄ Ask to swap': '⇄ طلب تبديل', 'Cancel swap': 'إلغاء التبديل', 'Who should take it?': 'من يأخذ الوردية؟', 'Anyone': 'أي شخص', 'Send request': 'إرسال الطلب',
+  'Shift swaps': 'تبديل الورديات', 'Accept': 'قبول', 'Decline': 'رفض', 'Approve': 'موافقة', 'Reject': 'رفض', 'Waiting for the manager.': 'بانتظار موافقة المدير.',
+  'Colleagues asking you to take a shift. After you accept, a manager approves it.': 'زملاء يطلبون منك أخذ وردية. بعد قبولك يوافق المدير.',
+  'Baristas agreed to swap these shifts. Approve to move the shift.': 'اتفق الباريستا على تبديل هذه الورديات. وافق لنقل الوردية.',
+  'Waiting for you': 'بانتظارك', 'Waiting for the colleague': 'بانتظار الزميل', 'Approved': 'تمت الموافقة', 'Not approved': 'لم تتم الموافقة', 'Declined': 'مرفوض',
+  'Payslip': 'قسيمة الراتب', 'Reopen': 'إعادة فتح', 'POS automatic upload': 'الرفع التلقائي من جهاز نقطة البيع', '⬇ Download the POS program': '⬇ تنزيل برنامج نقطة البيع',
+  'Remove the key': 'حذف المفتاح', 'Email': 'البريد الإلكتروني',
   // pieces of headings
   'Finance ·': 'المالية ·', 'Key takeaways ·': 'أهم الملاحظات ·', 'Due in': 'مستحق في', 'Paid out in': 'المدفوع في', 'Plan': 'تخطيط', 'like this month': 'مثل هذا الشهر',
   'Salaries ·': 'الرواتب ·', 'Monthly hours ·': 'الساعات الشهرية ·', ', by account': '، حسب الحساب', ', by category': '، حسب الفئة', 'Late, from before': 'متأخر، من قبل',

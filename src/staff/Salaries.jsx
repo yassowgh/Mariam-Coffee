@@ -18,14 +18,18 @@ function matcher(people) {
   };
 }
 
-export default function Salaries() {
+export default function Salaries({ user }) {
   const [month, setMonth] = useState(todayLocal().slice(0, 7));
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
+  const [closed, setClosed] = useState(null); // the locked figures of a closed month
+  const [pmsg, setPmsg] = useState(null);
+  const owner = !!user?.roles.includes('owner');
+  const loadClosed = () => api('payroll?month=' + month).then(setClosed).catch(() => setClosed({ closed: false }));
   useEffect(() => {
-    setData(null);
-    api('salaries?month=' + month).then(setData).catch((e) => setError(e.message));
+    setData(null); setClosed(null); setPmsg(null);
+    api('salaries?month=' + month).then((d) => { setData(d); if (d.finance) loadClosed(); }).catch((e) => setError(e.message));
   }, [month]);
 
   const result = useMemo(() => {
@@ -91,9 +95,35 @@ export default function Salaries() {
     { key: 'advances', label: 'Advances', align: 'r', fmt: money2, total: 'sum', csv: (r) => r.advances.toFixed(2) },
     { key: 'paid', label: 'Salary paid', align: 'r', fmt: money2, total: 'sum', csv: (r) => r.paid.toFixed(2) },
     { key: 'balance', label: 'Still to pay', align: 'r', fmt: (v) => (v == null ? '–' : money2(v)), total: 'sum', cls: (r) => (r.balance > 0.5 ? 'down' : r.balance < -0.5 ? 'up' : ''), csv: (r) => (r.balance == null ? '' : r.balance.toFixed(2)) },
-    { key: 'planned', label: 'Planned payments', align: 'r', fmt: (v) => (v ? money2(v) : '–'), total: 'sum' }]),
+    { key: 'planned', label: 'Planned payments', align: 'r', fmt: (v) => (v ? money2(v) : '–'), total: 'sum' },
+    { key: 'slip', label: 'Payslip', render: (r) => (r.gross == null ? null : (
+      <span style={{ display: 'flex', gap: 2 }}>
+        <button className="btn small ghost" onClick={() => printSlip(r, month, closed)} title="Open the payslip to print or save as PDF">🖨 PDF</button>
+        <button className="btn small ghost" onClick={() => emailSlip(r)} title="Email the payslip to the employee">✉</button>
+      </span>)), csv: () => '' }]),
   ];
-  const detail = result?.list.find((r) => r.key === open);
+  // a closed month shows the figures as they were when it was closed
+  const rows = closed?.closed ? closed.rows : result?.list;
+  const detail = rows?.find((r) => r.key === open);
+  const plain = (r) => ({ key: r.key, name: r.name, payType: r.payType, p: { id: r.p.id, rate: r.p.rate, monthly_salary: r.p.monthly_salary }, dayCount: r.dayCount, schedH: r.schedH,
+    hours: r.hours, missing: r.missing, gross: r.gross, advances: r.advances, paid: r.paid, balance: r.balance, planned: r.planned,
+    records: r.records.map((a) => ({ in_at: a.in_at, out_at: a.out_at, edited_by: a.edited_by })),
+    payments: r.payments.map((x) => ({ id: x.id, date: x.date, name: x.name, kind: x.kind, status: x.status, due_date: x.due_date, amount: x.amount, fees: x.fees })) });
+  async function closeMonth() {
+    if (!confirm(`Close the payroll of ${monthLabel(month)}? The figures are kept exactly as they are now. Only the owner can reopen it.`)) return;
+    try { await api('payroll', { method: 'POST', body: { month, rows: result.list.map(plain) } }); loadClosed(); setPmsg({ ok: true, text: `${monthLabel(month)} is closed.` }); } catch (e) { setPmsg({ ok: false, text: e.message }); }
+  }
+  async function reopen() {
+    if (!confirm(`Reopen ${monthLabel(month)}? The figures will follow the timesheets and Accounting again.`)) return;
+    try { await api('payroll?month=' + month, { method: 'DELETE' }); loadClosed(); } catch (e) { setPmsg({ ok: false, text: e.message }); }
+  }
+  async function emailSlip(r) {
+    try {
+      const { html, text } = payslip(r, month, closed);
+      const res = await api('payroll/email', { method: 'POST', body: { month, user_id: r.p.id, html, text } });
+      setPmsg({ ok: true, text: `Payslip sent to ${r.name} (${res.to}).` });
+    } catch (e) { setPmsg({ ok: false, text: e.message }); }
+  }
   return (
     <div className="stack">
       <div className="card">
@@ -103,8 +133,15 @@ export default function Salaries() {
           <label className="field"><span>Month</span><select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
         </div>
         {error && <div className="error" role="alert">{error}</div>}
-        {!result ? <p className="muted">Loading…</p> : result.list.length ? (
-          <DataTable columns={columns} rows={result.list} defaultSort={{ key: 'name', dir: 'asc' }} exportName={`salaries-${month}`} footerNote={finance ? 'click a name for the details; “Still to pay” in red = the café still owes, green = paid more than earned' : 'click a name for the days worked'} />
+        {finance && closed && (
+          <div className={'banner ' + (closed.closed ? 'ok' : 'info')} style={{ alignItems: 'center' }}>
+            <span>{closed.closed ? <>🔒 <b>Closed</b> by {closed.closed_by || '–'} on {longDate(closed.closed_at.slice(0, 10))}. These figures are locked.</> : <>This month is open: figures follow the timesheets and Accounting. Close it when salaries are settled.</>}</span>
+            {closed.closed ? owner && <button className="btn small" onClick={reopen}>Reopen</button> : <button className="btn small primary" onClick={closeMonth} disabled={!result?.list.length}>🔒 Close {monthLabel(month)}</button>}
+          </div>
+        )}
+        {pmsg && <div className={'banner ' + (pmsg.ok ? 'ok' : 'bad')} role="status"><span>{pmsg.text}</span><button className="btn small ghost" onClick={() => setPmsg(null)} aria-label="Dismiss">✕</button></div>}
+        {!rows ? <p className="muted">Loading…</p> : rows.length ? (
+          <DataTable columns={columns} rows={rows} defaultSort={{ key: 'name', dir: 'asc' }} exportName={`salaries-${month}`} footerNote={finance ? 'click a name for the details; “Still to pay” in red = the café still owes, green = paid more than earned' : 'click a name for the days worked'} />
         ) : <p className="muted">Nobody is on the payroll yet. In <b>Team</b>, edit a person and choose “Per hour” or “Monthly salary”.</p>}
       </div>
       {detail && (
@@ -148,4 +185,44 @@ export default function Salaries() {
       )}
     </div>
   );
+}
+
+/** The payslip as an HTML page (English and Arabic labels); printed or saved as PDF from the browser, or emailed. */
+function payslip(r, month, closed) {
+  const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const m2 = (v) => (v == null ? '–' : money2(v));
+  const pay = r.payType === 'hourly' ? `${m2(r.p.rate)} per hour / بالساعة` : r.payType === 'monthly' ? `${m2(r.p.monthly_salary)} per month / شهرياً` : '–';
+  const line = (en, ar, v, strong) => `<tr><td>${en}<br><span class="ar">${ar}</span></td><td class="v">${strong ? `<b>${v}</b>` : v}</td></tr>`;
+  const pays = (r.payments || []).map((p) => `<tr><td>${esc(p.date || '')}</td><td>${esc(p.name)}${p.kind === 'advance' ? ' (advance / سلفة)' : ''}</td><td>${p.status === 'paid' ? 'paid / مدفوع' : 'planned / مخطط'}</td><td class="v">${m2(p.amount + (p.fees || 0))}</td></tr>`).join('');
+  const status = closed?.closed ? `Closed ${esc((closed.closed_at || '').slice(0, 10))} / مغلق` : 'Not closed yet / غير مغلق بعد';
+  const body = `<div class="slip">
+<div class="top"><div><div class="brand">MARIAM COFFEE</div><h1>Payslip <span class="ar">قسيمة الراتب</span></h1></div><div class="meta">${esc(monthLabel(month))}<br>${status}</div></div>
+<table class="who"><tr><td>Employee / الموظف</td><td class="v"><b>${esc(r.name)}</b></td></tr><tr><td>Pay / الأجر</td><td class="v">${pay}</td></tr></table>
+<table class="sum">
+${line('Days worked', 'أيام العمل', r.dayCount ?? 0)}
+${line('Hours worked', 'ساعات العمل', hoursFmt(r.hours || 0))}
+${line('Salary earned', 'الراتب المستحق', m2(r.gross))}
+${line('Advances', 'السلف', m2(r.advances))}
+${line('Salary already paid', 'الراتب المدفوع', m2(r.paid))}
+${line(r.balance > 0.5 ? 'Still to pay' : r.balance < -0.5 ? 'Paid more than earned' : 'Balance', r.balance > 0.5 ? 'المتبقي للدفع' : r.balance < -0.5 ? 'مدفوع أكثر من المستحق' : 'الرصيد', m2(Math.abs(r.balance || 0)), true)}
+</table>
+${pays ? `<h2>Payments this month <span class="ar">دفعات هذا الشهر</span></h2><table class="pays"><tr><th>Date</th><th>What</th><th>Status</th><th class="v">Amount</th></tr>${pays}</table>` : ''}
+<div class="sign"><div>Employee signature / توقيع الموظف</div><div>Mariam Coffee</div></div>
+</div>`;
+  const css = `body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;background:#fff}.slip{max-width:720px;margin:24px auto;padding:24px;border:1px solid #ddd;border-radius:10px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #6b4226;padding-bottom:10px;margin-bottom:14px}.brand{color:#6b4226;font-weight:bold;letter-spacing:.05em;font-size:12px}
+h1{font-size:22px;margin:4px 0 0}h2{font-size:15px;margin:18px 0 6px}.meta{text-align:right;font-size:13px;color:#444}.ar{font-family:Tahoma,Arial,sans-serif;color:#555;font-weight:normal;font-size:.9em}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px 6px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}.v{text-align:right;white-space:nowrap}
+.who td{border:0;padding:3px 6px}.sum tr:last-child td{border-top:2px solid #111;font-size:16px}.sign{display:flex;justify-content:space-between;margin-top:48px;font-size:13px;color:#444}
+.sign div{border-top:1px solid #999;padding-top:6px;width:42%}@media print{.slip{border:0;margin:0}}`;
+  const text = `Payslip ${monthLabel(month)} - ${r.name}\nDays worked: ${r.dayCount ?? 0}\nHours worked: ${hoursFmt(r.hours || 0)}\nSalary earned: ${m2(r.gross)}\nAdvances: ${m2(r.advances)}\nSalary already paid: ${m2(r.paid)}\nBalance: ${m2(r.balance)}`;
+  return { html: `<!doctype html><html><head><meta charset="utf-8"><title>Payslip ${esc(r.name)} ${esc(month)}</title><style>${css}</style></head><body>${body}</body></html>`, text };
+}
+
+function printSlip(r, month, closed) {
+  const { html } = payslip(r, month, closed);
+  const w = window.open('', '_blank');
+  if (!w) { alert('Allow pop-ups for this site to open the payslip.'); return; }
+  w.document.write(html + '<script>setTimeout(function(){window.print()},300)</' + 'script>');
+  w.document.close();
 }

@@ -1,4 +1,11 @@
 import { useEffect, useState } from 'react';
+import { strToU8, zipSync } from 'fflate';
+import ps1 from '../../pos-uploader/MariamCoffeeUploader.ps1?raw';
+import readme from '../../pos-uploader/README.txt?raw';
+import vbs from '../../pos-uploader/run-hidden.vbs?raw';
+import installBat from '../../pos-uploader/install.bat?raw';
+import nowBat from '../../pos-uploader/upload-now.bat?raw';
+import uninstallBat from '../../pos-uploader/uninstall.bat?raw';
 import { api, distFmt, getLocation, toLocal } from '../lib/api.js';
 import DataTable from '../components/DataTable.jsx';
 import { longDate } from '../format.js';
@@ -17,6 +24,7 @@ export default function Settings() {
     <div className="stack">
       <Site />
       <EmailSetup />
+      <PosUploader />
       <Activity />
     </div>
   );
@@ -77,6 +85,60 @@ function Site() {
       {msg && <div className={'banner ' + (msg.ok ? 'ok' : 'bad')} role="status"><span>{msg.text}</span></div>}
       <button className="btn primary big" type="submit">Save location</button>
     </form>
+  );
+}
+
+/** The program for the POS computer: uploads the ASEAL sales tables every 30 minutes. */
+function PosUploader() {
+  const [st, setSt] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const load = () => api('upload-token').then(setSt).catch((e) => setMsg({ ok: false, text: e.message }));
+  useEffect(() => { load(); }, []);
+  async function download() {
+    if (st?.exists && !confirm('This makes a new key. A POS computer that uses the old key stops uploading until you install the new download there. Continue?')) return;
+    try {
+      const { token } = await api('upload-token', { method: 'POST' });
+      const crlf = (t) => t.replace(/\r?\n/g, '\r\n');
+      const config = JSON.stringify({ site: location.origin, token, everyMinutes: 30, dbFolder: '' }, null, 2);
+      const zip = zipSync({ MariamCoffeeUploader: {
+        'MariamCoffeeUploader.ps1': strToU8(crlf(ps1)), 'run-hidden.vbs': strToU8(crlf(vbs)), 'install.bat': strToU8(crlf(installBat)),
+        'upload-now.bat': strToU8(crlf(nowBat)), 'uninstall.bat': strToU8(crlf(uninstallBat)), 'README.txt': strToU8(crlf(readme)), 'config.json': strToU8(config),
+      } });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
+      a.download = 'MariamCoffee-POS-uploader.zip';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      setMsg({ ok: true, text: 'Downloaded. Copy the zip to the POS computer, unzip it and double-click install.bat.' });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+  }
+  async function remove() {
+    if (!confirm('Remove the key? The POS computer stops uploading.')) return;
+    try { await api('upload-token', { method: 'DELETE' }); load(); } catch (e) { setMsg({ ok: false, text: e.message }); }
+  }
+  const last = st?.lastUpload;
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>POS automatic upload</h2>
+        <p>A small Windows program for the POS computer. Every 30 minutes it copies the ASEAL sales tables and uploads them here, so the reports update by themselves. It only reads the ASEAL files.</p></div></div>
+      {st && (
+        <p className="notice" style={{ margin: '0 0 12px' }}>
+          {st.exists ? <>Upload key made {longDate(st.createdAt.slice(0, 10))}. </> : <b>No POS computer set up yet. </b>}
+          {last?.uploadedAt && <>Last sales upload: <b>{longDate(toLocal(last.uploadedAt).date)} {toLocal(last.uploadedAt).time}</b>{last.auto ? ' (automatic, from the POS)' : ' (by hand)'}.</>}
+        </p>
+      )}
+      <ol style={{ margin: '0 0 12px', paddingLeft: 20, fontSize: 13.5, display: 'grid', gap: 4 }}>
+        <li>Tap <b>Download the POS program</b> (it includes this café’s upload key).</li>
+        <li>Copy the zip to the POS computer (USB stick or email), unzip it, e.g. to <code>C:\MariamCoffeeUploader</code>.</li>
+        <li>Double-click <b>install.bat</b>. It finds the ASEAL database, uploads once and then every 30 minutes.</li>
+      </ol>
+      {msg && <div className={'banner ' + (msg.ok ? 'ok' : 'bad')} role="status"><span>{msg.text}</span></div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn primary" onClick={download}>⬇ Download the POS program</button>
+        {st?.exists && <button className="btn ghost" onClick={remove}>Remove the key</button>}
+      </div>
+    </div>
   );
 }
 

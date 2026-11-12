@@ -5,6 +5,9 @@ import { longDate } from '../format.js';
 /** Barista page: clock in / out (only inside the café) and see your shifts and hours. */
 export default function Clock() {
   const [st, setSt] = useState(null);
+  const [swaps, setSwaps] = useState(null); // { swaps, me }
+  const loadSwaps = () => api('swaps').then(setSwaps).catch(() => setSwaps({ swaps: [], me: null }));
+  useEffect(() => { loadSwaps(); }, []);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState(null);
@@ -75,11 +78,13 @@ export default function Clock() {
                 <span><b>{s.date === today ? 'Today' : dowOf(s.date)}</b> {longDate(s.date)}</span>
                 <span className="num">{s.start}–{s.end} <span className="faint">({hoursFmt(shiftHours(s))})</span></span>
                 {s.note && !s.note.startsWith('auto ·') && <small className="muted">{s.note}</small>}
+                <SwapForShift shift={s} swaps={swaps} onChange={loadSwaps} />
               </li>
             ))}
           </ul>
         ) : <p className="muted" style={{ margin: 0 }}>No shifts planned yet.</p>}
       </div>
+      {swaps && <SwapInbox swaps={swaps} onChange={() => { loadSwaps(); load(); }} />}
 
       <div className="card">
         <div className="card-head"><div><h2>My recent hours</h2><p>Last 7 days: <b>{hoursFmt(weekHours)}</b></p></div></div>
@@ -102,6 +107,71 @@ export default function Clock() {
           </div>
         ) : <p className="muted" style={{ margin: 0 }}>No clock-ins yet.</p>}
       </div>
+    </div>
+  );
+}
+
+const SWAP_STATUS = { asked: 'Asked', accepted: 'Accepted, waiting for the manager', approved: 'Approved', declined: 'Declined', rejected: 'Not approved', cancelled: 'Cancelled' };
+
+/** On each of my shifts: ask a colleague (or anyone) to take it, or see the open request. */
+function SwapForShift({ shift, swaps, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [people, setPeople] = useState([]);
+  const [to, setTo] = useState('');
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+  const req = swaps?.swaps.find((w) => w.shift_id === shift.id && ['asked', 'accepted'].includes(w.status) && w.from_user === swaps.me);
+  useEffect(() => { if (open && !people.length) api('swaps/colleagues').then((r) => setPeople(r.people)).catch(() => {}); }, [open]);
+  async function ask() {
+    setErr('');
+    try { await api('swaps', { method: 'POST', body: { shift_id: shift.id, to_user: to ? Number(to) : null, note } }); setOpen(false); onChange(); } catch (e) { setErr(e.message); }
+  }
+  async function cancel() { try { await api('swaps/' + req.id, { method: 'PATCH', body: { action: 'cancel' } }); onChange(); } catch (e) { setErr(e.message); } }
+  if (req) {
+    return (
+      <span className="swap-line">
+        <span className="pill warn">⇄ {SWAP_STATUS[req.status]}{req.to_name ? ` · ${req.to_name}` : req.accepted_name ? ` · ${req.accepted_name}` : ' · anyone'}</span>
+        <button className="btn small ghost" onClick={cancel}>Cancel swap</button>
+      </span>
+    );
+  }
+  if (!open) return <span className="swap-line"><button className="btn small ghost" onClick={() => setOpen(true)}>⇄ Ask to swap</button></span>;
+  return (
+    <div className="swap-form">
+      <label className="field"><span>Who should take it?</span>
+        <select value={to} onChange={(e) => setTo(e.target.value)}><option value="">Anyone</option>{people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label className="field"><span>Note (optional)</span><input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} /></label>
+      {err && <span style={{ color: 'var(--bad-text)', fontSize: 13 }}>{err}</span>}
+      <div style={{ display: 'flex', gap: 8 }}><button className="btn small primary" onClick={ask}>Send request</button><button className="btn small ghost" onClick={() => setOpen(false)}>Cancel</button></div>
+    </div>
+  );
+}
+
+/** Requests from colleagues: to me, or to anyone. */
+function SwapInbox({ swaps, onChange }) {
+  const [err, setErr] = useState('');
+  const mine = swaps.swaps.filter((w) => w.status === 'asked' && w.from_user !== swaps.me && (w.to_user === swaps.me || !w.to_user));
+  const waiting = swaps.swaps.filter((w) => w.status === 'accepted' && w.accepted_by === swaps.me);
+  const recent = swaps.swaps.filter((w) => ['approved', 'rejected', 'declined'].includes(w.status) && (w.from_user === swaps.me || w.accepted_by === swaps.me)).slice(0, 5);
+  if (!mine.length && !waiting.length && !recent.length) return null;
+  async function act(w, action) { setErr(''); try { await api('swaps/' + w.id, { method: 'PATCH', body: { action } }); onChange(); } catch (e) { setErr(e.message); } }
+  const when = (w) => `${dowOf(w.date)} ${longDate(w.date)} · ${w.start}–${w.end}`;
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>Shift swaps</h2><p>Colleagues asking you to take a shift. After you accept, a manager approves it.</p></div></div>
+      {err && <div className="banner bad"><span>{err}</span></div>}
+      <ul className="shift-list">
+        {mine.map((w) => (
+          <li key={w.id}>
+            <span><b>{w.from_name}</b> {w.to_user ? 'asks you to take' : 'asks anyone to take'}</span>
+            <span className="num">{when(w)}</span>
+            {w.note && <small className="muted">“{w.note}”</small>}
+            <span className="swap-line"><button className="btn small primary" onClick={() => act(w, 'accept')}>Accept</button>{w.to_user && <button className="btn small ghost" onClick={() => act(w, 'decline')}>Decline</button>}</span>
+          </li>
+        ))}
+        {waiting.map((w) => <li key={w.id}><span>You take <b>{w.from_name}</b>’s shift</span><span className="num">{when(w)}</span><small className="muted">Waiting for the manager.</small></li>)}
+        {recent.map((w) => <li key={w.id}><span>{w.from_name} → {w.accepted_name || w.to_name || '–'}</span><span className="num">{when(w)}</span><small className="muted">{SWAP_STATUS[w.status]}</small></li>)}
+      </ul>
     </div>
   );
 }

@@ -80,6 +80,7 @@ export default function Schedule({ go }) {
 
   return (
     <div className="stack">
+      <SwapApprovals onChange={load} />
       <div className="card">
         <div className="card-head">
           <div><h2>Week of {longDate(week)}</h2><p>Tap a shift to change or remove it, or ＋ to add one. Baristas see their own shifts when they sign in.</p></div>
@@ -218,3 +219,39 @@ function ShiftEditor({ edit, setEdit, people, days, shifts, templates, onSaved }
 const isTime = (s) => /^\d{2}:\d{2}$/.test(s || '');
 
 const scrollOnce = (el) => { if (el && !el.dataset.shown) { el.dataset.shown = '1'; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
+
+/** Shift swaps that baristas agreed between them: the manager approves or rejects. */
+function SwapApprovals({ onChange }) {
+  const [list, setList] = useState(null);
+  const [err, setErr] = useState('');
+  const load = () => api('swaps').then((r) => setList(r.swaps)).catch(() => setList([]));
+  useEffect(() => { load(); }, []);
+  if (!list) return null;
+  const waiting = list.filter((w) => w.status === 'accepted');
+  const asked = list.filter((w) => w.status === 'asked');
+  if (!waiting.length && !asked.length) return null;
+  async function act(w, action) {
+    setErr('');
+    try { await api('swaps/' + w.id, { method: 'PATCH', body: { action } }); load(); onChange(); } catch (e) { setErr(e.message); }
+  }
+  const when = (w) => `${dowOf(w.date)} ${shortDate(w.date)} · ${w.start}–${w.end}`;
+  return (
+    <div className="card" style={{ borderColor: waiting.length ? 'var(--warn)' : undefined }}>
+      <div className="card-head"><div><h2>Shift swaps</h2><p>Baristas agreed to swap these shifts. Approve to move the shift.</p></div></div>
+      {err && <div className="banner bad"><span>{err}</span></div>}
+      <div className="table-wrap"><table>
+        <thead><tr><th>Shift</th><th>From</th><th>To</th><th>Status</th><th /></tr></thead>
+        <tbody>
+          {waiting.map((w) => (
+            <tr key={w.id}><td className="num">{when(w)}</td><td>{w.from_name}</td><td><b>{w.accepted_name}</b></td><td><span className="pill warn">Waiting for you</span></td>
+              <td style={{ display: 'flex', gap: 4 }}><button className="btn small primary" onClick={() => act(w, 'approve')}>Approve</button><button className="btn small ghost" onClick={() => act(w, 'reject')}>Reject</button></td></tr>
+          ))}
+          {asked.map((w) => (
+            <tr key={w.id}><td className="num">{when(w)}</td><td>{w.from_name}</td><td>{w.to_name || 'anyone'}</td><td><span className="pill">Waiting for the colleague</span></td>
+              <td><button className="btn small ghost" onClick={() => act(w, 'cancel')}>Cancel</button></td></tr>
+          ))}
+        </tbody>
+      </table></div>
+    </div>
+  );
+}

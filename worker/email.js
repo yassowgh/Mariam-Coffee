@@ -171,6 +171,20 @@ export async function handleEmail({ head, request, env, me, h }) {
   return h.fail(404, 'Not found');
 }
 
+/** A short notification email. Never throws: returns { ok, error }. */
+export async function notify(env, h, origin, user, subject, text, html) {
+  try {
+    if (!user?.email) return { ok: false, error: 'No email address.' };
+    const cfg = await config(env, h, env.DB);
+    if (!cfg.key) return { ok: false, error: 'Email is not set up.' };
+    const site = origin + '/staff';
+    const first = (user.name || '').split(' ')[0];
+    await send(cfg, { to: user.email, subject: `Mariam Coffee: ${subject}`, text: `Hi ${first},\n\n${text}\n\n${site}`,
+      html: html || layout(subject, `<p>Hi ${esc(first)},</p><p>${esc(text)}</p>`, site) });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
 export const EMAIL_ROUTES = ['email-settings', 'email-test', 'schedule-email', 'send-login', 'invite'];
 export const PUBLIC_EMAIL_ROUTES = ['password-forgot', 'password-reset'];
 
