@@ -57,6 +57,12 @@ export default function Finance({ user, go }) {
     };
   }, [records, month]);
 
+  // tap a month in "Month by month": switch to it and jump to its day-by-day details
+  function openMonth(m) {
+    setMonth(m);
+    setTimeout(() => document.getElementById('fin-daily')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
+
   // copy this month's planned payments (rent, salaries, bills…) to the next month
   async function planNext() {
     const next = shiftMonth(month, 1);
@@ -136,8 +142,8 @@ export default function Finance({ user, go }) {
       <div className="card">
         <div className="card-head"><div><h2>Month by month</h2><p>Each payment counts in the month it is due (or, if it had no due date, the month it was paid).</p></div></div>
         <BarLineChart height={220} data={v.chart} series={[{ key: 'paid', label: 'Paid', color: 'var(--series-1)' }, { key: 'open', label: 'Still to pay', color: 'var(--series-2)' }]}
-          onBarClick={(d) => setMonth(d.key)} highlightKey={month} />
-        <p className="faint" style={{ fontSize: 12.5, margin: '6px 0 0' }}>Tap a month to open it.</p>
+          onBarClick={(d) => openMonth(d.key)} highlightKey={month} />
+        <p className="faint" style={{ fontSize: 12.5, margin: '6px 0 0' }}>Tap a month to see its spending day by day and by category.</p>
       </div>
 
       <div className="card">
@@ -200,6 +206,16 @@ function DailySpending({ records, month }) {
   const off = new Set(prefs.off);
   const set = (p) => setPrefs((x) => ({ ...x, ...p }));
 
+  // Colours follow the category, not this month's ranking: the 7 biggest categories of all time
+  // get their own colour, the rest share grey "Other" (more colours could not be told apart).
+  const colorOf = useMemo(() => {
+    const all = new Map();
+    for (const r of records) if (r.status === 'paid' && r.kind !== 'loan_repayment') all.set(r.category, (all.get(r.category) || 0) + total(r));
+    const top = [...all].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([n]) => n);
+    return (c) => { const i = top.indexOf(c); return i >= 0 ? `var(--cat-${i + 1})` : 'var(--cat-other)'; };
+  }, [records]);
+  const isOther = (c) => colorOf(c) === 'var(--cat-other)';
+
   const d = useMemo(() => {
     // money that went out on each day (paid records; paying back a loan is not spending)
     const list = records.filter((r) => r.status === 'paid' && r.kind !== 'loan_repayment' && inMonth(r.paid_date || r.date, month));
@@ -222,14 +238,22 @@ function DailySpending({ records, month }) {
   const monthTotal = d.rows.reduce((t, r) => t + dayTotal(r), 0);
   const active = d.rows.filter((r) => dayTotal(r) > 0);
   const toggle = (c) => set({ off: off.has(c) ? prefs.off.filter((x) => x !== c) : [...prefs.off, c] });
+  // chart series in a fixed order (colour slot order), "Other" last
+  const coloured = shown.filter((c) => !isOther(c)).sort((a, b) => colorOf(a).localeCompare(colorOf(b), undefined, { numeric: true }));
+  const others = shown.filter(isOther);
+  const series = [...coloured.map((c) => ({ key: c, label: c, color: colorOf(c) })), ...(others.length ? [{ key: '__other', label: `Smaller categories (${others.length})`, color: 'var(--cat-other)' }] : [])];
   const chart = d.rows.map((r) => {
     const v = dayTotal(r);
-    return { key: r.date, label: String(r.day), value: v, title: longDate(r.date),
-      rows: [['Spent', money(v), 'var(--series-1)'], ...shown.filter((c) => r.byCat[c]).sort((a, b) => r.byCat[b] - r.byCat[a]).slice(0, 5).map((c) => [c, money(r.byCat[c])])] };
+    const parts = {};
+    for (const c of coloured) parts[c] = r.byCat[c] || 0;
+    parts.__other = others.reduce((t, c) => t + (r.byCat[c] || 0), 0);
+    return { key: r.date, label: String(r.day), value: v, parts, title: longDate(r.date),
+      rows: [['Total', money(v)], ...shown.filter((c) => r.byCat[c]).sort((a, b) => r.byCat[b] - r.byCat[a]).slice(0, 8).map((c) => [c, money(r.byCat[c]), colorOf(c)])] };
   });
+  const Sw = ({ c }) => <i className="swatch" style={{ background: colorOf(c) }} aria-hidden="true" />;
 
   return (
-    <div className="card">
+    <div className="card" id="fin-daily" style={{ scrollMarginTop: 80 }}>
       <div className="card-head"><div><h2>Spending per day · {monthLabel(month)}</h2>
         <p>Money paid out on each day (paying back loans is not counted). Tick what to show and which categories to count.</p></div></div>
       <div className="checks" role="group" aria-label="Views">
@@ -240,16 +264,16 @@ function DailySpending({ records, month }) {
         <>
           <fieldset className="checks cat-checks">
             <legend>Categories <button type="button" className="linklike" onClick={() => set({ off: prefs.off.filter((c) => !d.cats.includes(c)) })}>all</button> · <button type="button" className="linklike" onClick={() => set({ off: [...new Set([...prefs.off, ...d.cats])] })}>none</button></legend>
-            {d.cats.map((c) => <label key={c} className="check"><input type="checkbox" checked={!off.has(c)} onChange={() => toggle(c)} /> {c}</label>)}
+            {d.cats.map((c) => <label key={c} className="check"><input type="checkbox" checked={!off.has(c)} onChange={() => toggle(c)} /><Sw c={c} />{c}</label>)}
           </fieldset>
           <p className="muted" style={{ margin: '4px 0 12px' }}>Counted: <b>{money(monthTotal)}</b> over {active.length} days{active.length ? ` · average ${money(monthTotal / active.length)} per day with spending` : ''}.</p>
           {prefs.perDay && (shown.length
-            ? <BarLineChart height={200} data={chart} barLabel="Spent" />
+            ? <BarLineChart height={240} data={chart} series={series} />
             : <p className="muted">Tick at least one category.</p>)}
           {prefs.perDayCat && shown.length > 0 && (
             active.length ? (
               <div className="table-wrap" style={{ marginTop: 14 }}><table className="daily-cat">
-                <thead><tr><th>Day</th>{shown.map((c) => <th key={c} className="r">{c}</th>)}<th className="r">Total</th></tr></thead>
+                <thead><tr><th>Day</th>{shown.map((c) => <th key={c} className="r"><Sw c={c} />{c}</th>)}<th className="r">Total</th></tr></thead>
                 <tbody>{active.map((r) => (
                   <tr key={r.date}><td>{longDate(r.date)}</td>{shown.map((c) => <td key={c} className="r num">{r.byCat[c] ? money2(r.byCat[c]) : <span className="faint">–</span>}</td>)}<td className="r num"><b>{money2(dayTotal(r))}</b></td></tr>
                 ))}</tbody>

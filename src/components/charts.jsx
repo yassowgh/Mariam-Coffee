@@ -94,7 +94,13 @@ export function BarLineChart({ data, height = 240, lines: linesProp, lineLabel, 
       )}
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={barLabel || 'chart'}
         onMouseMove={onMove} onMouseLeave={() => setHover(null)}
-        onClick={() => h && onBarClick?.(h)} style={{ cursor: onBarClick ? 'pointer' : 'default' }}>
+        onClick={(e) => {
+          if (!onBarClick) return;
+          // use the tap/click position itself (on phones there is no hover before the tap)
+          const rect = e.currentTarget.getBoundingClientRect();
+          const i = Math.floor((((e.clientX - rect.left) / rect.width) * width - pad.l) / step);
+          if (i >= 0 && i < data.length) onBarClick(data[i]);
+        }} style={{ cursor: onBarClick ? 'pointer' : 'default' }}>
         {tickVals.map((v) => {
           return (
             <g key={v}>
