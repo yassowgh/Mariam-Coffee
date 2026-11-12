@@ -39,7 +39,7 @@ export function computeDemand(model, weeks = DEMAND_WEEKS) {
 export async function saveDemand(model, password) {
   try {
     const demand = computeDemand(model);
-    await fetch('/api/demand', {
+    await fetch(import.meta.env.BASE_URL + 'api/demand', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', ...(password ? { 'x-upload-password': password } : {}) },
       body: JSON.stringify(demand),

@@ -212,7 +212,7 @@ export function RecordForm({ ctx, initial, onDone, onCancel }) {
             <button type="button" className="btn" onClick={() => camRef.current.click()}>📷 Take photo</button>
             <button type="button" className="btn" onClick={() => fileRef.current.click()}>Choose photo</button>
             {photo && <img src={photo.url} alt="Receipt preview" className="thumb" />}
-            {!photo && f.receipt && <a href={`/api/receipts/${f.receipt}`} target="_blank" rel="noreferrer">Current photo</a>}
+            {!photo && f.receipt && <a href={`${import.meta.env.BASE_URL}api/receipts/${f.receipt}`} target="_blank" rel="noreferrer">Current photo</a>}
           </div>
           <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { pickPhoto(e.target.files[0]); e.target.value = ''; }} />
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { pickPhoto(e.target.files[0]); e.target.value = ''; }} />
@@ -263,7 +263,7 @@ function Records({ ctx }) {
     { key: 'payee', label: 'Paid to', fmt: (v) => v || '–' },
     { key: 'employee', label: 'Employee', fmt: (v) => v || '–' },
     { key: 'paid_by', label: 'Paid by', fmt: (v) => v || '–' },
-    { key: 'receipt', label: 'Receipt', render: (r) => (r.receipt ? <a href={`/api/receipts/${r.receipt}`} target="_blank" rel="noreferrer">View</a> : <span className="faint">–</span>), csv: (r) => (r.receipt ? 'yes' : '') },
+    { key: 'receipt', label: 'Receipt', render: (r) => (r.receipt ? <a href={`${import.meta.env.BASE_URL}api/receipts/${r.receipt}`} target="_blank" rel="noreferrer">View</a> : <span className="faint">–</span>), csv: (r) => (r.receipt ? 'yes' : '') },
     { key: 'act', label: '', render: (r) => (canEdit(r) ? (
       <span style={{ display: 'flex', gap: 2 }}>
         {r.status !== 'paid' && <button className="btn small" onClick={() => setPayFor(r)}>Mark paid</button>}

@@ -13,6 +13,7 @@
 
 import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
 import { safeEqual, sha256Hex } from './auth.js';
+import { handleMenu, refreshMenuPrices } from './menu.js';
 
 const KEY = 'dataset';
 const MAX_BYTES = 24 * 1024 * 1024; // Workers KV value limit is 25 MiB
@@ -41,7 +42,7 @@ async function allowed(request, env) {
   return passwordOk(env, request.headers.get('x-upload-password'));
 }
 
-async function handleData(request, env) {
+async function handleData(request, env, ctx) {
   if (!env.DATA) return json({ error: 'Storage is not configured on this deployment.' }, 503);
 
   if (request.method === 'GET' || request.method === 'HEAD') {
@@ -75,6 +76,8 @@ async function handleData(request, env) {
       bytes: body.byteLength,
     };
     await env.DATA.put(KEY, body, { metadata });
+    // update the website menu prices from the new POS item list
+    if (ctx) ctx.waitUntil(refreshMenuPrices(env, body, metadata.uploadedAt));
     return json({ ok: true, metadata });
   }
 
@@ -125,6 +128,7 @@ const SECURITY_HEADERS = {
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
+    "frame-src https://www.google.com",
     "frame-ancestors 'none'",
     'upgrade-insecure-requests',
   ].join('; '),
@@ -136,8 +140,11 @@ function secure(response) {
   return r;
 }
 
+const SITE_HOST = 'mariamcoffeeshop.com';
+const APP = '/management';
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     // Always use HTTPS: plain http:// links are sent to the https:// address.
     const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
@@ -145,22 +152,48 @@ export default {
       url.protocol = 'https:';
       return new Response(null, { status: 301, headers: { Location: url.toString() } });
     }
-    return secure(await route(request, env, url));
+    // www.mariamcoffeeshop.com -> mariamcoffeeshop.com
+    if (url.hostname === 'www.' + SITE_HOST) {
+      url.hostname = SITE_HOST;
+      return new Response(null, { status: 301, headers: { Location: url.toString() } });
+    }
+    // Old address (workers.dev): pages move to mariamcoffeeshop.com/management/…
+    // The API keeps answering there so POS uploaders that still use the old address keep working.
+    if (url.hostname.endsWith('.workers.dev') && !url.pathname.startsWith('/api/') && (request.method === 'GET' || request.method === 'HEAD')) {
+      const path = url.pathname.startsWith(APP) ? url.pathname : APP + (url.pathname === '/' ? '/' : url.pathname);
+      return new Response(null, { status: 301, headers: { Location: `https://${SITE_HOST}${path}${url.search}` } });
+    }
+    return secure(await route(request, env, url, ctx));
   },
 };
 
-async function route(request, env, url) {
-  {
-    if (url.pathname === '/api/data') return handleData(request, env);
-    if (url.pathname === '/api/costs') return handleCosts(request, env);
-    if (url.pathname === '/api/auth' && request.method === 'POST') {
-      return (await allowed(request, env))
-        ? new Response(null, { status: 204 })
-        : json({ error: 'Wrong password.' }, 401);
-    }
-    const head = url.pathname.split('/')[2];
-    if (STAFF_ROUTES.includes(head)) return handleStaff(request, env, url.pathname, passwordOk);
-    if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
-    return env.ASSETS.fetch(request);
+async function route(request, env, url, ctx) {
+  // The management app calls /management/api/…; /api/… keeps working too.
+  const path = url.pathname.startsWith(APP + '/api/') ? url.pathname.slice(APP.length) : url.pathname;
+  if (path === '/api/data') return handleData(request, env, ctx);
+  if (path === '/api/costs') return handleCosts(request, env);
+  if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
+  if (path === '/api/auth' && request.method === 'POST') {
+    return (await allowed(request, env))
+      ? new Response(null, { status: 204 })
+      : json({ error: 'Wrong password.' }, 401);
   }
+  const head = path.split('/')[2];
+  if (path.startsWith('/api/') && STAFF_ROUTES.includes(head)) return handleStaff(request, env, path, passwordOk);
+  if (path.startsWith('/api/')) return json({ error: 'Not found' }, 404);
+
+  // Pages and files
+  if (url.pathname === APP) return Response.redirect(url.origin + APP + '/' + url.search, 301);
+  const res = await env.ASSETS.fetch(request);
+  if (res.status !== 404) return res;
+  const accept = request.headers.get('accept') || '';
+  if (url.pathname.startsWith(APP + '/')) {
+    // the management app is a single-page app: unknown paths load its index page
+    if (!/\.[a-z0-9]+$/i.test(url.pathname) || accept.includes('text/html')) {
+      return env.ASSETS.fetch(new Request(url.origin + APP + '/', request));
+    }
+    return res;
+  }
+  const page = await env.ASSETS.fetch(new Request(url.origin + '/404.html'));
+  return new Response(page.body, { status: 404, headers: page.headers });
 }

@@ -39,7 +39,7 @@ export function useDemand(compute) {
         const entries = await collectTables([got.file], () => {});
         const m = await buildModel(entries, (msg, frac) => !off && setState({ msg: 'Reading sales: ' + msg, frac: 0.3 + frac * 0.7 }));
         const demand = computeDemand(m);
-        fetch('/api/demand', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(demand) }).catch(() => {});
+        fetch(import.meta.env.BASE_URL + 'api/demand', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(demand) }).catch(() => {});
         if (!off) setState({ demand });
       } catch (e) {
         if (!off) setState({ error: e.message });

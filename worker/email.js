@@ -1,3 +1,8 @@
+
+
+// Staff links in emails always point at the main address.
+export const SITE = 'https://mariamcoffeeshop.com';
+export const appUrl = (origin) => (/workers\.dev$|mariamcoffeeshop\.com$/.test(new URL(origin).hostname) ? SITE : origin) + '/management';
 // Email through Resend (https://resend.com).
 // The API key comes from the RESEND_API_KEY secret, or from Settings (stored in the database, never sent back).
 // Resend only delivers to other people once a domain is verified there; until then the "from" address
@@ -47,7 +52,7 @@ export async function sendWelcome(env, h, u, password, origin) {
   const cfg = await config(env, h, env.DB);
   if (!cfg.key) throw new Error('Email is not set up (Settings → Email).');
   if (!u.email) throw new Error('No email address.');
-  const site = origin + '/staff';
+  const site = appUrl(origin) + '/staff';
   const first = u.name.split(' ')[0];
   const roles = String(u.roles || '').split(',');
   const what = roles.length === 1 && roles[0] === 'barista'
@@ -64,7 +69,7 @@ export async function sendWelcome(env, h, u, password, origin) {
 
 export async function handleEmail({ head, request, env, me, h }) {
   const db = env.DB;
-  const site = new URL(request.url).origin + '/staff';
+  const site = appUrl(new URL(request.url).origin) + '/staff';
   if (head === 'email-settings') {
     h.need(me, 'owner');
     const cfg = await config(env, h, db);
@@ -177,7 +182,7 @@ export async function notify(env, h, origin, user, subject, text, html) {
     if (!user?.email) return { ok: false, error: 'No email address.' };
     const cfg = await config(env, h, env.DB);
     if (!cfg.key) return { ok: false, error: 'Email is not set up.' };
-    const site = origin + '/staff';
+    const site = appUrl(origin) + '/staff';
     const first = (user.name || '').split(' ')[0];
     await send(cfg, { to: user.email, subject: `Mariam Coffee: ${subject}`, text: `Hi ${first},\n\n${text}\n\n${site}`,
       html: html || layout(subject, `<p>Hi ${esc(first)},</p><p>${esc(text)}</p>`, site) });
@@ -208,8 +213,8 @@ async function sendInvite(env, h, u, origin) {
   if (!cfg.key) throw new Error('Email is not set up (Settings → Email).');
   if (!u.email) throw new Error('No email address.');
   const token = await makeLink(env.DB, h, u.id, 'invite');
-  const link = `${origin}/staff?set=${token}`;
-  const site = `${origin}/staff`;
+  const link = `${appUrl(origin)}/staff?set=${token}`;
+  const site = `${appUrl(origin)}/staff`;
   const first = u.name.split(' ')[0];
   const barista = String(u.roles || '').split(',').every((r) => r === 'barista');
   const en = barista
@@ -243,12 +248,12 @@ export async function handlePublicEmail({ head, request, env, h }) {
     if (!cfg.key) h.fail(503, 'Email is not set up on this website. Ask the owner or your manager to reset your password.');
     const token = await makeLink(db, h, u.id, 'reset');
     const origin = new URL(request.url).origin;
-    const link = `${origin}/staff?reset=${token}`;
+    const link = `${appUrl(origin)}/staff?reset=${token}`;
     const first = u.name.split(' ')[0];
     const html = layout('Choose a new password', `<p>Hi ${esc(first)},</p><p>Someone asked to reset the password of your Mariam Coffee account (<b>${esc(u.username)}</b>). The link works for 1 hour.</p>${button(link, 'Choose a new password')}
       <p style="color:#52514e;font-size:13px">If it was not you, ignore this email; your password stays the same.</p>
       ${arabic(`<p>مرحباً ${esc(first)}،</p><p>طلب أحدهم إعادة تعيين كلمة المرور لحسابك في مريم كافيه (<b dir="ltr">${esc(u.username)}</b>). الرابط صالح لمدة ساعة واحدة.</p>${button(link, 'اختيار كلمة مرور جديدة')}
-      <p style="color:#52514e;font-size:13px">إذا لم تطلب ذلك، تجاهل هذه الرسالة وستبقى كلمة المرور كما هي.</p>`)}`, origin + '/staff');
+      <p style="color:#52514e;font-size:13px">إذا لم تطلب ذلك، تجاهل هذه الرسالة وستبقى كلمة المرور كما هي.</p>`)}`, appUrl(origin) + '/staff');
     try {
       await send(cfg, { to: u.email, subject: 'Mariam Coffee: choose a new password / كلمة مرور جديدة', html, text: `Hi ${first},\n\nChoose a new password for ${u.username} (link works for 1 hour): ${link}\n\nIf it was not you, ignore this email.` });
     } catch (e) { h.fail(502, 'The email could not be sent. Ask your manager to reset your password.'); }

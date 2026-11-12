@@ -99,7 +99,7 @@ function PosUploader() {
     try {
       const { token } = await api('upload-token', { method: 'POST' });
       const crlf = (t) => t.replace(/\r?\n/g, '\r\n');
-      const config = JSON.stringify({ site: location.origin, token, everyMinutes: 30, dbFolder: '' }, null, 2);
+      const config = JSON.stringify({ site: location.origin + import.meta.env.BASE_URL.replace(/\/$/, ''), token, everyMinutes: 30, dbFolder: '' }, null, 2);
       const zip = zipSync({ MariamCoffeeUploader: {
         'MariamCoffeeUploader.ps1': strToU8(crlf(ps1)), 'run-hidden.vbs': strToU8(crlf(vbs)), 'install.bat': strToU8(crlf(installBat)),
         'upload-now.bat': strToU8(crlf(nowBat)), 'uninstall.bat': strToU8(crlf(uninstallBat)), 'README.txt': strToU8(crlf(readme)), 'config.json': strToU8(config),

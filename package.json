@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build -c site/vite.config.js && vite build",
     "preview": "vite preview",
     "test": "node scripts/verify.mjs",
-    "build:single": "vite build --mode single"
+    "build:single": "vite build --mode single",
+    "dev:site": "vite -c site/vite.config.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
@@ -20,6 +21,8 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@fontsource/el-messiri": "^5.3.0",
+    "@fontsource/montserrat": "^5.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.3.1",
     "vite-plugin-singlefile": "^2.3.3",

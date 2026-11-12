@@ -19,7 +19,7 @@ async function sendLogin(done, setSent) {
 
 /** A ready-to-send email (opens the phone's or computer's email app). */
 export function loginMail({ name, email, username, password }) {
-  const body = `Hi ${name.split(' ')[0]},\n\nYour account for Mariam Coffee is ready. Use it to see your shifts and to clock in and out at the café.\n\nWebsite: ${location.origin}/staff\nUsername: ${username}\nPassword: ${password}\n\nOn your phone: open the website and sign in. The first time, you will be asked to choose your own password.\nWhen you clock in or out, allow the website to use your location. It only works inside the café.\n\nThank you,\nMariam Coffee`;
+  const body = `Hi ${name.split(' ')[0]},\n\nYour account for Mariam Coffee is ready. Use it to see your shifts and to clock in and out at the café.\n\nWebsite: ${location.origin}${import.meta.env.BASE_URL}staff\nUsername: ${username}\nPassword: ${password}\n\nOn your phone: open the website and sign in. The first time, you will be asked to choose your own password.\nWhen you clock in or out, allow the website to use your location. It only works inside the café.\n\nThank you,\nMariam Coffee`;
   return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Your Mariam Coffee account')}&body=${encodeURIComponent(body)}`;
 }
 
@@ -135,7 +135,7 @@ function Editor({ edit, setEdit, roleChoices, self, finance, onSaved }) {
       <div className="card" style={{ borderColor: 'var(--good)', marginBottom: 16 }}>
         <h2 style={{ fontSize: 15 }}>Account ready for {done.name}</h2>
         <p>Send these to {done.name} (they can change the password after signing in):</p>
-        <p className="notice" style={{ fontSize: 14 }}>Website: <b>{location.origin}/staff</b><br />Username: <b>{done.username}</b><br />Password: <b>{done.password}</b></p>
+        <p className="notice" style={{ fontSize: 14 }}>Website: <b>{location.origin + import.meta.env.BASE_URL}staff</b><br />Username: <b>{done.username}</b><br />Password: <b>{done.password}</b></p>
         <p className="faint" style={{ fontSize: 12.5 }}>They will be asked to choose their own password the first time they sign in.</p>
         {done.emailed && <div className="banner ok" style={{ marginBottom: 10 }}><span>✉ Welcome email with the website link and these details sent to {done.emailed}.</span></div>}
         {done.emailError && <div className="banner bad" style={{ marginBottom: 10 }}><span>The welcome email could not be sent: {done.emailError}</span></div>}

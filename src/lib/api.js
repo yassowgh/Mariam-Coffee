@@ -7,7 +7,7 @@ export class ApiError extends Error {
 export async function api(path, { method = 'GET', body, raw, type, headers: extra } = {}) {
   let res;
   try {
-    res = await fetch('/api/' + path, {
+    res = await fetch(import.meta.env.BASE_URL + 'api/' + path, {
       method,
       credentials: 'same-origin',
       cache: 'no-store',

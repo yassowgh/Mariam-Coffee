@@ -119,7 +119,7 @@ export default function FileImport({ ctx, onDone }) {
           <div className="table-wrap"><table>
             <thead><tr><th>File</th><th>Uploaded</th><th>By</th><th className="r">Records imported</th><th /></tr></thead>
             <tbody>{docs.map((d) => (
-              <tr key={d.id}><td><a href={`/api/documents/${d.id}`}>{d.name}</a> <span className="faint">({Math.max(1, Math.round((d.size || 0) / 1024))} KB)</span></td>
+              <tr key={d.id}><td><a href={`${import.meta.env.BASE_URL}api/documents/${d.id}`}>{d.name}</a> <span className="faint">({Math.max(1, Math.round((d.size || 0) / 1024))} KB)</span></td>
                 <td>{d.at ? longDate(d.at.slice(0, 10)) : '–'}</td><td>{d.by || '–'}</td><td className="r num">{d.records || 0}</td>
                 <td>{ctx.owner && <button className="btn small ghost" onClick={async () => { if (confirm(`Delete the stored file ${d.name}? Records already imported stay.`)) { await api('documents/' + d.id, { method: 'DELETE' }).catch((e) => alert(e.message)); loadDocs(); } }}>Delete</button>}</td></tr>
             ))}</tbody>

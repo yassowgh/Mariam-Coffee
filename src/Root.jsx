@@ -88,11 +88,11 @@ export default function Root() {
     return (<><Header title="Mariam Coffee" subtitle=" " /><main><div className="card progress-card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div></main></>);
   }
   // /staff = the staff link: straight to sign-in, never the sales
-  const staffLink = /^\/staff\/?$/.test(location.pathname);
+  const staffLink = location.pathname.replace(/\/+$/, '') === import.meta.env.BASE_URL + 'staff';
   if (linkToken) {
     return (<><Header title="Mariam Coffee" subtitle="Staff" /><main><SetPassword token={linkToken} onDone={() => {
       setLinkToken(null);
-      try { history.replaceState(null, '', '/staff'); } catch { /* ignore */ }
+      try { history.replaceState(null, '', import.meta.env.BASE_URL + 'staff'); } catch { /* ignore */ }
       setState({ status: 'login' });
     }} /></main></>);
   }

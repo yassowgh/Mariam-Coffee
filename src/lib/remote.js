@@ -9,7 +9,7 @@ import { zipSync } from 'fflate';
 export async function loadSaved(progress) {
   let res;
   try {
-    res = await fetch('/api/data', { cache: 'no-store' });
+    res = await fetch(import.meta.env.BASE_URL + 'api/data', { cache: 'no-store' });
   } catch {
     return { available: false };
   }
@@ -35,7 +35,7 @@ export async function loadSaved(progress) {
 export async function checkPassword(password) {
   let res;
   try {
-    res = await fetch('/api/auth', { method: 'POST', headers: { 'x-upload-password': password } });
+    res = await fetch(import.meta.env.BASE_URL + 'api/auth', { method: 'POST', headers: { 'x-upload-password': password } });
   } catch {
     throw new Error('Could not reach the server to check the password.');
   }
@@ -52,7 +52,7 @@ export async function saveRemote(entries, meta, password) {
     files[path] = [e.data, { level: 6 }];
   }
   const zip = zipSync(files);
-  const res = await fetch('/api/data', {
+  const res = await fetch(import.meta.env.BASE_URL + 'api/data', {
     method: 'PUT',
     headers: {
       'content-type': 'application/zip',
@@ -69,7 +69,7 @@ export async function saveRemote(entries, meta, password) {
 /** Saved cost settings, or null. */
 export async function loadCosts() {
   try {
-    const res = await fetch('/api/costs', { cache: 'no-store' });
+    const res = await fetch(import.meta.env.BASE_URL + 'api/costs', { cache: 'no-store' });
     if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) return null;
     const cfg = await res.json();
     return cfg && Array.isArray(cfg.recipes) ? cfg : null;
@@ -81,7 +81,7 @@ export async function loadCosts() {
 export async function saveCosts(cfg, password) {
   let res;
   try {
-    res = await fetch('/api/costs', {
+    res = await fetch(import.meta.env.BASE_URL + 'api/costs', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', 'x-upload-password': password },
       body: JSON.stringify(cfg),
