@@ -14,6 +14,7 @@
 import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
 import { safeEqual, sha256Hex } from './auth.js';
 import { handleMenu, refreshMenuPrices } from './menu.js';
+import { handleMigrate } from './migrate.js';
 
 const KEY = 'dataset';
 const MAX_BYTES = 24 * 1024 * 1024; // Workers KV value limit is 25 MiB
@@ -173,6 +174,7 @@ async function route(request, env, url, ctx) {
   if (path === '/api/data') return handleData(request, env, ctx);
   if (path === '/api/costs') return handleCosts(request, env);
   if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
+  if (path.startsWith('/api/migrate/')) return handleMigrate(request, env, path, passwordOk);
   if (path === '/api/auth' && request.method === 'POST') {
     return (await allowed(request, env))
       ? new Response(null, { status: 204 })
