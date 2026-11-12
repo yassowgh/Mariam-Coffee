@@ -13,7 +13,7 @@
   <link rel="alternate" hreflang="tr" href="https://mariamcoffeeshop.com/?lang=tr" />
   <meta property="og:title" content="Mariam Coffee · Istanbul" />
   <meta property="og:description" content="Turkish coffee with cardamom, espresso drinks, karak tea, desserts and maamoul. Open every day 08:00–01:00." />
-  <meta property="og:image" content="https://mariamcoffeeshop.com/brand/hero-1000.jpg" />
+  <meta property="og:image" content="https://mariamcoffeeshop.com/photos/front-1280.jpg" />
   <meta property="og:url" content="https://mariamcoffeeshop.com/" />
   <meta property="og:type" content="website" />
   <link rel="preload" as="image" href="/brand/hero-2000.webp" imagesrcset="/brand/hero-1000.webp 1000w, /brand/hero-2000.webp 2000w" imagesizes="100vw" />
@@ -24,7 +24,7 @@
     "name": "Mariam Coffee",
     "url": "https://mariamcoffeeshop.com/",
     "logo": "https://mariamcoffeeshop.com/brand/logo-stack.svg",
-    "image": "https://mariamcoffeeshop.com/brand/hero-1000.jpg",
+    "image": ["https://mariamcoffeeshop.com/photos/front-1280.jpg", "https://mariamcoffeeshop.com/photos/mural-1280.jpg", "https://mariamcoffeeshop.com/photos/counter-1280.jpg"],
     "servesCuisine": ["Coffee", "Turkish coffee", "Desserts"],
     "priceRange": "₺₺",
     "currenciesAccepted": "TRY",
@@ -51,6 +51,7 @@
       <nav class="nav" aria-label="Main">
         <a href="#menu" data-t="nav.menu">Menu</a>
         <a href="#about" data-t="nav.about">About</a>
+        <a href="#gallery" data-t="nav.gallery">Gallery</a>
         <a href="#visit" data-t="nav.visit">Visit</a>
       </nav>
       <div class="langs" role="group" aria-label="Language">
@@ -104,13 +105,59 @@
 
   <section class="about" id="about" aria-labelledby="about-title">
     <div class="wrap about-in">
-      <img class="about-logo" src="/brand/logo-round.svg" alt="" width="260" height="260" loading="lazy" />
+      <img class="about-photo" src="/photos/lounge-640.webp" srcset="/photos/lounge-640.webp 640w, /photos/lounge-1280.webp 1280w" sizes="(max-width: 900px) 100vw, 480px" width="640" height="360" loading="lazy" decoding="async" alt="Inside Mariam Coffee" />
       <div>
         <h2 id="about-title" class="h2" data-t="about.title">A cup worth sitting down for</h2>
         <p class="lead-dark" data-t="about.text"></p>
       </div>
     </div>
   </section>
+
+  <section class="gallery" id="gallery" aria-labelledby="gal-title">
+    <div class="wrap">
+      <h2 id="gal-title" class="h2" data-t="gal.title">Inside Mariam</h2>
+      <p class="gal-sub" data-t="gal.sub">Hand-painted murals, tatreez patterns and a little shop of things to take home.</p>
+      <div class="g-grid">
+        <figure class="g-item g-big">
+          <button type="button" class="g-open" data-full="/photos/mural-1920.webp" data-i="0" aria-label="Hand-painted mural by the window">
+            <img src="/photos/mural-640.webp" srcset="/photos/mural-640.webp 640w, /photos/mural-1280.webp 1280w" sizes="(max-width: 700px) 100vw, 66vw" width="640" height="360" loading="lazy" decoding="async" alt="Hand-painted mural by the window" data-t-alt="gal.mural" />
+          </button>
+          <figcaption data-t="gal.mural">Hand-painted mural by the window</figcaption>
+        </figure>
+        <figure class="g-item ">
+          <button type="button" class="g-open" data-full="/photos/front-1920.webp" data-i="1" aria-label="Mariam Coffee at night">
+            <img src="/photos/front-640.webp" srcset="/photos/front-640.webp 640w, /photos/front-1280.webp 1280w" sizes="(max-width: 700px) 100vw, 33vw" width="640" height="360" loading="lazy" decoding="async" alt="Mariam Coffee at night" data-t-alt="gal.front" />
+          </button>
+          <figcaption data-t="gal.front">Mariam Coffee at night</figcaption>
+        </figure>
+        <figure class="g-item ">
+          <button type="button" class="g-open" data-full="/photos/horse-1920.webp" data-i="2" aria-label="Mahmoud Darwish's words on our wall">
+            <img src="/photos/horse-640.webp" srcset="/photos/horse-640.webp 640w, /photos/horse-1280.webp 1280w" sizes="(max-width: 700px) 100vw, 33vw" width="640" height="360" loading="lazy" decoding="async" alt="Mahmoud Darwish's words on our wall" data-t-alt="gal.horse" />
+          </button>
+          <figcaption data-t="gal.horse">Mahmoud Darwish's words on our wall</figcaption>
+        </figure>
+        <figure class="g-item ">
+          <button type="button" class="g-open" data-full="/photos/lounge-1920.webp" data-i="3" aria-label="The lounge">
+            <img src="/photos/lounge-640.webp" srcset="/photos/lounge-640.webp 640w, /photos/lounge-1280.webp 1280w" sizes="(max-width: 700px) 100vw, 33vw" width="640" height="360" loading="lazy" decoding="async" alt="The lounge" data-t-alt="gal.lounge" />
+          </button>
+          <figcaption data-t="gal.lounge">The lounge</figcaption>
+        </figure>
+        <figure class="g-item g-wide">
+          <button type="button" class="g-open" data-full="/photos/counter-1920.webp" data-i="4" aria-label="The counter, desserts and the Mariam shop">
+            <img src="/photos/counter-640.webp" srcset="/photos/counter-640.webp 640w, /photos/counter-1280.webp 1280w" sizes="(max-width: 700px) 100vw, 66vw" width="640" height="360" loading="lazy" decoding="async" alt="The counter, desserts and the Mariam shop" data-t-alt="gal.counter" />
+          </button>
+          <figcaption data-t="gal.counter">The counter, desserts and the Mariam shop</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo" hidden>
+    <button type="button" class="lb-close" aria-label="Close">×</button>
+    <button type="button" class="lb-prev" aria-label="Previous">‹</button>
+    <figure><img alt="" /><figcaption></figcaption></figure>
+    <button type="button" class="lb-next" aria-label="Next">›</button>
+  </div>
 
   <section class="visit" id="visit" aria-labelledby="visit-title">
     <div class="wrap visit-in">
@@ -124,8 +171,9 @@
         </dl>
         <a class="btn btn-green" href="https://www.google.com/maps/dir/?api=1&amp;destination=41.1236348,28.7777111" target="_blank" rel="noopener" data-t="visit.directions">Get directions</a>
       </div>
-      <div class="map">
-        <iframe title="Map: Mariam Coffee" src="https://www.google.com/maps?q=41.1236348,28.7777111&amp;z=17&amp;output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      <div class="map" id="map">
+        <img src="/photos/front-640.webp" srcset="/photos/front-640.webp 640w, /photos/front-1280.webp 1280w" sizes="(max-width: 900px) 100vw, 620px" width="640" height="360" loading="lazy" decoding="async" alt="Mariam Coffee from the street" data-t-alt="gal.front" />
+        <button type="button" class="btn btn-cream map-btn" id="map-btn" data-t="visit.map">Show map</button>
       </div>
     </div>
   </section>

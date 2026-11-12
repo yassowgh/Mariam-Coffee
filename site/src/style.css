@@ -112,7 +112,30 @@ h1, h2, h3, h4 { font-family: var(--head); font-weight: 700; line-height: 1.15; 
 /* About */
 .about { background: var(--cream-soft); padding: 90px 0; }
 .about-in { display: grid; grid-template-columns: 300px 1fr; gap: 56px; align-items: center; }
-.about-logo { width: 240px; justify-self: center; }
+.about-in { grid-template-columns: minmax(0, 480px) 1fr; }
+.about-photo { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--radius); box-shadow: 0 18px 40px rgba(38, 37, 37, .16); }
+
+/* Gallery */
+.gallery { padding: 96px 0 40px; }
+.gal-sub { color: var(--muted); margin: 10px 0 30px; max-width: 620px; }
+.g-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 220px; gap: 14px; }
+.g-item { margin: 0; position: relative; border-radius: 14px; overflow: hidden; background: var(--cream-soft); }
+.g-big { grid-column: span 2; grid-row: span 2; }
+.g-wide { grid-column: span 2; }
+.g-open { all: unset; display: block; width: 100%; height: 100%; cursor: zoom-in; }
+.g-open img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s ease; }
+.g-open:hover img, .g-open:focus-visible img { transform: scale(1.04); }
+.g-open:focus-visible { outline: 3px solid var(--green); outline-offset: -3px; }
+.g-item figcaption { position: absolute; inset: auto 0 0 0; padding: 26px 14px 10px; font-size: 13.5px; font-weight: 600; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.6)); pointer-events: none; }
+.lightbox { position: fixed; inset: 0; z-index: 60; background: rgba(15, 11, 10, .94); display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; }
+.lightbox[hidden] { display: none; }
+.lightbox figure { margin: 0; grid-column: 2; display: grid; justify-items: center; gap: 10px; }
+.lightbox img { max-width: 100%; max-height: 82vh; border-radius: 10px; }
+.lightbox figcaption { color: var(--cream); font-size: 15px; text-align: center; }
+.lightbox button { background: none; border: 0; color: #fff; font-size: 44px; line-height: 1; cursor: pointer; padding: 10px; }
+.lb-close { position: absolute; top: 12px; inset-inline-end: 16px; font-size: 40px !important; }
+.lb-prev { grid-column: 1; } .lb-next { grid-column: 3; }
+body.lb-on { overflow: hidden; }
 .lead-dark { font-size: 18px; color: #4a423d; margin: 16px 0 0; max-width: 640px; }
 
 /* Visit */
@@ -123,6 +146,10 @@ h1, h2, h3, h4 { font-family: var(--head); font-weight: 700; line-height: 1.15; 
 [dir='rtl'] .visit dt { letter-spacing: 0; font-size: 17px; }
 .visit dd { margin: 4px 0 0; font-size: 19px; font-weight: 600; }
 .map { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); min-height: 360px; background: var(--cream-soft); }
+.map { position: relative; }
+.map > img { width: 100%; height: 100%; min-height: 360px; object-fit: cover; }
+.map-btn { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); box-shadow: 0 8px 24px rgba(0,0,0,.35); border: 0; cursor: pointer; font-family: var(--body); font-size: 15px; }
+.map-btn:hover { transform: translate(-50%, calc(-50% - 1px)); }
 .map iframe { width: 100%; height: 100%; min-height: 360px; border: 0; display: block; }
 
 /* Footer */
@@ -147,7 +174,11 @@ h1, h2, h3, h4 { font-family: var(--head); font-weight: 700; line-height: 1.15; 
   .sig-grid { grid-template-columns: 1fr; }
   .items { columns: 1; }
   .about-in, .visit-in { grid-template-columns: 1fr; gap: 28px; }
-  .about-logo { width: 180px; }
+  .about-photo { aspect-ratio: 16 / 10; }
+  .g-grid { grid-template-columns: 1fr 1fr; grid-auto-rows: 160px; }
+  .g-big { grid-column: span 2; grid-row: span 2; }
+  .g-wide { grid-column: span 1; }
+  .lightbox { grid-template-columns: 44px 1fr 44px; }
   .nav { display: none; }
   .langs { margin-inline-start: auto; }
 }
@@ -155,7 +186,8 @@ h1, h2, h3, h4 { font-family: var(--head); font-weight: 700; line-height: 1.15; 
   .wrap { width: calc(100% - 32px); }
   .top-in { height: 66px; }
   .brand img { height: 48px; }
-  .sig, .menu, .visit, .about { padding-block: 64px; }
+  .sig, .menu, .visit, .about, .gallery { padding-block: 64px; }
+  .g-grid { grid-auto-rows: 120px; gap: 8px; }
   .panel { padding: 22px 16px 26px; }
 }
 @media (prefers-reduced-motion: reduce) {

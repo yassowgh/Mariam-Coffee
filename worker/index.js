@@ -173,6 +173,17 @@ export default {
   },
 };
 
+// Browser caching: hashed build files never change; photos and logos rarely do.
+function withCache(pathname, res) {
+  let cc = null;
+  if (/^\/(management\/)?assets\//.test(pathname)) cc = 'public, max-age=31536000, immutable';
+  else if (/^\/(photos|brand)\//.test(pathname)) cc = 'public, max-age=604800, stale-while-revalidate=86400';
+  if (!cc || res.status !== 200) return res;
+  const r = new Response(res.body, res);
+  r.headers.set('cache-control', cc);
+  return r;
+}
+
 async function route(request, env, url, ctx) {
   // The management app calls /management/api/…; /api/… keeps working too.
   const path = url.pathname.startsWith(APP + '/api/') ? url.pathname.slice(APP.length) : url.pathname;
@@ -191,7 +202,7 @@ async function route(request, env, url, ctx) {
   // Pages and files
   if (url.pathname === APP) return Response.redirect(url.origin + APP + '/' + url.search, 301);
   const res = await env.ASSETS.fetch(request);
-  if (res.status !== 404) return res;
+  if (res.status !== 404) return withCache(url.pathname, res);
   const accept = request.headers.get('accept') || '';
   if (url.pathname.startsWith(APP + '/')) {
     // the management app is a single-page app: unknown paths load its index page
