@@ -34,3 +34,10 @@ export function pickLang() {
   return n.find((x) => LANGS[x]) || 'en';
 }
 export function saveLang(lang) { try { localStorage.setItem('mc-lang', lang); } catch { /* ignore */ } }
+
+/** The owner's links (Google review, Instagram) replace the built-in ones. */
+export function applyLinks() {
+  const L = C.links || {};
+  document.querySelectorAll('[data-link]').forEach((a) => { const u = L[a.dataset.link]; if (u) a.href = u; });
+  document.querySelectorAll('[data-link-text]').forEach((el) => { const v = L[el.dataset.linkText]; if (v) el.textContent = v; });
+}

@@ -66,9 +66,10 @@ export default function WebsiteEditor() {
         {content.updatedAt && <p className="faint" style={{ fontSize: 12.5, margin: '8px 0 0' }}>Last saved {new Date(content.updatedAt).toLocaleString()}{content.updatedBy ? ` by ${content.updatedBy}` : ''}.</p>}
       </div>
       <nav className="chips sub-tabs" aria-label="Website">
-        {[['texts', 'Texts'], ['menu', 'Menu'], ['photos', 'Photos']].map(([k, l]) => <button key={k} className="chip" aria-pressed={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+        {[['texts', 'Texts'], ['links', 'Links'], ['menu', 'Menu'], ['photos', 'Photos']].map(([k, l]) => <button key={k} className="chip" aria-pressed={tab === k} onClick={() => setTab(k)}>{l}</button>)}
       </nav>
       {tab === 'texts' && <Texts content={content} change={change} />}
+      {tab === 'links' && <Links content={content} change={change} />}
       {tab === 'menu' && <MenuEditor content={content} change={change} setMsg={setMsg} />}
       {tab === 'photos' && <Photos content={content} change={change} setMsg={setMsg} />}
       {dirty && <div className="save-bar"><span>You have unsaved changes.</span><button className="btn primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button></div>}
@@ -125,6 +126,35 @@ function Texts({ content, change }) {
         );
       })}
     </>
+  );
+}
+
+// ---------------------------------------------------------------- links
+const LINKS = [
+  ['google', 'Google review link', 'https://g.page/r/CWSMLS5rSzlAEBE/review', 'The “Review us on Google” button on the table page and in the website footer. In Google Business Profile: “Ask for reviews” → copy the link.'],
+  ['instagram', 'Instagram link', 'https://www.instagram.com/mariamcoffee.tr/', 'The “Follow us on Instagram” button on the table page and in the website footer.'],
+  ['instaName', 'Instagram name shown on the button', '@mariamcoffee.tr', 'The small text under “Follow us on Instagram”.'],
+];
+function Links({ content, change }) {
+  const val = (k) => content.links?.[k] ?? '';
+  const set = (k, v) => change((c) => { c.links = { ...(c.links || {}) }; if (v) c.links[k] = v; else delete c.links[k]; });
+  const bad = (k) => k !== 'instaName' && val(k) && !/^https:\/\/\S+$/i.test(val(k));
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>Links</h2><p>Where the buttons on the table QR page (/t/) and the website footer go. Leave a box empty to use the original.</p></div></div>
+      <div className="stack" style={{ gap: 14 }}>
+        {LINKS.map(([k, label, def, help]) => (
+          <div key={k} className="text-edit">
+            <label className="field"><span><b>{label}</b></span>
+              <input value={val(k)} placeholder={def} onChange={(e) => set(k, e.target.value.trim())} aria-invalid={bad(k) || undefined} dir="ltr" />
+            </label>
+            <small className="muted">{help}</small>
+            {bad(k) && <div><small style={{ color: 'var(--bad-text)' }}>The link must start with https://</small></div>}
+            <div style={{ marginTop: 6 }}><a className="btn small ghost" href={val(k) && !bad(k) && k !== 'instaName' ? val(k) : k !== 'instaName' ? def : undefined} target="_blank" rel="noreferrer" hidden={k === 'instaName'}>Test the link ↗</a></div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

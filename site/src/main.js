@@ -9,10 +9,11 @@ import '@fontsource/montserrat/latin-ext-400.css';
 import '@fontsource/montserrat/latin-600.css';
 import '@fontsource/montserrat/latin-ext-600.css';
 import './style.css';
-import { content, image, pickLang, saveLang, txt } from './content.js';
+import { applyLinks, content, image, pickLang, saveLang, txt } from './content.js';
 import { createMenu } from './menuview.js';
 import { ART } from './art.js';
 
+applyLinks();
 let lang = pickLang();
 const tr = (k) => txt(k, lang);
 const menu = createMenu({ tabsEl: document.getElementById('tabs'), listEl: document.getElementById('menu-list'), getLang: () => lang });

@@ -49,6 +49,13 @@ export async function handleContent(request, env) {
     try { body = JSON.parse(raw); } catch { return json({ error: 'Not valid JSON.' }, 400); }
     let content;
     try { content = cleanImages(body.content || {}); } catch (e) { return json({ error: e.message }, 400); }
+    if (content.links) {
+      for (const [k, v] of Object.entries(content.links)) {
+        if (!['google', 'instagram', 'instaName'].includes(k)) delete content.links[k];
+        else if (k !== 'instaName' && v && !/^https:\/\/[^\s"'<>]+$/i.test(v)) return json({ error: `The ${k} link must start with https://` }, 400);
+        else if (typeof v === 'string') content.links[k] = v.trim().slice(0, 300);
+      }
+    }
     content.updatedAt = new Date().toISOString();
     content.updatedBy = me.name;
     await env.DATA.put(KEY, JSON.stringify(content));

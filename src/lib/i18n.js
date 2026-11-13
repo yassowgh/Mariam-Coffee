@@ -26,6 +26,7 @@ const AR = {
   'Website texts, menu and photos': 'نصوص الموقع والقائمة والصور',
   'Open the website editor →': 'فتح محرر الموقع ←',
   'Texts': 'النصوص',
+  'Links': 'الروابط',
   'Photos': 'الصور',
   'Save changes': 'حفظ التغييرات',
   'Not saved': 'غير محفوظ',

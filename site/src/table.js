@@ -7,9 +7,10 @@ import '@fontsource/montserrat/latin-600.css';
 import '@fontsource/montserrat/latin-ext-400.css';
 import '@fontsource/montserrat/latin-ext-600.css';
 import './table.css';
-import { content, pickLang, saveLang, txt } from './content.js';
+import { applyLinks, content, pickLang, saveLang, txt } from './content.js';
 import { createMenu } from './menuview.js';
 
+applyLinks();
 let lang = pickLang();
 const menu = createMenu({ tabsEl: document.getElementById('tabs'), listEl: document.getElementById('menu-list'), getLang: () => lang });
 const home = document.getElementById('home');
