@@ -106,6 +106,31 @@ export async function handleEmail({ head, request, env, me, h }) {
   const cfg = await config(env, h, db);
   if (!cfg.key) h.fail(501, 'Email is not set up yet. The owner can add the Resend API key in Settings → Email.');
 
+  // Staff guide (owner): each person gets their access + how to use the parts of the system they have.
+  // POST { user_ids?: [..], dry?: true }  (dry: return the texts without sending)
+  if (head === 'guide-email') {
+    h.need(me, 'owner');
+    const b = await h.body(request);
+    const ids = Array.isArray(b.user_ids) ? new Set(b.user_ids.map(Number)) : null;
+    const { results } = await db.prepare('SELECT * FROM users WHERE active = 1 ORDER BY id').all();
+    const origin = new URL(request.url).origin;
+    const out = { sent: [], noEmail: [], failed: [], previews: [] };
+    for (const u of results) {
+      if (ids && !ids.has(u.id)) continue;
+      if (!u.email) { out.noEmail.push(u.name); continue; }
+      try {
+        const link = u.must_change && !b.dry ? `${appUrl(origin)}/staff?set=${await makeLink(db, h, u.id, 'invite')}` : u.must_change ? `${appUrl(origin)}/staff?set=PREVIEW` : null;
+        const mail = guideEmail(u, appUrl(origin) + '/staff', link);
+        if (b.dry) { out.previews.push({ name: u.name, subject: mail.subject, text: mail.text }); continue; }
+        await send(cfg, { to: u.email, ...mail });
+        out.sent.push(u.name);
+      } catch (e) { out.failed.push({ name: u.name, error: e.message }); }
+      await sleep(600);
+    }
+    if (!b.dry) await h.audit(db, me, 'account.guide', { sent: out.sent.length, failed: out.failed.length });
+    return h.json(out);
+  }
+
   // Sending domain in Resend (owner): GET status + DNS records, POST {action:'add'|'verify', name}
   if (head === 'email-domain') {
     h.need(me, 'owner');
@@ -258,7 +283,7 @@ export async function notify(env, h, origin, user, subject, text, html) {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
-export const EMAIL_ROUTES = ['email-settings', 'email-test', 'schedule-email', 'send-login', 'invite', 'email-domain', 'announce-move'];
+export const EMAIL_ROUTES = ['guide-email', 'email-settings', 'email-test', 'schedule-email', 'send-login', 'invite', 'email-domain', 'announce-move'];
 export const PUBLIC_EMAIL_ROUTES = ['password-forgot', 'password-reset'];
 
 // ---------- password links (invitation: 7 days, reset: 1 hour) ----------
@@ -345,4 +370,118 @@ export async function handlePublicEmail({ head, request, env, h }) {
     return h.json({ ok: true, username: u.username });
   }
   return h.fail(404, 'Not found');
+}
+
+// ---------- staff guide email: access + how-to per role (English and Arabic) ----------
+const SUPPORT_EMAIL = 'Yasser.Ghallab@gmail.com';
+const ROLE_TEXT = {
+  owner: ['Owner: everything (sales reports, accounting, finance, schedule, timesheets, team, salaries and settings)', 'المالك: كل شيء (تقارير المبيعات، المحاسبة، المالية، جدول العمل، سجل الدوام، الفريق، الرواتب والإعدادات)'],
+  accountant: ['Accountant: accounting, finance, sales reports and salaries', 'محاسب: المحاسبة، المالية، تقارير المبيعات والرواتب'],
+  manager: ['Manager: the work schedule, timesheets and the team (hours only)', 'مدير: جدول العمل، سجل الدوام والفريق (الساعات فقط)'],
+  barista: ['Barista: your shifts, clock in / out, shift swaps and day-to-day costs', 'باريستا: ورديّاتك، تسجيل الحضور والانصراف، تبديل الورديات والمصاريف اليومية'],
+};
+const GUIDE = {
+  barista: {
+    en: ['How to use it (baristas)', [
+      'Use <b>Google Chrome</b> on your phone (Android or iPhone). Open the website in Chrome and sign in.',
+      'When you tap <b>Clock in</b> the first time, Chrome asks to use your location: tap <b>Allow</b>. Clock in and out only work inside the café (within 100 m).',
+      'If you tapped Block by mistake: on Android, tap the icon left of the address in Chrome → Permissions → Location → Allow. On iPhone, open Settings → Chrome → Location → “While Using the App”, then try again.',
+      'Tap <b>Clock in</b> when you arrive and <b>Clock out</b> when you leave. Your shifts for the next 2 weeks are on the same page.',
+      'Can’t work a shift? Tap <b>⇄ Ask to swap</b> on it. After a colleague accepts, the manager approves.',
+      'Paid for something for the café (milk, ice…)? Add it under <b>Day-to-day costs</b> (up to 400 TL per purchase, with a photo of the receipt). The accountant approves it.',
+      'Tip: in Chrome, use “Add to Home screen” so the website opens like an app.',
+    ]],
+    ar: ['طريقة الاستخدام (الباريستا)', [
+      'استخدم متصفح <b>Google Chrome</b> على هاتفك (أندرويد أو آيفون). افتح الموقع في كروم وسجّل الدخول.',
+      'عند الضغط على <b>تسجيل الحضور</b> لأول مرة سيطلب كروم استخدام موقعك: اضغط <b>سماح</b>. تسجيل الحضور والانصراف يعمل داخل المقهى فقط (ضمن 100 متر).',
+      'إذا ضغطت «حظر» بالخطأ: على أندرويد اضغط الرمز يسار العنوان في كروم ← الأذونات ← الموقع ← سماح. على آيفون افتح الإعدادات ← Chrome ← الموقع ← «أثناء استخدام التطبيق» ثم حاول مجدداً.',
+      'اضغط <b>تسجيل الحضور</b> عند وصولك و<b>تسجيل الانصراف</b> عند مغادرتك. ورديّاتك للأسبوعين القادمين في نفس الصفحة.',
+      'لا تستطيع العمل في وردية؟ اضغط <b>⇄ طلب تبديل</b> عليها. بعد موافقة زميلك يوافق المدير.',
+      'دفعت ثمن شيء للمقهى (حليب، ثلج…)؟ أضفه في <b>المصاريف اليومية</b> (حتى 400 ليرة لكل عملية شراء مع صورة الإيصال). يوافق عليه المحاسب.',
+      'نصيحة: في كروم اختر «إضافة إلى الشاشة الرئيسية» ليفتح الموقع كتطبيق.',
+    ]],
+  },
+  manager: {
+    en: ['How to edit and assign the schedule (manager)', [
+      'Open the <b>Schedule</b> tab. Choose the week with <b>‹ Prev</b>, <b>This week</b> and <b>Next ›</b>.',
+      'To assign a shift: tap <b>＋</b> in a barista’s row on that day, pick the start and end time (you can repeat it on other days), then tap <b>Add shift</b>.',
+      'To change or remove a shift: tap the shift, change the times or the person and tap <b>Save</b>, or tap <b>Remove shift</b>.',
+      '<b>✨ Create automatically</b> builds a balanced week from the sales and your rules. Write rules in plain words (e.g. “Abrar cannot work on Fridays”), check the result, then tap <b>Save as this week’s schedule</b>. <b>Copy last week</b> repeats last week.',
+      'When the week is ready, tap <b>✉ Email each barista their shifts</b>. Baristas also see their shifts when they sign in.',
+      'Shift swaps that colleagues agreed on wait for you under <b>Shift swaps</b> in the Schedule tab: approve or reject them.',
+      'In <b>Timesheets</b> you see who clocked in and can correct a time if someone forgot to clock out.',
+    ]],
+    ar: ['طريقة تعديل الجدول وتوزيع الورديات (المدير)', [
+      'افتح تبويب <b>جدول العمل</b>. اختر الأسبوع بأزرار <b>‹ السابق</b> و<b>هذا الأسبوع</b> و<b>التالي ›</b>.',
+      'لإضافة وردية: اضغط <b>＋</b> في صف الباريستا في ذلك اليوم، اختر وقت البداية والنهاية (يمكن تكرارها في أيام أخرى) ثم اضغط <b>إضافة الوردية</b>.',
+      'لتعديل أو حذف وردية: اضغط على الوردية، غيّر الوقت أو الشخص واضغط <b>حفظ</b>، أو اضغط <b>حذف الوردية</b>.',
+      'زر <b>✨ إنشاء تلقائي</b> يبني أسبوعاً متوازناً حسب المبيعات وقواعدك. اكتب القواعد بكلمات بسيطة (مثلاً «عبرار لا تعمل يوم الجمعة»)، راجع النتيجة ثم اضغط <b>حفظ كجدول هذا الأسبوع</b>. زر <b>نسخ الأسبوع الماضي</b> يكرر الأسبوع السابق.',
+      'عندما يصبح الأسبوع جاهزاً اضغط <b>✉ إرسال الورديات لكل باريستا بالبريد</b>. يرى الباريستا ورديّاته أيضاً عند تسجيل الدخول.',
+      'طلبات تبديل الورديات التي وافق عليها الزملاء تنتظرك في قسم <b>تبديل الورديات</b> في تبويب جدول العمل: وافق أو ارفض.',
+      'في <b>سجل الدوام</b> ترى من سجّل الحضور ويمكنك تصحيح الوقت إذا نسي أحدهم تسجيل الانصراف.',
+    ]],
+  },
+  accountant: {
+    en: ['Invoices and accounting (accountant)', [
+      '<b>Please upload all invoices.</b> Open <b>Accounting → Upload files</b> and add the files (Excel, CSV, PDF, Word or text). The system reads them; check the lines and save.',
+      'For a single invoice or bill, use <b>＋ New record</b>: what it is for, category, amount, and whether it is paid (and from which account: cash, bank or loan), to be paid on a date, or unpaid. Add a photo of the invoice.',
+      'When a bill is paid later, open <b>Finance</b> and tap <b>Mark paid</b>.',
+      'Baristas’ small purchases (up to 400 TL) wait for you under <b>Accounting → Barista costs</b>: approve or reject them. You get an email for each one.',
+      '<b>Finance</b> shows what is due this month, what is late, and spending per day and per category.',
+    ]],
+    ar: ['الفواتير والمحاسبة (المحاسب)', [
+      '<b>يرجى رفع جميع الفواتير.</b> افتح <b>المحاسبة ← رفع الملفات</b> وأضف الملفات (Excel أو CSV أو PDF أو Word أو نص). يقرأها النظام؛ راجع البنود ثم احفظ.',
+      'لفاتورة واحدة استخدم <b>＋ سجل جديد</b>: ماذا دُفع، الفئة، المبلغ، وهل دُفع (ومن أي حساب: نقدي، بنك أو قرض) أو سيُدفع في تاريخ أو غير مدفوع. أضف صورة الفاتورة.',
+      'عند دفع فاتورة لاحقاً افتح <b>المالية</b> واضغط <b>تحديد كمدفوع</b>.',
+      'مشتريات الباريستا الصغيرة (حتى 400 ليرة) تنتظرك في <b>المحاسبة ← مصاريف الباريستا</b>: وافق أو ارفض. يصلك بريد لكل طلب.',
+      '<b>المالية</b> تعرض المستحق هذا الشهر والمتأخر والصرف اليومي وحسب الفئة.',
+    ]],
+  },
+  owner: {
+    en: ['As an owner', [
+      'You can open every part of the system, add or change people in <b>Team</b>, and change <b>Settings</b> (café location, email, POS uploader).',
+      'Barista costs and new invoices: you get the same emails as the accountant and can approve them too.',
+    ]],
+    ar: ['بصفتك مالكاً', [
+      'يمكنك فتح كل أجزاء النظام، وإضافة الأشخاص أو تعديلهم في <b>الفريق</b>، وتغيير <b>الإعدادات</b> (موقع المقهى، البريد، برنامج رفع المبيعات).',
+      'مصاريف الباريستا والفواتير الجديدة: تصلك نفس رسائل المحاسب ويمكنك الموافقة عليها أيضاً.',
+    ]],
+  },
+};
+
+function guideEmail(u, site, setLink) {
+  const roles = String(u.roles || '').split(',').filter((r) => ROLE_TEXT[r]);
+  const first = String(u.name || '').split(' ')[0];
+  const order = ['owner', 'accountant', 'manager', 'barista'].filter((r) => roles.includes(r));
+  const list = (items) => `<ul style="padding-left:18px;margin:6px 0 14px">${items.map((t) => `<li style="margin:4px 0">${t}</li>`).join('')}</ul>`;
+  const listAr = (items) => `<ul style="padding-right:18px;padding-left:0;margin:6px 0 14px">${items.map((t) => `<li style="margin:4px 0">${t}</li>`).join('')}</ul>`;
+  const strip = (t) => t.replace(/<[^>]+>/g, '');
+  const pwEn = setLink
+    ? `<p>First, choose your password with this button (the link works for 7 days):</p>${button(setLink, 'Choose my password')}`
+    : '<p>Sign in with your current password. Forgot it? Tap <b>“Forgot your password?”</b> on the sign-in page.</p>';
+  const pwAr = setLink
+    ? `<p>أولاً اختر كلمة المرور من خلال هذا الزر (الرابط صالح لمدة 7 أيام):</p>${button(setLink, 'اختيار كلمة المرور')}`
+    : '<p>سجّل الدخول بكلمة المرور الحالية. نسيتها؟ اضغط <b>«نسيت كلمة المرور؟»</b> في صفحة الدخول.</p>';
+  const sectionsEn = order.map((r) => `<h2 style="font-size:16px;margin:18px 0 4px">${GUIDE[r].en[0]}</h2>${list(GUIDE[r].en[1])}`).join('');
+  const sectionsAr = order.map((r) => `<h2 style="font-size:16px;margin:18px 0 4px">${GUIDE[r].ar[0]}</h2>${listAr(GUIDE[r].ar[1])}`).join('');
+  const help = `<p style="background:#f6f4f1;border-radius:8px;padding:10px 12px">Any problem or question? Email <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>`;
+  const helpAr = `<p style="background:#f6f4f1;border-radius:8px;padding:10px 12px">أي مشكلة أو سؤال؟ راسل <a href="mailto:${SUPPORT_EMAIL}" dir="ltr">${SUPPORT_EMAIL}</a>.</p>`;
+  const html = layout('Your access to the Mariam Coffee staff website', `<p>Hi ${esc(first)},</p>
+    <p>Here is your access to the Mariam Coffee staff website.</p>
+    <p>Website: <a href="${esc(site)}"><b>${esc(site)}</b></a><br>Username: <b>${esc(u.username)}</b><br>Your access: ${order.map((r) => ROLE_TEXT[r][0]).join('; ')}.</p>
+    ${pwEn}${sectionsEn}${help}
+    ${arabic(`<h2 style="font-size:18px;margin:0 0 8px">دخولك إلى موقع موظفي مريم كافيه</h2><p>مرحباً ${esc(first)}،</p>
+    <p>الموقع: <a href="${esc(site)}" dir="ltr"><b>${esc(site)}</b></a><br>اسم المستخدم: <b dir="ltr">${esc(u.username)}</b><br>صلاحياتك: ${order.map((r) => ROLE_TEXT[r][1]).join('؛ ')}.</p>
+    ${pwAr}${sectionsAr}${helpAr}`)}`, site);
+  const text = [
+    `Hi ${first},`, '', 'Here is your access to the Mariam Coffee staff website.', `Website: ${site}`, `Username: ${u.username}`,
+    `Your access: ${order.map((r) => ROLE_TEXT[r][0]).join('; ')}.`,
+    setLink ? `Choose your password (link works for 7 days): ${setLink}` : 'Sign in with your current password. Forgot it? Tap "Forgot your password?" on the sign-in page.',
+    ...order.flatMap((r) => ['', GUIDE[r].en[0], ...GUIDE[r].en[1].map((t) => '- ' + strip(t))]),
+    '', `Any problem or question? Email ${SUPPORT_EMAIL}.`,
+    '', '---', `مرحباً ${first}، الموقع: ${site} — اسم المستخدم: ${u.username}`,
+    ...order.flatMap((r) => ['', GUIDE[r].ar[0], ...GUIDE[r].ar[1].map((t) => '- ' + strip(t))]),
+    '', `أي مشكلة أو سؤال؟ راسل ${SUPPORT_EMAIL}`,
+  ].join('\n');
+  return { subject: 'Mariam Coffee: your access and how to use the system / دخولك وطريقة الاستخدام', html, text };
 }
