@@ -46,6 +46,7 @@ export const T = {
   'visit.city': ['Mariam Coffee, Istanbul', 'مقهى مريم، إسطنبول', 'Mariam Coffee, İstanbul'],
   'visit.map': ['Show map', 'عرض الخريطة', 'Haritayı göster'],
   'visit.directions': ['Get directions', 'الاتجاهات', 'Yol tarifi al'],
+  'foot.review': ['Google review', 'قيّمنا على Google', 'Google yorumu'],
   'foot.staff': ['Staff', 'الموظفون', 'Personel'],
   'foot.rights': ['All rights reserved.', 'جميع الحقوق محفوظة.', 'Tüm hakları saklıdır.'],
   'nf.title': ['This page could not be found', 'الصفحة غير موجودة', 'Sayfa bulunamadı'],

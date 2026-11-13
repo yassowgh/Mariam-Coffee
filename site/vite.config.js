@@ -13,7 +13,7 @@ export default defineConfig({
     target: ['es2020', 'safari14', 'chrome87', 'firefox78', 'edge88'],
     cssTarget: ['safari14', 'chrome87'],
     rolldownOptions: {
-      input: { index: resolve(import.meta.dirname, 'index.html'), notfound: resolve(import.meta.dirname, '404.html') },
+      input: { index: resolve(import.meta.dirname, 'index.html'), notfound: resolve(import.meta.dirname, '404.html'), table: resolve(import.meta.dirname, 't/index.html') },
     },
   },
 });

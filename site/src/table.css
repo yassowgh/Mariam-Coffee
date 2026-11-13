@@ -1,0 +1,42 @@
+/* Table QR page. Brand colours from the Mariam guide. */
+:root {
+  --green: #2F6B59; --green-deep: #24584A; --cream: #F5D6C1; --cream-soft: #FBEFE6; --ink: #262525; --brown: #6E5445;
+  --head: 'El Messiri', Georgia, serif; --body: 'Montserrat', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+:root[dir='rtl'] { --body: 'El Messiri', system-ui, sans-serif; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body.tbl {
+  min-height: 100vh; min-height: 100dvh; color: var(--cream-soft); font: 16px/1.5 var(--body);
+  background: radial-gradient(120% 70% at 50% 0%, #3a7d69 0%, var(--green) 45%, var(--green-deep) 100%);
+  -webkit-text-size-adjust: 100%;
+}
+.tbl-main { width: min(460px, 100% - 32px); margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 0 max(28px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.tbl-langs { align-self: flex-end; display: flex; border: 1.5px solid rgba(245, 214, 193, .7); border-radius: 999px; overflow: hidden; }
+.tbl-langs button { background: none; border: 0; color: var(--cream); font: 600 13px/1 var(--body); padding: 9px 12px; cursor: pointer; }
+.tbl-langs button[lang='ar'] { font-family: 'El Messiri', sans-serif; font-size: 14px; }
+.tbl-langs button[aria-pressed='true'] { background: var(--cream); color: var(--ink); }
+.tbl-logo { width: 150px; height: auto; margin: 22px 0 10px; }
+h1 { font: 700 clamp(30px, 8vw, 38px)/1.15 var(--head); color: #fff; margin: 0; }
+.tbl-sub { margin: 8px 0 26px; color: #e9dccf; font-size: 15.5px; }
+.tbl-actions { width: 100%; display: grid; gap: 12px; }
+.tbl-btn {
+  display: flex; align-items: center; gap: 14px; text-align: start; text-decoration: none; min-height: 72px;
+  padding: 14px 18px; border-radius: 18px; background: var(--cream-soft); color: var(--ink);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .18); transition: transform .12s ease;
+}
+.tbl-btn:active { transform: scale(.98); }
+.tbl-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.tbl-btn b { display: block; font-size: 17px; font-weight: 600; }
+.tbl-btn small { display: block; font-size: 13px; color: #6b625c; margin-top: 2px; }
+.tbl-ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; flex: none; }
+.tbl-ic svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tbl-menu .tbl-ic { background: var(--green); color: #fff; }
+.tbl-google .tbl-ic { background: #F5D6C1; color: #b07a00; }
+.tbl-google .tbl-ic svg { fill: #f4b400; stroke: #c98a00; }
+.tbl-google .stars { color: #f4b400; letter-spacing: 2px; font-size: 15px; }
+.tbl-insta .tbl-ic { background: linear-gradient(45deg, #f9a03f, #e1306c 55%, #8a3ab9); color: #fff; }
+.tbl-insta small { direction: ltr; unicode-bidi: isolate; }
+.tbl-foot { margin: 26px 0 0; font-size: 13.5px; }
+.tbl-foot a { color: var(--cream); }
+@media (prefers-reduced-motion: reduce) { .tbl-btn { transition: none; } }
