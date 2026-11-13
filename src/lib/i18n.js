@@ -23,6 +23,8 @@ const AR = {
   'Paid from': 'دُفع من',
   'Nothing waiting.': 'لا شيء بالانتظار.',
   'Website': 'الموقع',
+  'Website texts, menu and photos': 'نصوص الموقع والقائمة والصور',
+  'Open the website editor →': 'فتح محرر الموقع ←',
   'Texts': 'النصوص',
   'Photos': 'الصور',
   'Save changes': 'حفظ التغييرات',

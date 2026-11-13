@@ -19,9 +19,15 @@ function parseCoords(text) {
   return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null;
 }
 
-export default function Settings() {
+export default function Settings({ go }) {
   return (
     <div className="stack">
+      <div className="card" style={{ borderColor: 'var(--accent)' }}>
+        <div className="card-head">
+          <div><h2>Website texts, menu and photos</h2><p>Change the texts, the menu (items, descriptions, photos) and the photos of mariamcoffeeshop.com and of the table QR page.</p></div>
+          <button className="btn primary" onClick={() => go?.('website')}>Open the website editor →</button>
+        </div>
+      </div>
       <Site />
       <EmailSetup />
       <PosUploader />
