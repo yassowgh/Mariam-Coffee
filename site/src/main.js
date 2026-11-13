@@ -9,32 +9,13 @@ import '@fontsource/montserrat/latin-ext-400.css';
 import '@fontsource/montserrat/latin-600.css';
 import '@fontsource/montserrat/latin-ext-600.css';
 import './style.css';
-import { CATEGORIES, EXTRAS, ITEMS } from './menu.js';
-import { LANGS, T } from './text.js';
+import { content, image, pickLang, saveLang, txt } from './content.js';
+import { createMenu } from './menuview.js';
 import { ART } from './art.js';
 
-const LI = { en: 0, ar: 1, tr: 2 };
 let lang = pickLang();
-let live = null; // { [itemNo]: { p, a } } from the POS
-let current = 'coffee';
-
-function pickLang() {
-  const q = new URLSearchParams(location.search).get('lang');
-  if (q && LANGS[q]) return q;
-  try { const s = localStorage.getItem('mc-lang'); if (s && LANGS[s]) return s; } catch { /* private mode */ }
-  const n = (navigator.languages || [navigator.language || 'en']).map((x) => String(x).slice(0, 2).toLowerCase());
-  return n.find((x) => LANGS[x]) || 'en';
-}
-
-const tr = (k) => (T[k] ? T[k][LI[lang]] || T[k][0] : '');
-const nm = (arr) => (arr ? arr[LI[lang]] || arr[0] : '');
-
-function price(item) {
-  const l = live && live[item.id];
-  const v = l ? l.p : item.p;
-  return `${new Intl.NumberFormat(lang === 'tr' ? 'tr-TR' : 'en-GB', { maximumFractionDigits: 2 }).format(v)} TL`;
-}
-const shown = (item) => !(live && live[item.id] && live[item.id].a === false) && !(live && Object.keys(live).length && !live[item.id]);
+const tr = (k) => txt(k, lang);
+const menu = createMenu({ tabsEl: document.getElementById('tabs'), listEl: document.getElementById('menu-list'), getLang: () => lang });
 
 function applyLang() {
   const html = document.documentElement;
@@ -43,73 +24,65 @@ function applyLang() {
   document.querySelectorAll('[data-t]').forEach((el) => { const v = tr(el.dataset.t); if (v) el.textContent = v; });
   document.querySelectorAll('[data-t-alt]').forEach((el) => { const v = tr(el.dataset.tAlt); if (v) { el.alt = v; if (el.parentElement.matches('button')) el.parentElement.setAttribute('aria-label', v); } });
   document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
-  renderMenu();
+  menu.render();
 }
 
-function renderTabs() {
-  const tabs = document.getElementById('tabs');
-  tabs.innerHTML = '';
-  for (const c of CATEGORIES) {
-    if (!ITEMS.some((x) => x.cat === c.id && shown(x))) continue;
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', String(c.id === current));
-    b.className = 'tab';
-    b.innerHTML = `<span class="tab-ic">${ART[c.icon]}</span><span></span>`;
-    b.lastChild.textContent = nm(c.name);
-    b.addEventListener('click', () => { current = c.id; renderMenu(); });
-    tabs.appendChild(b);
-  }
+// ---- the owner's photos (Settings → Website) replace the built-in ones
+function setImg(img, src) {
+  if (!img || !src) return;
+  const pic = img.closest('picture');
+  if (pic) pic.querySelectorAll('source').forEach((s) => s.remove());
+  img.removeAttribute('srcset');
+  img.src = src;
 }
-
-function itemRow(x) {
-  const li = document.createElement('li');
-  li.className = 'item';
-  const name = document.createElement('div');
-  name.className = 'item-name';
-  const t = document.createElement('span');
-  t.textContent = nm(x.name);
-  name.appendChild(t);
-  if (x.d) { const d = document.createElement('small'); d.textContent = nm(x.d); name.appendChild(d); }
-  const dots = document.createElement('span'); dots.className = 'dots';
-  const p = document.createElement('span'); p.className = 'price num'; p.textContent = price(x);
-  li.append(name, dots, p);
-  return li;
+setImg(document.querySelector('.hero-img'), content.images?.hero);
+setImg(document.querySelector('.about-photo'), content.images?.about);
+setImg(document.querySelector('#map > img'), content.images?.visit);
+['sig1', 'sig2', 'sig3'].forEach((k, i) => {
+  const src = image(k, null);
+  const art = document.querySelectorAll('.sig-card .art')[i];
+  if (src && art) { art.removeAttribute('data-art'); art.classList.add('art-photo'); art.innerHTML = `<img src="${src}" alt="" loading="lazy" decoding="async" />`; }
+});
+if (Array.isArray(content.gallery) && content.gallery.length) {
+  const grid = document.querySelector('.g-grid');
+  const n = content.gallery.length;
+  grid.innerHTML = '';
+  content.gallery.forEach((g, i) => {
+    const fig = document.createElement('figure');
+    let cls = 'g-item';
+    if (i === 0) cls += ' g-big';
+    if (i === n - 1 && n > 3 && (n - 3) % 3 === 2) cls += ' g-wide';
+    if (i === n - 1 && n > 3 && (n - 3) % 3 === 1) cls += ' g-full';
+    if (i === n - 1 && i > 0 && (n - 1) % 2 === 1) cls += ' g-wide-m';
+    fig.className = cls;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'g-open'; btn.dataset.full = g.full || g.src;
+    const im = document.createElement('img');
+    im.src = g.src; im.loading = 'lazy'; im.decoding = 'async'; im.width = 640; im.height = 360;
+    btn.appendChild(im);
+    const cap = document.createElement('figcaption');
+    cap.dataset.t = 'gallery.' + i;
+    fig.append(btn, cap);
+    grid.appendChild(fig);
+  });
 }
-
-function renderMenu() {
-  renderTabs();
-  const box = document.getElementById('menu-list');
-  box.innerHTML = '';
-  const cat = CATEGORIES.find((c) => c.id === current);
-  const panel = document.createElement('div');
-  panel.className = 'panel';
-  panel.setAttribute('role', 'tabpanel');
-  const head = document.createElement('div');
-  head.className = 'panel-head';
-  head.innerHTML = `<span class="panel-ic">${ART[cat.icon]}</span><h3></h3>`;
-  head.querySelector('h3').textContent = nm(cat.name);
-  const ul = document.createElement('ul');
-  ul.className = 'items';
-  ITEMS.filter((x) => x.cat === current && shown(x)).forEach((x) => ul.appendChild(itemRow(x)));
-  panel.append(head, ul);
-  if (['coffee', 'turkish', 'iced', 'fresh'].includes(current)) {
-    const ex = EXTRAS.filter(shown);
-    if (ex.length) {
-      const h = document.createElement('h4'); h.className = 'extras-h'; h.textContent = tr('menu.extras');
-      const u = document.createElement('ul'); u.className = 'items extras';
-      ex.forEach((x) => u.appendChild(itemRow(x)));
-      panel.append(h, u);
-    }
-  }
-  box.appendChild(panel);
+function galleryCaptions() {
+  if (!Array.isArray(content.gallery)) return;
+  document.querySelectorAll('.g-grid figure').forEach((fig, i) => {
+    const c = content.gallery[i]?.caption || [];
+    const v = c[{ en: 0, ar: 1, tr: 2 }[lang]] || c[0] || '';
+    fig.querySelector('figcaption').textContent = v;
+    fig.querySelector('figcaption').hidden = !v;
+    const im = fig.querySelector('img'); im.alt = v;
+    fig.querySelector('button').setAttribute('aria-label', v || 'Photo');
+  });
 }
 
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
   lang = b.dataset.lang;
-  try { localStorage.setItem('mc-lang', lang); } catch { /* ignore */ }
+  saveLang(lang);
   applyLang();
+  galleryCaptions();
 }));
 document.querySelectorAll('[data-art]').forEach((el) => { el.innerHTML = ART[el.dataset.art]; });
 document.getElementById('year').textContent = String(new Date().getFullYear());
@@ -121,6 +94,7 @@ window.addEventListener('scroll', onScroll, { passive: true });
 onScroll();
 
 applyLang();
+galleryCaptions();
 setupLightbox();
 
 // The Google map (heavy) loads only when someone asks for it.
@@ -169,7 +143,3 @@ function setupLightbox() {
     if (Math.abs(dx) > 50) show(at + ((dx < 0) !== rtl() ? 1 : -1));
   });
 }
-
-fetch('/api/menu').then((r) => (r.ok ? r.json() : null)).then((d) => {
-  if (d && d.prices && Object.keys(d.prices).length) { live = d.prices; renderMenu(); }
-}).catch(() => { /* keep the built-in prices */ });

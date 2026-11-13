@@ -5,7 +5,7 @@ import { unzipSync } from 'fflate';
 import { readTable } from '../src/lib/paradox.js';
 
 const DATA_KEY = 'dataset';
-const CACHE_KEY = 'menu-prices';
+const CACHE_KEY = 'menu-prices-v2'; // v2: includes item names
 
 async function extractPrices(zipBytes) {
   const files = unzipSync(new Uint8Array(zipBytes), { filter: (f) => /(^|\/)items\.db$/i.test(f.name) });
@@ -14,10 +14,10 @@ async function extractPrices(zipBytes) {
   if (!bufs.length) return null;
   const prices = {};
   for (const buf of bufs) {
-    const { rows } = await readTable(buf, { fields: ['ItemNo', 'SellingPrice1', 'Active'], yieldEvery: 1e9 });
+    const { rows } = await readTable(buf, { fields: ['ItemNo', 'Name', 'EnglishName', 'SellingPrice1', 'Active'], yieldEvery: 1e9 });
     for (const r of rows) {
       if (r.ItemNo == null || !(r.SellingPrice1 > 0)) continue;
-      prices[r.ItemNo] = { p: Math.round(r.SellingPrice1 * 100) / 100, a: r.Active !== false };
+      prices[r.ItemNo] = { p: Math.round(r.SellingPrice1 * 100) / 100, a: r.Active !== false, n: String(r.EnglishName || r.Name || '').trim().slice(0, 80) };
     }
   }
   return prices;

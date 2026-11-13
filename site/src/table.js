@@ -1,4 +1,4 @@
-// The page behind the QR code on the tables (mariamcoffeeshop.com/t): menu, Google review, Instagram.
+// The page behind the QR code on the tables (mariamcoffeeshop.com/t/): menu (on this page), Google review, Instagram.
 import '@fontsource/el-messiri/latin-700.css';
 import '@fontsource/el-messiri/arabic-700.css';
 import '@fontsource/el-messiri/arabic-400.css';
@@ -7,39 +7,43 @@ import '@fontsource/montserrat/latin-600.css';
 import '@fontsource/montserrat/latin-ext-400.css';
 import '@fontsource/montserrat/latin-ext-600.css';
 import './table.css';
+import { content, pickLang, saveLang, txt } from './content.js';
+import { createMenu } from './menuview.js';
 
-const T = {
-  'tbl.title': ['Welcome to Mariam', 'أهلاً بك في مريم', "Mariam'a hoş geldiniz"],
-  'tbl.sub': ['Enjoy your coffee. What would you like to do?', 'استمتع بقهوتك. ماذا تودّ أن تفعل؟', 'Kahvenizin tadını çıkarın. Ne yapmak istersiniz?'],
-  'tbl.menu': ['See the menu', 'تصفّح القائمة', 'Menüyü gör'],
-  'tbl.menu.s': ['Drinks, desserts and prices', 'المشروبات والحلويات والأسعار', 'İçecekler, tatlılar ve fiyatlar'],
-  'tbl.google': ['Review us on Google', 'قيّمنا على Google', "Google'da bizi değerlendirin"],
-  'tbl.insta': ['Follow us on Instagram', 'تابعنا على إنستغرام', "Instagram'da bizi takip edin"],
-  'tbl.site': ['mariamcoffeeshop.com', 'mariamcoffeeshop.com', 'mariamcoffeeshop.com'],
-};
-const LI = { en: 0, ar: 1, tr: 2 };
+let lang = pickLang();
+const menu = createMenu({ tabsEl: document.getElementById('tabs'), listEl: document.getElementById('menu-list'), getLang: () => lang });
+const home = document.getElementById('home');
+const view = document.getElementById('menu-view');
 
-function pick() {
-  const q = new URLSearchParams(location.search).get('lang');
-  if (q && q in LI) return q;
-  try { const s = localStorage.getItem('mc-lang'); if (s && s in LI) return s; } catch { /* private mode */ }
-  const n = (navigator.languages || [navigator.language || 'en']).map((x) => String(x).slice(0, 2).toLowerCase());
-  return n.find((x) => x in LI) || 'en';
-}
+// the owner's photos (Settings → Website)
+if (content.images?.tableLogo) document.querySelector('.tbl-logo').src = content.images.tableLogo;
+if (content.images?.tableBg) document.body.style.setProperty('--tbl-bg', `url("${content.images.tableBg}")`), document.body.classList.add('has-bg');
 
-function apply(lang) {
+function apply() {
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = T[el.dataset.t][LI[lang]]; });
+  document.querySelectorAll('[data-t]').forEach((el) => { const v = txt(el.dataset.t, lang); if (v) el.textContent = v; });
   document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
-  // the menu opens in the same language
-  document.getElementById('menu-link').href = `/?lang=${lang}#menu`;
+  menu.render();
 }
 
-let lang = pick();
-apply(lang);
+// the menu opens on this page; the phone's back button closes it
+function show() {
+  const open = location.hash === '#menu';
+  view.hidden = !open;
+  home.hidden = open;
+  window.scrollTo(0, 0);
+  if (open) view.querySelector('.tbl-back').focus({ preventScroll: true });
+}
+document.getElementById('menu-back').addEventListener('click', () => {
+  if (location.hash === '#menu') history.back(); else show();
+});
+window.addEventListener('hashchange', show);
+
+apply();
+show();
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
   lang = b.dataset.lang;
-  try { localStorage.setItem('mc-lang', lang); } catch { /* ignore */ }
-  apply(lang);
+  saveLang(lang);
+  apply();
 }));

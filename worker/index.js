@@ -14,6 +14,7 @@
 import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
 import { safeEqual, sha256Hex } from './auth.js';
 import { handleMenu, refreshMenuPrices } from './menu.js';
+import { handleContent, handleMedia, withContent } from './content.js';
 
 const KEY = 'dataset';
 const MAX_BYTES = 24 * 1024 * 1024; // Workers KV value limit is 25 MiB
@@ -190,6 +191,8 @@ async function route(request, env, url, ctx) {
   if (path === '/api/data') return handleData(request, env, ctx);
   if (path === '/api/costs') return handleCosts(request, env);
   if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
+  if (path === '/api/content') return handleContent(request, env);
+  if (path === '/api/media' || (path.startsWith('/media/') && request.method === 'GET')) return handleMedia(request, env, path);
   if (path === '/api/auth' && request.method === 'POST') {
     return (await allowed(request, env))
       ? new Response(null, { status: 204 })
@@ -201,6 +204,19 @@ async function route(request, env, url, ctx) {
 
   // Pages and files
   if (url.pathname === APP) return Response.redirect(url.origin + APP + '/' + url.search, 301);
+  // The website and the table page get the owner's edited content put into the page.
+  if (request.method === 'GET' && ['/', '/index.html', '/t/', '/t/index.html'].includes(url.pathname)) {
+    const plain = new Request(url.toString(), { headers: { accept: 'text/html' } }); // no If-None-Match: always the full page
+    const page = await env.ASSETS.fetch(plain);
+    if (page.status === 200) {
+      const out = await withContent(page, env);
+      const r = new Response(out.body, out);
+      r.headers.delete('etag');
+      r.headers.set('cache-control', 'no-cache');
+      return r;
+    }
+    return page;
+  }
   const res = await env.ASSETS.fetch(request);
   if (res.status !== 404) return withCache(url.pathname, res);
   const accept = request.headers.get('accept') || '';

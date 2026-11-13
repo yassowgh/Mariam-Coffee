@@ -12,6 +12,7 @@ import Clock from './staff/Clock.jsx';
 import Attendance from './staff/Attendance.jsx';
 import Team from './staff/Team.jsx';
 import Settings from './staff/Settings.jsx';
+import WebsiteEditor from './staff/WebsiteEditor.jsx';
 import Account from './staff/Account.jsx';
 
 // [key, label, roles allowed (owner always)]
@@ -24,6 +25,7 @@ const AREAS = [
   ['attendance', 'Timesheets', ['manager']],
   ['team', 'Team', ['manager', 'accountant']],
   ['salaries', 'Salaries', ['manager', 'accountant']],
+  ['website', 'Website', []],
   ['settings', 'Settings', []],
 ];
 // owner: everything; accountant: sales, accounting, salaries; manager: schedule, timesheets, team, salaries; barista: clock
@@ -151,7 +153,7 @@ export default function Root() {
   const shell = { user, areas, account };
   const title = list.find(([k]) => k === area)?.[1] || 'Mariam Coffee';
   if (area === 'reports') return <App shell={shell} />;
-  const View = { clock: Clock, accounting: Accounting, finance: Finance, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, settings: Settings }[area];
+  const View = { clock: Clock, accounting: Accounting, finance: Finance, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, website: WebsiteEditor, settings: Settings }[area];
   return (
     <>
       <Header title={`Mariam Coffee · ${title}`} subtitle={`Signed in as ${user.name}`} areas={areas} account={account} />

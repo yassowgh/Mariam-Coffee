@@ -12,7 +12,7 @@
   <script type="module" src="/src/table.js"></script>
 </head>
 <body class="tbl">
-  <main class="tbl-main">
+  <main class="tbl-main" id="home">
     <div class="tbl-langs" role="group" aria-label="Language">
       <button type="button" data-lang="en" lang="en">EN</button>
       <button type="button" data-lang="ar" lang="ar">عربي</button>
@@ -22,13 +22,13 @@
     <h1 data-t="tbl.title">Welcome to Mariam</h1>
     <p class="tbl-sub" data-t="tbl.sub">Enjoy your coffee. What would you like to do?</p>
     <nav class="tbl-actions">
-      <a class="tbl-btn tbl-menu" id="menu-link" href="/#menu">
+      <a class="tbl-btn tbl-menu" id="menu-link" href="#menu">
         <span class="tbl-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
         <span><b data-t="tbl.menu">See the menu</b><small data-t="tbl.menu.s">Drinks, desserts and prices</small></span>
       </a>
       <a class="tbl-btn tbl-google" href="https://g.page/r/CWSMLS5rSzlAEBE/review" target="_blank" rel="noopener">
-        <span class="tbl-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg></span>
-        <span><b data-t="tbl.google">Review us on Google</b><small class="stars" aria-hidden="true">★★★★★</small></span>
+        <img class="tbl-gimg" src="/brand/google-reviews.webp" alt="Google ★★★★★" width="120" height="59" />
+        <span><b data-t="tbl.google">Review us on Google</b><small data-t="tbl.google.s">It takes 10 seconds</small></span>
       </a>
       <a class="tbl-btn tbl-insta" href="https://www.instagram.com/mariamcoffee.tr/" target="_blank" rel="noopener">
         <span class="tbl-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r=".6"/></svg></span>
@@ -37,5 +37,16 @@
     </nav>
     <p class="tbl-foot"><a href="/" data-t="tbl.site">mariamcoffeeshop.com</a></p>
   </main>
+
+  <section class="tbl-menu-view" id="menu-view" hidden aria-labelledby="menu-title">
+    <header class="tbl-menu-top">
+      <button type="button" class="tbl-back" id="menu-back"><span aria-hidden="true">‹</span> <span data-t="tbl.back">Back</span></button>
+      <h1 id="menu-title" data-t="menu.title">Menu</h1>
+      <img src="/brand/mark-cream.svg" alt="" width="22" height="34" />
+    </header>
+    <p class="tbl-note" data-t="menu.note">Prices in Turkish lira (TL), including VAT.</p>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div id="menu-list" class="menu-list"></div>
+  </section>
 </body>
 </html>

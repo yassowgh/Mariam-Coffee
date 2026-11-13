@@ -49,6 +49,15 @@ export const T = {
   'foot.review': ['Google review', 'قيّمنا على Google', 'Google yorumu'],
   'foot.staff': ['Staff', 'الموظفون', 'Personel'],
   'foot.rights': ['All rights reserved.', 'جميع الحقوق محفوظة.', 'Tüm hakları saklıdır.'],
+  // table page (/t/)
+  'tbl.title': ['Welcome to Mariam', 'أهلاً بك في مريم', "Mariam'a hoş geldiniz"],
+  'tbl.sub': ['Enjoy your coffee. What would you like to do?', 'استمتع بقهوتك. ماذا تودّ أن تفعل؟', 'Kahvenizin tadını çıkarın. Ne yapmak istersiniz?'],
+  'tbl.menu': ['See the menu', 'تصفّح القائمة', 'Menüyü gör'],
+  'tbl.menu.s': ['Drinks, desserts and prices', 'المشروبات والحلويات والأسعار', 'İçecekler, tatlılar ve fiyatlar'],
+  'tbl.google': ['Review us on Google', 'قيّمنا على Google', "Google'da bizi değerlendirin"],
+  'tbl.google.s': ['It takes 10 seconds', 'يستغرق 10 ثوانٍ فقط', 'Sadece 10 saniye sürer'],
+  'tbl.insta': ['Follow us on Instagram', 'تابعنا على إنستغرام', "Instagram'da bizi takip edin"],
+  'tbl.back': ['Back', 'رجوع', 'Geri'],
   'nf.title': ['This page could not be found', 'الصفحة غير موجودة', 'Sayfa bulunamadı'],
   'nf.home': ['Back to the home page', 'العودة إلى الصفحة الرئيسية', 'Ana sayfaya dön'],
 };

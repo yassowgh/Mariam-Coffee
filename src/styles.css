@@ -464,3 +464,26 @@ table.schedule .today { background: rgba(128,128,128,.14); background: color-mix
 .cat-checks legend { font-size: 13px; font-weight: 650; padding: 0 4px; }
 .daily-cat th, .daily-cat td { white-space: nowrap; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 6px; vertical-align: -1px; flex: none; }
+
+/* Website editor (owner) */
+.form-grid.three { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.text-edit { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.text-edit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.text-edit textarea { width: 100%; font: inherit; }
+.menu-edit { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 14px; border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.menu-edit.is-hidden { opacity: .55; }
+.menu-edit-img { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.menu-edit-img img { width: 120px; height: 90px; object-fit: cover; border-radius: 8px; background: var(--surface-2); }
+.menu-edit-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+@media (max-width: 640px) { .menu-edit { grid-template-columns: 1fr; } }
+.add-box { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; display: grid; gap: 8px; }
+.pos-pick { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.pos-pick li { padding: 7px 10px; border-bottom: 1px solid var(--border); }
+.check-field { flex-direction: row; align-items: center; gap: 8px; }
+.slot-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.slot { display: grid; gap: 8px; align-content: start; border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+.slot-img { height: 120px; border-radius: 8px; background: var(--surface-2); display: grid; place-items: center; overflow: hidden; }
+.slot-img img { width: 100%; height: 100%; object-fit: cover; }
+.slot:has(.slot-img[style]) .slot-img img { object-fit: contain; padding: 8px; }
+.save-bar { position: sticky; bottom: 12px; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
