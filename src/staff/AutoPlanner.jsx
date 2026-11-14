@@ -16,6 +16,7 @@ const RULE_TYPES = [
   ['minHours', 'At least N hours this week'],
   ['maxDays', 'At most N days this week'],
   ['minStaff', 'At least N baristas at the café'],
+  ['maxStaff', 'At most N baristas at the same time'],
 ];
 const EXAMPLE = 'Jawad can work on Tuesday after 8\nAbrar is off on Friday\nAt least 2 baristas on Friday from 17:00\nEssa at most 30 hours this week';
 
@@ -186,6 +187,8 @@ export default function AutoPlanner({ week, people, demandState, existing, onClo
         <div className="form-grid" style={{ marginTop: 10 }}>
           <Num label="Orders one barista handles per hour" v={settings.perBarista} set={(v) => setSettings({ ...settings, perBarista: v })} min={1} />
           <Num label="Minimum baristas while open" v={settings.minStaff} set={(v) => setSettings({ ...settings, minStaff: v })} min={1} />
+          <label className="field"><span>Most baristas at the same time (empty = no limit)</span>
+            <input type="number" min={1} value={settings.maxStaff ?? ''} placeholder="No limit" onChange={(e) => setSettings({ ...settings, maxStaff: e.target.value === '' ? null : Math.max(1, Number(e.target.value)) })} /></label>
           <Num label="Overlap at hand-over (minutes)" v={settings.overlap} set={(v) => setSettings({ ...settings, overlap: v })} min={0} step={15} />
           <Num label="Shortest shift (hours)" v={settings.minShift} set={(v) => setSettings({ ...settings, minShift: v })} min={2} />
           <Num label="Longest shift (hours)" v={settings.maxShift} set={(v) => setSettings({ ...settings, maxShift: v })} min={3} />
@@ -233,20 +236,20 @@ function AddRule({ people, onAdd }) {
   const [open, setOpen] = useState(false);
   const [r, setR] = useState({ type: 'off', person: people[0]?.username || '', days: [], from: '', to: '', number: '' });
   if (!open) return <button className="btn" onClick={() => setOpen(true)}>＋ Add a condition</button>;
-  const needsTime = ['available', 'fixed', 'minStaff'].includes(r.type);
-  const needsNum = ['maxHours', 'minHours', 'maxDays', 'minStaff'].includes(r.type);
+  const needsTime = ['available', 'fixed', 'minStaff', 'maxStaff'].includes(r.type);
+  const needsNum = ['maxHours', 'minHours', 'maxDays', 'minStaff', 'maxStaff'].includes(r.type);
   const needsDays = !['maxHours', 'minHours', 'maxDays'].includes(r.type);
   function add() {
     if (needsNum && !r.number) { alert('Enter the number.'); return; }
     if (r.type === 'fixed' && (!r.from || !r.to)) { alert('Enter the start and end time.'); return; }
-    onAdd({ type: r.type, person: r.type === 'minStaff' ? null : r.person, days: needsDays ? r.days : [], from: needsTime ? r.from || null : null, to: needsTime ? r.to || null : null, number: needsNum ? Number(r.number) : null, text: '' });
+    onAdd({ type: r.type, person: ['minStaff', 'maxStaff'].includes(r.type) ? null : r.person, days: needsDays ? r.days : [], from: needsTime ? r.from || null : null, to: needsTime ? r.to || null : null, number: needsNum ? Number(r.number) : null, text: '' });
     setOpen(false);
     setR({ ...r, days: [], from: '', to: '', number: '' });
   }
   return (
     <div className="add-rule">
       <select value={r.type} onChange={(e) => setR({ ...r, type: e.target.value })} aria-label="Kind of condition">{RULE_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-      {r.type !== 'minStaff' && <select value={r.person} onChange={(e) => setR({ ...r, person: e.target.value })} aria-label="Barista">{people.map((p) => <option key={p.id} value={p.username}>{p.name}</option>)}</select>}
+      {!['minStaff', 'maxStaff'].includes(r.type) && <select value={r.person} onChange={(e) => setR({ ...r, person: e.target.value })} aria-label="Barista">{people.map((p) => <option key={p.id} value={p.username}>{p.name}</option>)}</select>}
       {needsNum && <input type="number" min={1} value={r.number} onChange={(e) => setR({ ...r, number: e.target.value })} placeholder="N" style={{ width: 70 }} aria-label="Number" />}
       {needsTime && <><input type="time" value={r.from} onChange={(e) => setR({ ...r, from: e.target.value })} aria-label="From" />–<input type="time" value={r.to} onChange={(e) => setR({ ...r, to: e.target.value })} aria-label="To" /></>}
       {needsDays && (

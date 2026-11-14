@@ -77,6 +77,15 @@ function editDistance(a, b) {
 }
 const NOT_NAMES = new Set(['after', 'before', 'from', 'until', 'only', 'work', 'works', 'shift', 'shifts', 'hours', 'days', 'week', 'with', 'they', 'them', 'have', 'there', 'each', 'every', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'morning', 'evening', 'night', 'close', 'open', 'least', 'most', 'baristas', 'barista', 'people', 'weekend', 'weekdays']);
 
+const AR_LAT = { ا: '', ء: '', ئ: '', ؤ: '', ب: 'b', ت: 't', ث: 't', ج: 'j', ح: 'h', خ: 'k', د: 'd', ذ: 'd', ر: 'r', ز: 'z', س: 's', ش: 's', ص: 's', ض: 'd', ط: 't', ظ: 'z', ع: '', غ: 'g', ف: 'f', ق: 'k', ك: 'k', ل: 'l', م: 'm', ن: 'n', ه: 'h', ة: '', و: '', ي: '', ى: '' };
+/** Consonant outline of a name in Latin or Arabic letters: "Basel" / "باسل" -> "bsl". */
+function skeleton(name) {
+  const lat = /[\u0600-\u06FF]/.test(name)
+    ? [...name].map((c) => AR_LAT[c] ?? '').join('')
+    : name.toLowerCase().replace(/th/g, 't').replace(/kh/g, 'k').replace(/gh/g, 'g').replace(/sh/g, 's').replace(/q|c/g, 'k').replace(/[^a-z]/g, '').replace(/[aeiouyw]/g, '');
+  return lat.replace(/(.)\1+/g, '$1');
+}
+
 /** Find the people named in a sentence (first name, full name or username, small typos allowed, or "everyone"). */
 function readPeople(s, people) {
   if (EVERYONE.test(s)) return [...people];
@@ -87,6 +96,13 @@ function readPeople(s, people) {
       const re = new RegExp(`(^|[^a-z])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`);
       if (re.test(s)) { hits.push(p); break; }
     }
+  }
+  // names written in Arabic letters ("باسل" = Basel): compare the consonants
+  for (const w of s.match(/[\u0621-\u064A]{3,}/g) || []) {
+    const sk = skeleton(w);
+    if (!sk) continue;
+    const same = people.filter((p) => skeleton(p.name.split(/\s+/)[0]) === sk || skeleton(p.username) === sk);
+    if (same.length === 1 && !hits.includes(same[0])) hits.push(same[0]);
   }
   // typos such as "esissa" for Essa: a word close to exactly one first name
   for (const w of s.match(/[a-zçğıöşü]{4,}/g) || []) {
@@ -100,6 +116,63 @@ function readPeople(s, people) {
   return hits;
 }
 
+// ---- Arabic: turned into the English words the reader understands (days, morning/evening, from/to, except, off)
+const AR_DAYS = [['احد', 'sunday'], ['اثنين', 'monday'], ['اتنين', 'monday'], ['ثلاثاء', 'tuesday'], ['ثلاثا', 'tuesday'], ['تلات', 'tuesday'],
+  ['اربعاء', 'wednesday'], ['اربعا', 'wednesday'], ['خميس', 'thursday'], ['جمعه', 'friday'], ['سبت', 'saturday']];
+export function arabicToEnglish(t) {
+  if (!/[؀-ۿ]/.test(t)) return t;
+  let s = t
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x6F0))
+    .replace(/[ً-ْـ]/g, '') // tashkeel, tatweel
+    .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/،/g, ',').replace(/؛/g, ';');
+  const W = (re, en) => { s = s.replace(new RegExp(`(^|[\\s,(:-])(?:${re})(?=$|[\\s,.;:)-])`, 'g'), `$1 ${en} `); };
+  W('كل يوم|كل الايام|يوميا|طول الاسبوع', 'every day');
+  W('نهايه الاسبوع|الويكند|ويكند', 'weekend');
+  for (const [ar, en] of AR_DAYS) W(`(?:و|ب|ل)?(?:يوم\\s*)?(?:ال)?${ar}`, en);
+  // times: "11 الصباح" / "8 مساء" / "1 بالليل"
+  s = s.replace(/(\d{1,2}(?:[:.]\d{2})?)\s*(?:ال|في ال|بال)?(?:صباحا|صباح|ص)(?=$|[\s,.;:)-])/g, '$1am')
+    // "at night": 12–4 are after midnight (am), 5–11 are evening (pm)
+    .replace(/(\d{1,2}(?:[:.]\d{2})?)\s*(?:ال|في ال|بال)?(?:ليلا|ليل)(?=$|[\s,.;:)-])/g, (m, h) => { const n = Number(String(h).split(/[:.]/)[0]); return n === 12 || n <= 4 ? `${h}am` : `${h}pm`; })
+    .replace(/(\d{1,2}(?:[:.]\d{2})?)\s*(?:ال|في ال|بال)?(?:مساءا|مساء|مسا|م|عصرا|عصر)(?=$|[\s,.;:)-])/g, '$1pm')
+    .replace(/(\d{1,2}(?:[:.]\d{2})?)\s*(?:ال|بال)?(?:ظهرا|ظهر)(?=$|[\s,.;:)-])/g, (m, h) => (Number(h) === 12 ? '12pm' : `${h}pm`));
+  W('الساعه|ساعه ال', '');
+  W('من', 'from');
+  W('الي|حتي|لغايه|لحد|للساعه|ل', 'to');
+  W('الا|ما عدا|ماعدا|عدا|باستثناء|ما عدا يوم', 'except');
+  W('اجازه|اجازته|عطله|راحه|اوف|فري', 'off');
+  W('بعد', 'after');
+  W('قبل', 'before');
+  W('علي الاكثر|كحد اقصي|بحد اقصي|اقصي حد|اقصي|اكثر شي', 'at most');
+  W('علي الاقل|كحد ادني|بحد ادني|ادني', 'at least');
+  W('باريستا|باريستات|موظف|موظفين|اشخاص|شخص', 'baristas');
+  W('ساعات|ساعه', 'hours');
+  W('ايام', 'days');
+  W('لا يستطيع|ما بيقدر|ما يقدر|لا يمكنه|لا يقدر|مش فاضي|مو فاضي', 'cant work');
+  W('يعمل|يشتغل|دوامه|دوام', 'works');
+  W('مواعيد العمل|ساعات العمل|نفتح|الفتح', 'working hours are');
+  W('و', 'and');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/** Puts each condition next to its person: a line with only a name ("Essa:") applies to the lines below it,
+ *  and a line starting with "except …" belongs to the line before. */
+function groupLines(text, people) {
+  const out = [];
+  let current = null;
+  for (const raw of text.split(/\n/)) {
+    const line = arabicToEnglish(raw.trim());
+    if (!line) { current = null; continue; } // an empty line ends a person's block
+    const bare = line.replace(/[:：\-–]+\s*$/, '').trim();
+    const named = readPeople(' ' + bare.toLowerCase() + ' ', people);
+    const hasCondition = /\d|\b(off|every|daily|from|to|after|before|except|works?|cant|can|at|most|least|max|min|hours?|days?|only|available|weekends?|weekdays?|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat)\b/i.test(bare);
+    if (named.length === 1 && bare.split(/\s+/).length <= 3 && !hasCondition) { current = bare; continue; }
+    if (/^(except|but|apart from)\b/i.test(line) && out.length) { out[out.length - 1] += ' ' + line; continue; }
+    const cafeWide = /\b(\d+|one|two|three|four|five|six)\s+(baristas?|people|persons|staff|workers|employees)\b|\b(working hours|opening hours|business hours|we (open|close)|close at|open at)\b/i.test(line);
+    out.push(current && !named.length && !cafeWide && !EVERYONE.test(' ' + line.toLowerCase() + ' ') ? `${current}: ${line}` : line);
+  }
+  return out.join('\n');
+}
+
 function sentences(text) {
   return text.split(/\n|;|\.(?=\s|$)(?!\d)/).map((x) => x.trim()).filter(Boolean);
 }
@@ -109,7 +182,7 @@ const CLAUSE = /\s+(?:and|but|,)\s+(?=(?:is|are|works?|can|cant|cannot|only|off|
 
 export function parseConditions(text, people) {
   const rules = [], unclear = [];
-  for (const original of sentences(text)) {
+  for (const original of sentences(groupLines(text, people))) {
     const norm = (x) => ' ' + x.toLowerCase().replace(/[’']/g, '').replace(/\s+/g, ' ') + ' ';
     const clauses = norm(original).trim().split(CLAUSE);
     let subject = null;
@@ -128,6 +201,33 @@ export function parseConditions(text, people) {
 }
 
 function readOne(s, people, inherited) {
+  const ex = /\b(?:except|apart from|but not)\b/.exec(s);
+  if (ex) {
+    const main = s.slice(0, ex.index) + ' ', rest = ' ' + s.slice(ex.index + ex[0].length) + ' ';
+    const exDays = readDays(rest);
+    if (exDays.found && exDays.days.length) {
+      const m = readOne(main, people, inherited);
+      if (m.error) return m;
+      const who = readPeople(main, people).length ? readPeople(main, people) : inherited || [];
+      const out = [];
+      for (const r of m.rules) {
+        const base = r.days && r.days.length ? r.days : [0, 1, 2, 3, 4, 5, 6];
+        out.push({ ...r, days: base.filter((d) => !exDays.days.includes(d)) });
+      }
+      const between = new RegExp(`(?:from|between)?\\s*${TIME}\\s*(?:-|–|to|till|until|and)\\s*${TIME}`).exec(rest);
+      const isOff = /\b(off|holiday|leave|free|rest)\b/.test(rest) || !between;
+      const sample = m.rules[0];
+      for (const p of who) {
+        if (isOff) out.push({ type: 'off', person: p.username, days: exDays.days, from: null, to: null, number: null });
+        else {
+          const from = readTime(between[1]), to = readTime(between[2]);
+          if (!from || !to) return { error: 'the times after “except” could not be read' };
+          out.push({ type: sample && sample.type === 'fixed' ? 'fixed' : 'available', person: p.username, days: exDays.days, from, to, number: null });
+        }
+      }
+      return { rules: out };
+    }
+  }
   const found = readPeople(s, people);
   const who = found.length ? found : inherited || [];
   const { days, found: hasDays } = readDays(s);
@@ -137,12 +237,13 @@ function readOne(s, people, inherited) {
   const negative = /\b(cant|cannot|can not|not available|unavailable|doesnt|does not|dont|do not|wont|will not|isnt|is not|not working|no work)\b/.test(s);
 
   // café-wide minimum staff: "at least 2 baristas on friday from 17:00"
-  const staff = /\b(at least|minimum|min)?\s*(\d+|one|two|three|four|five|six)\s+(baristas?|people|persons|staff|workers|employees)\b/.exec(s);
+  const staff = /\b(at least|minimum|min|at most|maximum|max|no more than|not more than|up to)?\s*(\d+|one|two|three|four|five|six)\s+(baristas?|people|persons|staff|workers|employees)\b/.exec(s);
   if (staff && !who.length) {
     const n = NUMS[staff[2]] ?? Number(staff[2]);
     const from = between ? readTime(between[1]) : after ? readTime(after[1]) : null;
     const to = between ? readTime(between[2]) : before ? readTime(before[1]) : null;
-    return { rules: [{ type: 'minStaff', person: null, days, from, to, number: n }] };
+    const isMax = /^(at most|maximum|max|no more than|not more than|up to)$/.test(staff[1] || '') || /\b(at most|maximum|max|no more than|not more than)\b/.test(s);
+    return { rules: [{ type: isMax ? 'maxStaff' : 'minStaff', person: null, days, from, to, number: n }] };
   }
   // opening hours: "we close at 1 am", "we open at 9 on fridays"
   const closeAt = new RegExp(`\\b(?:close|closes|closing|shut)\\b(?:\\s+at)?\\s+${TIME}`).exec(s);
@@ -212,6 +313,9 @@ export const PARSER_EXAMPLES = [
   'Abrar at most 30 hours',
   'Essa at most 5 days',
   'At least 2 baristas on Friday from 17:00',
+  'At most 3 baristas at the same time',
+  'Essa: every day 11am to 8pm except Sunday and Wednesday 9am to 6pm',
+  'باسل: كل يوم من ٩-٦ إلا الأحد إجازة',
   'Working hours are from 8 am to 1 am',
   'We close at 1am',
   'Everyone has one day off',

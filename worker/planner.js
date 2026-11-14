@@ -22,7 +22,7 @@ const RULES_SCHEMA = {
         additionalProperties: false,
         required: ['type', 'person', 'days', 'from', 'to', 'number', 'text'],
         properties: {
-          type: { type: 'string', enum: ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'hours'] },
+          type: { type: 'string', enum: ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'maxStaff', 'hours'] },
           person: NUL('string'),
           days: { type: 'array', items: { type: 'integer', enum: [0, 1, 2, 3, 4, 5, 6] } },
           from: NUL('string'),
@@ -44,11 +44,12 @@ Rule types:
 - maxHours / minHours: weekly hours for the person, in "number".
 - maxDays: the most days the person works this week, in "number".
 - minStaff: at least "number" baristas at the café on the given days between "from" and "to" (person null).
+- maxStaff: at most "number" baristas at the café at the same time, on the given days between "from" and "to" (person null).
 - hours: the café's opening hours on the given days: "from" = opening time, "to" = closing time (person null). "We close at 1am" -> hours, from null, to "01:00".
 - A condition about everyone ("everyone has one day off") becomes one rule per barista ("one day off" = maxDays 6).
 - One sentence can hold several conditions ("off on Wednesday and works only after 4 PM" = off + available); return each.
 Rules:
-- "person" is the username from the list of baristas (match first names, nicknames and spelling variants); null only for minStaff.
+- "person" is the username from the list of baristas (match first names, nicknames and spelling variants); null only for minStaff, maxStaff and hours. The text may be in Arabic, English or Turkish; a line with only a name applies to the lines under it.
 - "days" uses 0=Sunday … 6=Saturday; an empty list means every day of the week.
 - Times are 24-hour "HH:MM". Decide am/pm from the café's opening hours (for example "after 8" in a café that opens at 07:00 means 08:00, but "until 2" in the afternoon means 14:00). A time after midnight (e.g. "until 1am") is written "01:00".
 - "text" is the part of the manager's words the rule comes from.
@@ -129,8 +130,8 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
     const unclear = [...parsed.unclear];
     const rules = [];
     for (const r of parsed.rules) {
-      if (r.type !== 'minStaff' && r.type !== 'hours' && !(r.person && known.has(r.person.toLowerCase()))) { unclear.push(`${r.text || r.person}: no barista with that name`); continue; }
-      rules.push({ ...r, person: r.type === 'minStaff' || r.type === 'hours' ? null : r.person.toLowerCase(), source: env.ANTHROPIC_API_KEY ? 'claude' : 'cloudflare-ai' });
+      if (!['minStaff', 'maxStaff', 'hours'].includes(r.type) && !(r.person && known.has(r.person.toLowerCase()))) { unclear.push(`${r.text || r.person}: no barista with that name`); continue; }
+      rules.push({ ...r, person: ['minStaff', 'maxStaff', 'hours'].includes(r.type) ? null : r.person.toLowerCase(), source: env.ANTHROPIC_API_KEY ? 'claude' : 'cloudflare-ai' });
     }
     await audit(db, me, 'plan.parse', { rules: rules.length, unclear: unclear.length, by: env.ANTHROPIC_API_KEY ? 'claude' : 'workers-ai' });
     return json({ rules, unclear, by: env.ANTHROPIC_API_KEY ? 'Claude' : 'Cloudflare AI' });
@@ -174,7 +175,7 @@ const CF_SCHEMA = {
         type: 'object',
         required: ['type', 'person', 'days', 'from', 'to', 'number', 'text'],
         properties: {
-          type: { type: 'string', enum: ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'hours'] },
+          type: { type: 'string', enum: ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'maxStaff', 'hours'] },
           person: { type: 'string' },
           days: { type: 'array', items: { type: 'integer' } },
           from: { type: 'string' },
@@ -209,7 +210,7 @@ async function withWorkersAI(env, context, fail) {
   if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
   if (!out || !Array.isArray(out.rules)) fail(502, 'Cloudflare AI gave an answer that could not be read. Try again, or add the conditions by hand.');
   const time = (t) => (typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : null);
-  const TYPES = ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'hours'];
+  const TYPES = ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'maxStaff', 'hours'];
   return {
     rules: out.rules.filter((r) => r && TYPES.includes(r.type)).map((r) => ({
       type: r.type,

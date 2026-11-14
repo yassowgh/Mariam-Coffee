@@ -17,6 +17,7 @@ const SLOTS = 48;
 export const DEFAULT_SETTINGS = {
   perBarista: 20, // orders one barista can handle in an hour
   minStaff: 1,
+  maxStaff: null, // most baristas at the same time (null = no limit)
   overlap: 30, // minutes of overlap at a hand-over
   minShift: 4, // hours
   maxShift: 9,
@@ -71,6 +72,7 @@ export function describeRule(r, people) {
     case 'minHours': return `${who} works at least ${r.number} hours this week`;
     case 'maxDays': return `${who} works at most ${r.number} days this week`;
     case 'minStaff': return `At least ${r.number} baristas ${span ? span + ' ' : ''}on ${days}`;
+    case 'maxStaff': return `At most ${r.number} baristas at the same time ${span ? span + ' ' : ''}on ${days}`;
     case 'hours': return `Café ${[r.from && `opens ${r.from}`, r.to && `closes ${r.to}`].filter(Boolean).join(' and ')} on ${days}`;
     default: return r.text || r.type;
   }
@@ -102,6 +104,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
     const oh = hours[dow];
     const orders = slotOrders(demand, dow);
     const need = new Array(SLOTS).fill(0);
+    const cap = new Array(SLOTS).fill(s.maxStaff > 0 ? Number(s.maxStaff) : Infinity);
     let open = null, close = null;
     if (oh) {
       open = toSlot(oh.open);
@@ -113,8 +116,15 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
         const a = r.from ? toSlot(r.from) : open, b = r.to ? (toSlot(r.to) || SLOTS) : close;
         for (let k = Math.max(a, open); k < Math.min(b, close); k++) need[k] = Math.max(need[k], r.number);
       }
+      // "at most N baristas at the same time" (setting, or a condition for some days / hours)
+      for (const r of rules) {
+        if (r.type !== 'maxStaff' || !appliesTo(r, dow) || !r.number) continue;
+        const a = r.from ? toSlot(r.from) : 0, b = r.to ? (toSlot(r.to) || SLOTS) : SLOTS;
+        for (let k = a; k < b; k++) cap[k] = Math.min(cap[k], r.number);
+      }
+      for (let k = open; k < close; k++) need[k] = Math.min(need[k], cap[k]);
     }
-    return { date, dow, open, close, orders, need, cover: new Array(SLOTS).fill(0), dayOrders: demand.days[dow].orders };
+    return { date, dow, open, close, orders, need, cap, cover: new Array(SLOTS).fill(0), dayOrders: demand.days[dow].orders };
   });
 
   // ---- what each person may do
@@ -140,6 +150,8 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
     return b > a ? [a, b] : null;
   };
 
+  /** true if one more barista fits in [a, b) without going over "at most N at the same time" */
+  const fits = (day, a, b) => { for (let k = a; k < b; k++) if (day.cover[k] >= day.cap[k]) return false; return true; };
   const shifts = [];
   const add = (x, di, a, b, kind) => {
     const day = days[di];
@@ -158,6 +170,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
         const a = toSlot(r.from), b = toSlot(r.to) || SLOTS;
         if (b <= a) { warnings.push(`“${describeRule(r, people)}”: the end is before the start; skipped.`); return; }
         if (day.open == null) warnings.push(`${x.p.name} is fixed on ${DAY_NAMES[day.dow]}, but the café looks closed that day.`);
+        if (!fits(day, a, b)) warnings.push(`${x.p.name}'s fixed shift on ${DAY_NAMES[day.dow]} goes over the most baristas allowed at the same time.`);
         add(x, di, a, b, 'fixed');
       });
     }
@@ -185,6 +198,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
           let gain = 0, waste = 0;
           for (let b = a + 1; b <= Math.min(wb, a + maxLen); b++) {
             const k = b - 1;
+            if (day.cover[k] >= day.cap[k]) break; // already the most baristas allowed then
             if (day.cover[k] < day.need[k]) gain += weight(day, k); else waste += 1;
             const len = b - a;
             if (len < lo || x.hours + len / 2 > x.maxHours) continue;
@@ -215,7 +229,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
           const x = st.get(sh.user_id);
           const w = windowFor(x, day);
           const a = sh.b === k ? sh.a : k, b = sh.b === k ? e : sh.b;
-          if (!w || a < w[0] || b > w[1] || b - a > maxLen + 2 || x.hours + (e - k) / 2 > x.maxHours) continue;
+          if (!w || a < w[0] || b > w[1] || b - a > maxLen + 2 || x.hours + (e - k) / 2 > x.maxHours || !fits(day, k, e)) continue;
           for (let q = k; q < e; q++) day.cover[q]++;
           x.hours += (e - k) / 2;
           sh.a = a; sh.b = b;
@@ -317,6 +331,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
           let na = Math.max(pw[0], ga), nb = Math.min(pw[1], gb);
           if (nb <= na) continue;
           while (nb - na < minLen && (na > pw[0] || nb < pw[1])) { if (nb < pw[1]) nb++; else na--; }
+          if (!fits(gday, na, nb)) continue;
           const needH = (nb - na) / 2 - (p.maxHours - p.hours);
           if (needH <= 0) continue; // not an hours problem
           for (const sh of shifts.filter((x) => x.user_id === p.p.id && x.kind === 'auto' && x.di !== gi)) {
@@ -365,6 +380,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
         if (!w) return;
         const len = Math.min(maxLen, w[1] - w[0], Math.max(minLen, Math.ceil((x.minHours - x.hours) * 2)));
         for (let a = w[0]; a + len <= w[1]; a++) {
+          if (!fits(day, a, a + len)) continue;
           let v = 0;
           for (let k = a; k < a + len; k++) v += day.orders[k] / (day.cover[k] + 1);
           if (!best || v > best.v) best = { v, di, a, b: a + len };
@@ -387,7 +403,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
       const x = st.get(sh.user_id);
       const w = windowFor(x, day);
       const a = Math.max(day.open, w ? w[0] : day.open, sh.a - ov);
-      if (a < sh.a) {
+      if (a < sh.a && fits(day, a, sh.a)) {
         for (let k = a; k < sh.a; k++) day.cover[k]++;
         x.hours += (sh.a - a) / 2;
         sh.a = a;
@@ -396,7 +412,7 @@ export function buildSchedule({ dates, people, demand, settings: s0, rules }) {
         const o = shifts.find((q) => q !== sh && q.di === sh.di && q.b === sh.a && q.kind !== 'fixed');
         const ow = o && windowFor(st.get(o.user_id), day);
         const b = o ? Math.min(day.close, ow ? ow[1] : day.close, o.b + ov) : 0;
-        if (o && b > o.b) {
+        if (o && b > o.b && fits(day, o.b, b)) {
           for (let k = o.b; k < b; k++) day.cover[k]++;
           st.get(o.user_id).hours += (b - o.b) / 2;
           o.b = b;
