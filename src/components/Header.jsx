@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { chooseLang, getLang } from '../lib/i18n.js';
+import { DEFAULT_TZ, deviceTz, getTz, setTz, tzOffsetLabel } from '../lib/api.js';
 
 /** English / العربية switch (shown on every page). */
 function LangSwitch() {
@@ -10,6 +11,29 @@ function LangSwitch() {
       <button aria-pressed={lang === 'en'} onClick={() => chooseLang('en')}>EN</button>
       <button aria-pressed={lang === 'ar'} onClick={() => chooseLang('ar')} lang="ar">عربي</button>
     </div>
+  );
+}
+
+const ZONES = [
+  [DEFAULT_TZ, 'Türkiye (Istanbul)'], ['Europe/London', 'London'], ['Europe/Berlin', 'Berlin / Paris'], ['Africa/Cairo', 'Cairo'],
+  ['Asia/Amman', 'Amman'], ['Asia/Riyadh', 'Riyadh'], ['Asia/Dubai', 'Dubai'], ['America/New_York', 'New York'],
+];
+/** Time zone of the times shown (Türkiye unless this person picks another one on this device). */
+function TzSwitch() {
+  const tz = getTz();
+  const dev = deviceTz();
+  const list = [...ZONES];
+  if (dev && !list.some(([z]) => z === dev)) list.push([dev, `This device (${dev.split('/').pop().replace(/_/g, ' ')})`]);
+  if (!list.some(([z]) => z === tz)) list.push([tz, tz]);
+  const off = tz !== DEFAULT_TZ;
+  return (
+    <label className={'tz-switch' + (off ? ' tz-off' : '')} title="Time zone of the times shown">
+      <span aria-hidden="true">🕒</span>
+      <span className="sr-only">Time zone</span>
+      <select value={tz} onChange={(e) => { setTz(e.target.value); window.location.reload(); }} data-no-i18n>
+        {list.map(([z, label]) => <option key={z} value={z}>{label} · {tzOffsetLabel(z)}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -29,6 +53,7 @@ export default function Header({ title = 'Mariam Coffee · Sales', subtitle, onR
         </div>
         <span className="spacer" />
         <LangSwitch />
+        {areas && <TzSwitch />}
         {onReset && <button className="btn small" onClick={onReset} title="Upload new database files">⤒ Update data</button>}
         {account}
       </div>

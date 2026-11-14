@@ -35,17 +35,52 @@ export const ROLE_LABELS = {
 };
 export const hasRole = (user, ...roles) => !!user && (user.roles.includes('owner') || roles.some((r) => user.roles.includes(r)));
 
-// ---------- Türkiye local time (UTC+3 all year) ----------
-const OFFSET = 180 * 60000;
-export const localNow = () => new Date(Date.now() + OFFSET).toISOString();
+// ---------- display time zone: Türkiye by default, whatever the device's own time zone ----------
+// Clock-in/out times and "today" follow this zone. Each person can choose another one on their device.
+export const DEFAULT_TZ = 'Europe/Istanbul';
+const TZ_KEY = 'mc-tz';
+function readTz() {
+  try {
+    const t = localStorage.getItem(TZ_KEY);
+    if (t) { new Intl.DateTimeFormat('en', { timeZone: t }); return t; } // still a valid zone
+  } catch { /* private mode or unknown zone */ }
+  return DEFAULT_TZ;
+}
+let TZ = readTz();
+export const getTz = () => TZ;
+export function setTz(tz) {
+  try { if (tz === DEFAULT_TZ) localStorage.removeItem(TZ_KEY); else localStorage.setItem(TZ_KEY, tz); } catch { /* ignore */ }
+  TZ = tz;
+}
+export const deviceTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } };
+const fmts = {};
+function wall(ms) {
+  const f = fmts[TZ] || (fmts[TZ] = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  const o = {};
+  for (const p of f.formatToParts(new Date(ms))) o[p.type] = p.value;
+  return Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour % 24, +o.minute, +o.second);
+}
+/** Offset of the display zone from UTC at that instant, in ms (handles summer time). */
+const offsetAt = (ms) => wall(ms) - Math.floor(ms / 1000) * 1000;
+/** "GMT+3" style label of the display zone right now. */
+export function tzOffsetLabel(tz = TZ) {
+  try { return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value || ''; } catch { return ''; }
+}
+/** "Türkiye time (GMT+3)" or "London time (GMT)" for the display zone. */
+export const tzName = () => `${TZ === DEFAULT_TZ ? 'Türkiye' : TZ.split('/').pop().replace(/_/g, ' ')} time (${tzOffsetLabel()})`;
+export const localNow = () => new Date(Date.now() + offsetAt(Date.now())).toISOString();
 export const todayLocal = () => localNow().slice(0, 10);
-/** Local date "YYYY-MM-DD" and time "HH:MM" of a UTC ISO instant. */
+/** Local date "YYYY-MM-DD" and time "HH:MM" of a UTC ISO instant, in the display zone. */
 export const toLocal = (iso) => {
-  const d = new Date(Date.parse(iso) + OFFSET).toISOString();
+  const ms = Date.parse(iso);
+  const d = new Date(ms + offsetAt(ms)).toISOString();
   return { date: d.slice(0, 10), time: d.slice(11, 16) };
 };
-/** UTC ms of a local date + HH:MM. */
-export const localMs = (date, hhmm) => Date.parse(`${date}T${hhmm}:00Z`) - OFFSET;
+/** UTC ms of a local date + HH:MM in the display zone. */
+export const localMs = (date, hhmm) => {
+  const guess = Date.parse(`${date}T${hhmm}:00Z`);
+  return guess - offsetAt(guess - offsetAt(guess));
+};
 export const addDaysLocal = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 /** Monday of the week containing `date`. */
 export const weekStart = (date) => {

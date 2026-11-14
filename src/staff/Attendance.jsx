@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { addDaysLocal, api, distFmt, dowOf, hoursFmt, shiftHours, shiftRange, toLocal, todayLocal, weekStart } from '../lib/api.js';
+import { addDaysLocal, api, distFmt, dowOf, hoursFmt, shiftHours, shiftRange, toLocal, todayLocal, weekStart , tzName } from '../lib/api.js';
 import DataTable from '../components/DataTable.jsx';
 import { int, longDate, money } from '../format.js';
 
@@ -117,7 +117,7 @@ export default function Attendance({ user }) {
     <div className="stack">
       <div className="card">
         <div className="card-head">
-          <div><h2>Attendance</h2><p>Scheduled shifts compared with clock-in and clock-out. On time = within {GRACE_MIN} minutes.</p></div>
+          <div><h2>Attendance</h2><p>Scheduled shifts compared with clock-in and clock-out. On time = within {GRACE_MIN} minutes. Times are shown in <b>{tzName()}</b> (change it with 🕒 at the top).</p></div>
           <div className="table-tools" style={{ margin: 0 }}>
             <div className="chips">{presets.map(([l, f, t]) => <button key={l} className="chip" aria-pressed={range.from === f && range.to === t} onClick={() => setRange({ from: f, to: t })}>{l}</button>)}</div>
             <label className="field"><span>From</span><input type="date" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange({ ...range, from: e.target.value })} /></label>
@@ -192,7 +192,7 @@ function Fix({ row, people, onClose, onSaved }) {
   }
   return (
     <form ref={scrollOnce} className="card form-card editor" onSubmit={save} style={{ borderColor: 'var(--series-1)' }}>
-      <div className="card-head"><div><h2>{r ? `Correct ${row.user_name}, ${longDate(row.date)}` : 'Add clock times by hand'}</h2><p>{s ? `Shift ${s.start}–${s.end}` : 'Not linked to a shift'}</p></div>
+      <div className="card-head"><div><h2>{r ? `Correct ${row.user_name}, ${longDate(row.date)}` : 'Add clock times by hand'}</h2><p>{s ? `Shift ${s.start}–${s.end}` : 'Not linked to a shift'} · enter the times in {tzName()}</p></div>
         <button type="button" className="btn small ghost" onClick={onClose}>Close</button></div>
       <div className="form-grid">
         {!r && <label className="field"><span>Barista</span>

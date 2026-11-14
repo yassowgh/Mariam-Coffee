@@ -159,6 +159,7 @@ const AR = {
 
 // texts with a changing part
 const PATTERNS = [
+  [/^Türkiye time \((.+)\)$/, (m) => `توقيت تركيا (${m[1]})`],
   [/^Spending per day · (.+)$/, (m) => `الصرف اليومي · ${m[1]}`],
   [/^Barista costs · (\d+) waiting$/, (m) => `مصاريف الباريستا · ${m[1]} بالانتظار`],
   [/^The most is (\d+) TL per purchase\.$/, (m) => `الحد الأقصى ${m[1]} ليرة لكل عملية شراء.`],

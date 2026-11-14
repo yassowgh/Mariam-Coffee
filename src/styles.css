@@ -487,3 +487,10 @@ table.schedule .today { background: rgba(128,128,128,.14); background: color-mix
 .slot-img img { width: 100%; height: 100%; object-fit: cover; }
 .slot:has(.slot-img[style]) .slot-img img { object-fit: contain; padding: 8px; }
 .save-bar { position: sticky; bottom: 12px; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+
+/* time zone picker in the top bar */
+.tz-switch { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 10px; padding: 0 4px 0 8px; height: 36px; background: var(--surface); font-size: 13px; }
+.tz-switch select { border: 0; background: transparent; color: var(--text); font: inherit; max-width: 190px; padding: 6px 2px; cursor: pointer; }
+.tz-switch.tz-off { border-color: var(--warn); background: rgba(237,161,0,.12); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 600px) { .tz-switch select { max-width: 120px; } }
