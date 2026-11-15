@@ -120,7 +120,7 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'", // WebAssembly only (RAR reader); no eval of strings
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",

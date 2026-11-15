@@ -135,7 +135,7 @@ export async function readExpenseFile(file) {
     const pdfjs = await import('pdfjs-dist');
     const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    const doc = await pdfjs.getDocument({ data: buf }).promise;
+    const doc = await pdfjs.getDocument({ data: buf, isEvalSupported: false }).promise; // the site's CSP forbids eval
     const lines = [];
     for (let p = 1; p <= Math.min(doc.numPages, 30); p++) {
       const page = await doc.getPage(p);
