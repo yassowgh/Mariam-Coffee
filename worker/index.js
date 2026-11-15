@@ -120,11 +120,11 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self' 'wasm-unsafe-eval'", // WebAssembly only (RAR reader); no eval of strings
+    "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com", // WebAssembly only (RAR reader); no eval of strings; Cloudflare Web Analytics
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self'",
+    "connect-src 'self' https://cloudflareinsights.com",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
