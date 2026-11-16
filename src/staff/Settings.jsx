@@ -29,9 +29,68 @@ export default function Settings({ go }) {
         </div>
       </div>
       <Site />
+      <AiProviders />
       <EmailSetup />
       <PosUploader />
       <Activity />
+    </div>
+  );
+}
+
+/** Free AI keys from several companies, used in turn when one reaches its daily limit. */
+function AiProviders() {
+  const [st, setSt] = useState(null);
+  const [edit, setEdit] = useState({}); // id -> { key, model }
+  const [msg, setMsg] = useState(null);
+  const [test, setTest] = useState({});
+  const load = () => api('ai-providers').then((r) => { setSt(r); setEdit({}); }).catch((e) => setMsg({ ok: false, text: e.message }));
+  useEffect(() => { load(); }, []);
+  if (!st) return msg ? <div className="error">{msg.text}</div> : null;
+  const order = [...st.order, ...st.providers.filter((p) => p.connected && !st.order.includes(p.id)).map((p) => p.id)];
+  async function save(keys, newOrder) {
+    setMsg(null);
+    try { await api('ai-providers', { method: 'PUT', body: { keys, order: newOrder || order } }); await load(); setMsg({ ok: true, text: 'Saved.' }); } catch (e) { setMsg({ ok: false, text: e.message }); }
+  }
+  async function runTest(id) {
+    setTest((t) => ({ ...t, [id]: 'Testing…' }));
+    try { const r = await api('ai-providers', { method: 'POST', body: { action: 'test', id } }); setTest((t) => ({ ...t, [id]: r.ok ? `Works ✓ (answer: ${r.answer})` : `Not working: ${r.error}` })); } catch (e) { setTest((t) => ({ ...t, [id]: e.message })); }
+  }
+  const move = (id, d) => { const o = [...order]; const i = o.indexOf(id), j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; save({}, o); };
+  const used = (id) => { const u = st.usage[id]; if (!u) return 'not used today'; return `${(u.text || 0) + (u.vision || 0)} today${u.exhausted ? ' · daily limit reached' : ''}`; };
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>AI providers</h2>
+        <p>The AI reads invoices and written conditions. Cloudflare AI is used first (free daily allowance). Add free keys from other companies below: when one reaches its daily limit, the next one is used automatically. Keys are stored on the server and never shown again.</p></div></div>
+      {msg && <div className={'banner ' + (msg.ok ? 'ok' : 'bad')} role="status"><span>{msg.text}</span></div>}
+      <ol className="ai-chain">
+        {st.claude && <li><b>Claude</b> <span className="pill ok">connected</span> <small className="muted">{used('claude')}</small></li>}
+        <li><b>Cloudflare AI</b> {st.workers ? <span className="pill ok">connected</span> : <span className="pill">not available</span>} <small className="muted">{used('workers')}</small></li>
+        {order.map((id, i) => { const p = st.providers.find((x) => x.id === id); return (
+          <li key={id}><b>{p.label}</b> <span className="pill ok">connected</span> <small className="muted">{used(id)}</small>
+            <button className="btn small ghost" onClick={() => move(id, -1)} disabled={i === 0} aria-label="Earlier">↑</button><button className="btn small ghost" onClick={() => move(id, 1)} disabled={i === order.length - 1} aria-label="Later">↓</button></li>
+        ); })}
+      </ol>
+      <div className="stack" style={{ gap: 12 }}>
+        {st.providers.map((p) => {
+          const e = edit[p.id] || {};
+          return (
+            <div key={p.id} className="text-edit">
+              <div className="text-edit-head"><b>{p.label}</b>{p.connected ? <span className="pill ok">key …{p.keyEnd}</span> : <span className="pill">no key</span>}<small className="muted">{p.note}</small></div>
+              <div className="form-grid">
+                <label className="field"><span>API key {p.connected ? '(leave empty to keep the saved one)' : ''}</span><input type="password" autoComplete="off" value={e.key || ''} onChange={(ev) => setEdit({ ...edit, [p.id]: { ...e, key: ev.target.value } })} placeholder={p.connected ? '•••••••• saved' : 'Paste the key'} /></label>
+                <label className="field"><span>Model (optional)</span><input value={e.model ?? p.model} onChange={(ev) => setEdit({ ...edit, [p.id]: { ...e, model: ev.target.value } })} placeholder={p.defaultModel} /></label>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+                <button className="btn small primary" disabled={!e.key && !(p.connected && e.model !== undefined)} onClick={() => save({ [p.id]: { key: e.key || '', model: e.model ?? p.model } })}>Save</button>
+                {p.connected && <button className="btn small" onClick={() => runTest(p.id)}>Test</button>}
+                {p.connected && <button className="btn small ghost" onClick={() => { if (confirm(`Remove the ${p.label} key?`)) save({ [p.id]: { remove: true } }); }}>Remove</button>}
+                <a className="btn small ghost" href={p.signup} target="_blank" rel="noreferrer">Get a free key ↗</a>
+                {test[p.id] && <small className={/Works/.test(test[p.id]) ? '' : 'muted'}>{test[p.id]}</small>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

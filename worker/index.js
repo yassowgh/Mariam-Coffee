@@ -192,6 +192,14 @@ async function route(request, env, url, ctx) {
   if (path === '/api/costs') return handleCosts(request, env);
   if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
   if (path === '/api/content') return handleContent(request, env);
+  if (path === '/api/ai-text-test' && request.method === 'POST') { // TEMPORARY
+    if (!(await passwordOk(env, request.headers.get('x-upload-password') || ''))) return json({ error: 'Wrong password.' }, 401);
+    const { aiChat } = await import('./ai.js');
+    const { INVOICE_PROMPT } = await import('./invoices.js');
+    const b = await request.json();
+    try { const r = await aiChat(env, env.DB, { system: INVOICE_PROMPT, text: 'Invoice text (from OCR, may contain small reading mistakes; fix obvious ones):\n' + b.text, accept: (o) => /\{/.test(o) }); return json({ by: r.by, out: r.out.slice(0, 4000) }); }
+    catch (e) { return json({ error: e.message, tried: e.tried }); }
+  }
   // private download links (e.g. the POS uploader sent by email); they expire by themselves
   if (url.pathname.startsWith('/dl/') && request.method === 'GET') {
     const id = url.pathname.split('/')[2] || '';

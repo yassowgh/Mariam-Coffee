@@ -8,7 +8,7 @@
 //
 // AI: Claude when ANTHROPIC_API_KEY is set (best for Arabic handwriting), otherwise Cloudflare Workers AI
 // (free allowance): several vision models are tried in turn.
-import Anthropic from '@anthropic-ai/sdk';
+import { aiChat } from './ai.js';
 
 export const INVOICE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER, supplier TEXT, invoice_no TEXT,
@@ -19,7 +19,7 @@ export const INVOICE_SCHEMA = [
   'CREATE INDEX IF NOT EXISTS invoice_lines_item ON invoice_lines (item)',
 ];
 
-const PROMPT = `You read supplier invoices and receipts for a café in Istanbul. The document can be in Turkish, Arabic or English (or mixed), printed or handwritten.
+export const INVOICE_PROMPT = `You read supplier invoices and receipts for a café in Istanbul. The document can be in Turkish, Arabic or English (or mixed), printed or handwritten.
 Return JSON only, with this shape:
 {"supplier": string, "invoice_no": string, "date": "YYYY-MM-DD" or "", "currency": "TRY" | "USD" | "EUR" | other ISO code,
  "lang": "tr" | "ar" | "en" | "mixed",
@@ -65,72 +65,26 @@ function parseJson(text) {
   try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
 }
 
-// Workers AI vision models, best first; each is tried until one answers with usable JSON.
-// tested on Turkish and Arabic invoices: Llama 4 Scout read both perfectly; Mistral misread Arabic digits
-const CF_VISION = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/meta/llama-3.2-11b-vision-instruct'];
-const CF_TEXT = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-
-async function readWithWorkersAI(env, { images, text }) {
-  const tried = [];
-  if (text) {
-    const res = await env.AI.run(CF_TEXT, { messages: [{ role: 'system', content: PROMPT }, { role: 'user', content: `Invoice text:\n${text}` }], max_tokens: 4000, temperature: 0 });
-    const out = parseJson(res?.response);
-    if (out) return { out, by: 'Cloudflare AI (text)' };
-    throw new Error('The AI could not read the text of this PDF.');
-  }
-  for (const model of CF_VISION) {
-    try {
-      let res;
-      if (model.includes('llama-3.2-11b-vision')) {
-        // older format: one image as bytes; Meta's licence must be accepted once
-        const bytes = [...Uint8Array.from(atob(images[0].split(',')[1]), (c) => c.charCodeAt(0))];
-        try { await env.AI.run(model, { prompt: 'agree' }); } catch { /* already accepted */ }
-        res = await env.AI.run(model, { messages: [{ role: 'system', content: PROMPT }, { role: 'user', content: 'Read this invoice.' }], image: bytes, max_tokens: 4000, temperature: 0 });
-      } else {
-        const content = [{ type: 'text', text: `${PROMPT}\n\nRead this invoice${images.length > 1 ? ` (${images.length} pages, in order)` : ''}.` },
-          ...images.map((url) => ({ type: 'image_url', image_url: { url } }))];
-        res = await env.AI.run(model, { messages: [{ role: 'user', content }], max_tokens: 4000, temperature: 0 });
-      }
-      const out = parseJson(res?.response ?? res?.choices?.[0]?.message?.content);
-      if (out && (Array.isArray(out.lines) || out.total)) return { out, by: `Cloudflare AI (${model.split('/').pop()})` };
-      tried.push(`${model.split('/').pop()}: no usable answer`);
-    } catch (e) {
-      tried.push(`${model.split('/').pop()}: ${String(e?.message || e).slice(0, 120)}`);
-      if (/limit|quota|neurons|429/i.test(String(e?.message))) throw new Error('The free Cloudflare AI allowance for today is used up. Try again tomorrow, or type the invoice in.');
-    }
-  }
-  const err = new Error('The AI could not read this invoice. Try a sharper, straight photo in good light.');
-  err.tried = tried;
-  throw err;
-}
-
-async function readWithClaude(env, { images, text }) {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const content = text
-    ? [{ type: 'text', text: `Invoice text:\n${text}` }]
-    : images.map((url) => ({ type: 'image', source: { type: 'base64', media_type: url.slice(5, url.indexOf(';')), data: url.split(',')[1] } }));
-  const msg = await client.messages.create({
-    model: 'claude-opus-5-5', max_tokens: 6000, system: PROMPT,
-    messages: [{ role: 'user', content: [...content, { type: 'text', text: 'Read this invoice and answer with the JSON only.' }] }],
-  });
-  const out = parseJson(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
-  if (!out) throw new Error('Claude gave an answer that could not be read. Try again.');
-  return { out, by: 'Claude' };
-}
-
 export async function handleInvoices({ head, sub, request, env, me, h }) {
   const db = env.DB;
   const m = request.method;
 
   if (head === 'invoices' && sub === 'read' && m === 'POST') {
-    if (!env.ANTHROPIC_API_KEY && !env.AI) h.fail(501, 'No AI is connected to the website. Type the invoice in by hand.');
     const b = await h.body(request);
     const images = (Array.isArray(b.images) ? b.images : []).filter((u) => typeof u === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(u)).slice(0, 4);
     const text = typeof b.text === 'string' ? b.text.slice(0, 30000) : '';
     if (!images.length && text.trim().length < 20) h.fail(400, 'Add a photo or PDF of the invoice.');
     if (images.reduce((t, u) => t + u.length, 0) > 9 * 1024 * 1024) h.fail(413, 'The photos are too large. Try fewer pages.');
     let r;
-    try { r = env.ANTHROPIC_API_KEY ? await readWithClaude(env, { images, text }) : await readWithWorkersAI(env, { images, text }); } catch (e) {
+    try {
+      r = await aiChat(env, db, {
+        system: INVOICE_PROMPT,
+        text: text ? `Invoice text${b.ocr ? ' (from OCR, may contain small reading mistakes; fix obvious ones)' : ''}:\n${text}` : `Read this invoice${images.length > 1 ? ` (${images.length} pages, in order)` : ''}. Answer with the JSON only.`,
+        images: text ? [] : images, maxTokens: 4000,
+        accept: (o) => { const j = parseJson(o); return !!j && (Array.isArray(j.lines) && j.lines.length > 0 || Number(j.total) > 0); },
+      });
+      r.out = parseJson(r.out);
+    } catch (e) {
       return json(h, { error: e.message, tried: e.tried }, 502);
     }
     const inv = clean(r.out);

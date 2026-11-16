@@ -1,4 +1,5 @@
 import { INVOICE_ROUTES, INVOICE_SCHEMA, handleInvoices } from './invoices.js';
+import { handleAiProviders } from './ai.js';
 import { ADMIN_EMAIL, appUrl, notify, sendMany } from './email.js';
 // Accounting records (expenses and bills), money accounts, loans, receipts and salary data.
 //
@@ -65,6 +66,8 @@ export async function handleAccounting(ctx) {
     case 'documents':
       need(me, 'accountant');
       return documents(ctx, sub || null);
+    case 'ai-providers':
+      return handleAiProviders(ctx);
     case 'invoices':
     case 'invoice-lines':
       need(me, 'accountant');
@@ -351,7 +354,7 @@ async function salaries({ request, env, me, h }) {
   return h.json({ month, finance: fin, people: list, attendance: rec.results, shifts: sh.results, payments: fin ? pay.results : [] });
 }
 
-export const ACCOUNTING_ROUTES = [...INVOICE_ROUTES, 'cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
+export const ACCOUNTING_ROUTES = [...INVOICE_ROUTES, 'ai-providers', 'cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
 
 // ---------- expenses from free text (PDF, TXT, Word), read by AI ----------
 async function extract({ request, env, me, h }) {

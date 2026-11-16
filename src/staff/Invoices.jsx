@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Tile } from './Accounting.jsx';
+import { ocrImages } from '../lib/ocr.js';
 import { api, todayLocal } from '../lib/api.js';
 import { longDate, money2 } from '../format.js';
 
@@ -64,6 +65,8 @@ export function InvoiceScan({ ctx, onDone }) {
   const [queue, setQueue] = useState([]); // [{ id, name, status, pages, text, invoice, meta, error, pay, checked }]
   const [open, setOpen] = useState(null); // id of the invoice being reviewed
   const [pagesOfOne, setPagesOfOne] = useState(false);
+  const [useOcr, setUseOcr] = useState(() => { try { return localStorage.getItem('mc-ocr') !== '0'; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem('mc-ocr', useOcr ? '1' : '0'); } catch { /* ignore */ } }, [useOcr]);
   const [defaults, setDefaults] = useState({ category_id: '', status: 'unpaid', account_id: '' });
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
@@ -91,17 +94,43 @@ export function InvoiceScan({ ctx, onDone }) {
           for (const f of it.files) {
             if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) { const r = await readPdf(f); text += r.text; images.push(...r.images); } else images.push(await photoToDataUrl(f));
           }
-          const r = await api('invoices/read', { method: 'POST', body: text.trim() ? { text } : { images: images.slice(0, 4) } });
+          upd(it.id, { pages: images });
+          let body = text.trim() ? { text } : null;
+          // built-in OCR first: free and unlimited; the AI then only sorts the text (uses far less allowance)
+          if (!body && useOcr && images.length) {
+            upd(it.id, { step: 'Reading the text on this device…' });
+            try {
+              const o = await ocrImages(images.slice(0, 4), (m) => { if (m.status === 'loading language traineddata' || m.status === 'initializing api') upd(it.id, { step: 'Loading the text reader (first time only)…' }); });
+              // Arabic printed text is read less reliably by the built-in reader: those go to the AI photo reading
+              const arabic = (o.text.match(/[\u0600-\u06FF]/g) || []).length > 15;
+              if (!arabic && o.confidence >= 60 && o.text.replace(/\s/g, '').length >= 60) body = { text: o.text, ocr: true };
+            } catch { /* fall back to the AI reading the photo */ }
+          }
+          upd(it.id, { step: body?.ocr ? 'Sorting the lines (AI)…' : 'The AI is reading the photo…' });
+          let r = await api('invoices/read', { method: 'POST', body: body || { images: images.slice(0, 4) } });
+          // the text route did not give a clean result (no lines, or lines ≠ total): read the photo instead
+          if (body?.ocr && (!r.invoice.lines.length || mismatchOf(r.invoice))) {
+            upd(it.id, { step: 'Checking again from the photo (AI)…' });
+            try { r = await api('invoices/read', { method: 'POST', body: { images: images.slice(0, 4) } }); body = null; } catch { /* keep the text result; the checks show the problem */ }
+          }
           const inv = { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i })) };
-          upd(it.id, { status: 'ready', pages: images, invoice: inv, meta: { by: r.by, duplicate: r.duplicate }, checked: !r.duplicate });
+          upd(it.id, { status: 'ready', step: '', invoice: inv, meta: { by: (body?.ocr ? 'built-in OCR + ' : '') + r.by, duplicate: r.duplicate, ocr: !!body?.ocr }, checked: !r.duplicate });
         } catch (x) {
-          upd(it.id, { status: 'error', error: x.message });
+          upd(it.id, { status: 'error', step: '', error: x.message });
           if (/allowance/i.test(x.message)) { next = added.length; added.forEach((a) => setQueue((q) => q.map((y) => (y.id === a.id && y.status === 'waiting' ? { ...y, status: 'error', error: x.message } : y)))); }
         }
       }
     };
     await Promise.all([worker(), worker()]);
     if (added.length === 1) setOpen(added[0].id);
+  }
+
+  async function rereadVision(it) {
+    upd(it.id, { status: 'reading', step: 'The AI is reading the photo…', error: '' });
+    try {
+      const r = await api('invoices/read', { method: 'POST', body: { images: it.pages.slice(0, 4) } });
+      upd(it.id, { status: 'ready', step: '', invoice: { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i })) }, meta: { by: r.by, duplicate: r.duplicate, ocr: false } });
+    } catch (x) { upd(it.id, { status: 'ready', step: '', error: x.message }); }
   }
 
   async function saveOne(it) {
@@ -141,7 +170,10 @@ export function InvoiceScan({ ctx, onDone }) {
         <b>{reading ? 'Reading… you can add more' : 'Take a photo or choose files'}</b>
         <small>{pagesOfOne ? 'The photos you choose now are pages of ONE invoice (up to 4)' : 'Each file is a separate invoice · JPG, PNG or PDF · up to 50 at once'}</small>
       </label>
-      <label className="check" style={{ display: 'inline-flex', gap: 6, marginTop: 8, fontSize: 14 }}><input type="checkbox" checked={pagesOfOne} onChange={(e) => setPagesOfOne(e.target.checked)} /> The next photos are pages of one invoice</label>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 8 }}>
+        <label className="check" style={{ display: 'inline-flex', gap: 6, fontSize: 14 }}><input type="checkbox" checked={pagesOfOne} onChange={(e) => setPagesOfOne(e.target.checked)} /> The next photos are pages of one invoice</label>
+        <label className="check" style={{ display: 'inline-flex', gap: 6, fontSize: 14 }} title="Reads the text on this device (free, no limit); the AI only sorts it into lines. Uses much less of the free AI allowance."><input type="checkbox" checked={useOcr} onChange={(e) => setUseOcr(e.target.checked)} /> Read the text on this device first (saves AI allowance)</label>
+      </div>
       {err && <div className="banner bad" role="alert"><span>{err}</span></div>}
 
       {queue.length > 0 && (
@@ -154,7 +186,7 @@ export function InvoiceScan({ ctx, onDone }) {
                 <tr key={x.id} className={open === x.id ? 'row-open' : ''}>
                   <td>{x.status === 'ready' && <input type="checkbox" checked={!!x.checked} onChange={(e) => upd(x.id, { checked: e.target.checked })} aria-label="Save this one" />}</td>
                   <td className="wrap-cell" style={{ maxWidth: 200 }}>{x.name}</td>
-                  <td><span className={'pill ' + STATUS[x.status][0]}>{STATUS[x.status][1]}</span>{x.error && <><br /><small style={{ color: 'var(--bad-text)' }}>{x.error}</small></>}</td>
+                  <td><span className={'pill ' + STATUS[x.status][0]}>{STATUS[x.status][1]}</span>{x.step && <><br /><small className="muted">{x.step}</small></>}{x.error && <><br /><small style={{ color: 'var(--bad-text)' }}>{x.error}</small></>}</td>
                   <td>{inv?.supplier || '–'}</td>
                   <td>{inv?.date ? longDate(inv.date) : '–'}</td>
                   <td className="r num">{inv ? inv.lines.length : '–'}</td>
@@ -167,6 +199,9 @@ export function InvoiceScan({ ctx, onDone }) {
             })}</tbody>
           </table></div>
 
+          {current?.invoice && current.meta?.ocr && current.status === 'ready' && (
+            <div style={{ marginTop: 10 }}><button className="btn small" onClick={() => rereadVision(current)}>Something wrong? Read again from the photo (AI)</button></div>
+          )}
           {current?.invoice && <Review it={current} cats={cats} accounts={accounts} items={items} defaults={defaults} upd={upd} readOnly={current.status === 'saved'}
             onSave={() => saveChecked([current])} busy={busy} />}
 
