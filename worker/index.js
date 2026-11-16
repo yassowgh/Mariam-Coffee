@@ -192,6 +192,12 @@ async function route(request, env, url, ctx) {
   if (path === '/api/costs') return handleCosts(request, env);
   if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
   if (path === '/api/content') return handleContent(request, env);
+  // TEMPORARY: try the invoice AI models (upload password); removed after testing
+  if (path === '/api/invoice-ai-test' && request.method === 'POST') {
+    if (!(await passwordOk(env, request.headers.get('x-upload-password') || ''))) return json({ error: 'Wrong password.' }, 401);
+    const { testInvoiceAI } = await import('./invoices.js');
+    return json(await testInvoiceAI(env, await request.json()));
+  }
   if (path === '/api/media' || (path.startsWith('/media/') && request.method === 'GET')) return handleMedia(request, env, path);
   if (path === '/api/auth' && request.method === 'POST') {
     return (await allowed(request, env))

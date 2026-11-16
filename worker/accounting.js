@@ -1,3 +1,4 @@
+import { INVOICE_ROUTES, INVOICE_SCHEMA, handleInvoices } from './invoices.js';
 import { ADMIN_EMAIL, appUrl, notify, sendMany } from './email.js';
 // Accounting records (expenses and bills), money accounts, loans, receipts and salary data.
 //
@@ -18,6 +19,7 @@ const MAX_RECEIPT_BYTES = 4 * 1024 * 1024;
 export const BARISTA_COST_LIMIT = 400; // TL, per purchase
 
 export const ACCOUNTING_SCHEMA = [
+  ...INVOICE_SCHEMA,
   // Day-to-day costs a barista paid (e.g. milk from the shop): waiting for an accountant or owner to approve.
   `CREATE TABLE IF NOT EXISTS cost_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL,
     name TEXT NOT NULL, amount REAL NOT NULL, category_id INTEGER, receipt TEXT, note TEXT, status TEXT NOT NULL DEFAULT 'pending',
@@ -63,6 +65,10 @@ export async function handleAccounting(ctx) {
     case 'documents':
       need(me, 'accountant');
       return documents(ctx, sub || null);
+    case 'invoices':
+    case 'invoice-lines':
+      need(me, 'accountant');
+      return handleInvoices(ctx);
     case 'cost-requests':
       return costRequests(ctx, sub);
     case 'finance-advice':
@@ -345,7 +351,7 @@ async function salaries({ request, env, me, h }) {
   return h.json({ month, finance: fin, people: list, attendance: rec.results, shifts: sh.results, payments: fin ? pay.results : [] });
 }
 
-export const ACCOUNTING_ROUTES = ['cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
+export const ACCOUNTING_ROUTES = [...INVOICE_ROUTES, 'cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
 
 // ---------- expenses from free text (PDF, TXT, Word), read by AI ----------
 async function extract({ request, env, me, h }) {
