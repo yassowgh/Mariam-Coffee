@@ -49,7 +49,7 @@ export default function Accounting({ user, go }) {
   const ctx = { ...base, edit: (r) => { setEditing(r); setView('add'); window.scrollTo(0, 0); } };
   const tabs = [
     ['add', editing?.id ? 'Edit record' : '＋ New record'],
-    ['scan', '📷 Scan invoice'],
+    ['scan', '📷 Scan invoices'],
     ['items', 'Item costs'],
     ['records', `Records${records.length ? ` (${records.length})` : ''}`],
     ['accounts', 'Accounts & categories'],
@@ -69,7 +69,7 @@ export default function Accounting({ user, go }) {
           {view === 'add' && <RecordForm ctx={ctx} initial={editing} onDone={(rec) => { setEditing(null); base.reload(); if (rec) setView('records'); }} onCancel={editing ? () => { setEditing(null); setView('records'); } : null} />}
           {view === 'records' && <Records ctx={ctx} />}
           {view === 'scan' && <InvoiceScan ctx={ctx} onDone={(text) => { base.reload(); setScanMsg(text); }} />}
-          {view === 'scan' && scanMsg && <div className="banner ok" role="status"><span>{scanMsg} It is in Records, and its items are in Item costs.</span><button className="btn small ghost" onClick={() => setScanMsg('')}>✕</button></div>}
+          {view === 'scan' && scanMsg && <div className="banner ok" role="status"><span>{scanMsg} Find them in Records; their items are in Item costs.</span><button className="btn small ghost" onClick={() => setScanMsg('')}>✕</button></div>}
           {view === 'items' && <ItemCosts />}
           {view === 'accounts' && <AccountsSetup ctx={ctx} />}
           {view === 'import' && <><FileImport ctx={ctx} onDone={() => base.reload()} /><Import ctx={ctx} onDone={() => { base.reload(); setView('records'); }} /></>}

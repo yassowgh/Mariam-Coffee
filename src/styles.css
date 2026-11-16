@@ -510,3 +510,9 @@ table.schedule .today { background: rgba(128,128,128,.14); background: color-mix
 tr.row-open > td { background: var(--surface-2); }
 td.hist { background: var(--surface-2); padding: 10px 14px; }
 table.inner { width: 100%; font-size: 13px; }
+
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface-2); position: sticky; bottom: 10px; z-index: 5; }
+.bulk-bar > b { width: 100%; }
+.bulk-bar .field { min-width: 200px; }
+fieldset.review { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px 14px; margin: 14px 0 0; display: grid; gap: 12px; min-width: 0; }
+fieldset.review legend { font-weight: 650; padding: 0 6px; }

@@ -41,125 +41,213 @@ async function readPdf(file) {
   }
   return { text: '', images };
 }
-const dataUrlToBlob = (u) => fetch(u).then((r) => r.blob());
+/** data: URL -> Blob without fetch() (the site's CSP does not allow fetching data: URLs) */
+const dataUrlToBlob = async (u) => {
+  const [head, b64] = u.split(',');
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: head.slice(5, head.indexOf(';')) || 'image/jpeg' });
+};
 
-// ---------------------------------------------------------------- scan an invoice
+// ---------------------------------------------------------------- scan invoices (one or many)
+const STATUS = { waiting: ['', 'Waiting'], reading: ['warn', 'Reading…'], ready: ['ok', 'Ready'], error: ['bad', 'Could not read'], saving: ['warn', 'Saving…'], saved: ['ok', 'Saved ✓'] };
+const linesSumOf = (inv) => r2(inv.lines.reduce((t, l) => t + numIn(l.total), 0));
+const mismatchOf = (inv) => {
+  const s = linesSumOf(inv);
+  return Math.abs(s - r2(numIn(inv.total) - numIn(inv.tax))) > 0.05 && Math.abs(s - numIn(inv.total)) > 0.05;
+};
+
+/** Accounting: scan one invoice or upload many (photos or PDFs); the AI reads each, you check, then save. */
 export function InvoiceScan({ ctx, onDone }) {
   const { cats, accounts } = ctx;
+  const [queue, setQueue] = useState([]); // [{ id, name, status, pages, text, invoice, meta, error, pay, checked }]
+  const [open, setOpen] = useState(null); // id of the invoice being reviewed
+  const [pagesOfOne, setPagesOfOne] = useState(false);
+  const [defaults, setDefaults] = useState({ category_id: '', status: 'unpaid', account_id: '' });
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const [pages, setPages] = useState([]); // data URLs (to show and keep a photo)
-  const [inv, setInv] = useState(null);
-  const [meta, setMeta] = useState(null); // { by, duplicate }
-  const [pay, setPay] = useState({ category_id: '', status: 'unpaid', account_id: '', paid_date: '', due_date: '' });
-  const [items, setItems] = useState([]); // known item names, for consistent naming
+  const [items, setItems] = useState([]);
   useEffect(() => { api('invoices').then((r) => setItems([...new Set(r.invoices.flatMap((i) => i.lines.map((l) => l.item)))].sort())).catch(() => {}); }, []);
+  const upd = (id, patch) => setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...(typeof patch === 'function' ? patch(x) : patch) } : x)));
 
   async function pick(e) {
     const files = [...e.target.files]; e.target.value = '';
     if (!files.length) return;
-    setErr(''); setInv(null); setMeta(null);
-    try {
-      setBusy('Preparing the file…');
-      let images = [], text = '';
-      for (const f of files.slice(0, 4)) {
-        if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) { const r = await readPdf(f); text += r.text; images.push(...r.images); } else images.push(await photoToDataUrl(f));
+    setErr('');
+    // several photos of ONE invoice, or one invoice per file
+    const groups = pagesOfOne ? [files.slice(0, 4)] : files.slice(0, 50).map((f) => [f]);
+    const added = groups.map((g, i) => ({ id: Date.now() + i, name: g.map((f) => f.name).join(' + '), files: g, status: 'waiting', pages: [], checked: true, pay: null }));
+    setQueue((q) => [...q, ...added]);
+    if (files.length > 50 && !pagesOfOne) setErr('Only the first 50 files were added. Add the rest after these are saved.');
+    // read two at a time (the AI takes 10–30 seconds per invoice)
+    let next = 0;
+    const worker = async () => {
+      while (next < added.length) {
+        const it = added[next++];
+        upd(it.id, { status: 'reading' });
+        try {
+          let images = [], text = '';
+          for (const f of it.files) {
+            if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) { const r = await readPdf(f); text += r.text; images.push(...r.images); } else images.push(await photoToDataUrl(f));
+          }
+          const r = await api('invoices/read', { method: 'POST', body: text.trim() ? { text } : { images: images.slice(0, 4) } });
+          const inv = { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i })) };
+          upd(it.id, { status: 'ready', pages: images, invoice: inv, meta: { by: r.by, duplicate: r.duplicate }, checked: !r.duplicate });
+        } catch (x) {
+          upd(it.id, { status: 'error', error: x.message });
+          if (/allowance/i.test(x.message)) { next = added.length; added.forEach((a) => setQueue((q) => q.map((y) => (y.id === a.id && y.status === 'waiting' ? { ...y, status: 'error', error: x.message } : y)))); }
+        }
       }
-      setPages(images);
-      setBusy('The AI is reading the invoice… (10–30 seconds)');
-      const r = await api('invoices/read', { method: 'POST', body: text.trim() ? { text } : { images: images.slice(0, 4) } });
-      setInv({ ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i })) });
-      setMeta({ by: r.by, duplicate: r.duplicate });
-      setPay((p) => ({ ...p, due_date: p.due_date || r.invoice.date || todayLocal(), paid_date: p.paid_date || r.invoice.date || todayLocal() }));
-    } catch (x) { setErr(x.message); } finally { setBusy(''); }
+    };
+    await Promise.all([worker(), worker()]);
+    if (added.length === 1) setOpen(added[0].id);
   }
-  const set = (patch) => setInv((v) => ({ ...v, ...patch }));
-  const setLine = (k, patch) => setInv((v) => ({ ...v, lines: v.lines.map((l) => {
+
+  async function saveOne(it) {
+    const pay = { ...defaults, ...(it.pay || {}) };
+    const inv = it.invoice;
+    let receipt = null;
+    if (it.pages[0]) receipt = (await api('receipts', { method: 'POST', raw: await dataUrlToBlob(it.pages[0]), type: 'image/jpeg' })).receipt;
+    await api('invoices', { method: 'POST', body: {
+      invoice: { ...inv, total: numIn(inv.total), tax: numIn(inv.tax), subtotal: numIn(inv.subtotal), lines: inv.lines.map((l) => ({ ...l, qty: numIn(l.qty), unit_price: numIn(l.unit_price), total: numIn(l.total) })) },
+      category_id: Number(pay.category_id) || null, status: pay.status, account_id: Number(pay.account_id) || null,
+      paid_date: pay.paid_date || inv.date, due_date: pay.due_date || inv.date, receipt, raw: { by: it.meta?.by },
+    } });
+  }
+  async function saveChecked(list) {
+    setErr(''); setBusy('Saving…');
+    let ok = 0, total = 0;
+    for (const it of list) {
+      upd(it.id, { status: 'saving' });
+      try { await saveOne(it); upd(it.id, { status: 'saved', checked: false }); ok++; total += numIn(it.invoice.total); } catch (x) { upd(it.id, { status: 'ready', error: x.message }); }
+    }
+    setBusy(''); setOpen(null);
+    if (ok) onDone?.(`Saved ${ok} invoice${ok === 1 ? '' : 's'} · ${money2(total)}.`);
+  }
+
+  const ready = queue.filter((x) => x.status === 'ready');
+  const toSave = ready.filter((x) => x.checked);
+  const missingCat = toSave.some((x) => !(x.pay?.category_id || defaults.category_id));
+  const current = queue.find((x) => x.id === open);
+  const reading = queue.some((x) => x.status === 'reading' || x.status === 'waiting');
+
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>📷 Scan invoices</h2><p>Photos or PDFs of supplier invoices or receipts, one or many at once. The AI reads the supplier, date, every line, the amounts and VAT (Turkish, Arabic or English) and writes the items in English. Check, then save.</p></div></div>
+      <label className="scan-drop">
+        <input type="file" accept="image/*,application/pdf" multiple onChange={pick} />
+        <span className="scan-ic" aria-hidden="true">📷</span>
+        <b>{reading ? 'Reading… you can add more' : 'Take a photo or choose files'}</b>
+        <small>{pagesOfOne ? 'The photos you choose now are pages of ONE invoice (up to 4)' : 'Each file is a separate invoice · JPG, PNG or PDF · up to 50 at once'}</small>
+      </label>
+      <label className="check" style={{ display: 'inline-flex', gap: 6, marginTop: 8, fontSize: 14 }}><input type="checkbox" checked={pagesOfOne} onChange={(e) => setPagesOfOne(e.target.checked)} /> The next photos are pages of one invoice</label>
+      {err && <div className="banner bad" role="alert"><span>{err}</span></div>}
+
+      {queue.length > 0 && (
+        <>
+          <div className="table-wrap" style={{ marginTop: 12 }}><table>
+            <thead><tr><th><input type="checkbox" aria-label="Select all ready" checked={ready.length > 0 && ready.every((x) => x.checked)} onChange={(e) => setQueue((q) => q.map((x) => (x.status === 'ready' ? { ...x, checked: e.target.checked } : x)))} /></th><th>File</th><th>Status</th><th>Supplier</th><th>Date</th><th className="r">Lines</th><th className="r">Total</th><th>Check</th><th /></tr></thead>
+            <tbody>{queue.map((x) => {
+              const inv = x.invoice;
+              return (
+                <tr key={x.id} className={open === x.id ? 'row-open' : ''}>
+                  <td>{x.status === 'ready' && <input type="checkbox" checked={!!x.checked} onChange={(e) => upd(x.id, { checked: e.target.checked })} aria-label="Save this one" />}</td>
+                  <td className="wrap-cell" style={{ maxWidth: 200 }}>{x.name}</td>
+                  <td><span className={'pill ' + STATUS[x.status][0]}>{STATUS[x.status][1]}</span>{x.error && <><br /><small style={{ color: 'var(--bad-text)' }}>{x.error}</small></>}</td>
+                  <td>{inv?.supplier || '–'}</td>
+                  <td>{inv?.date ? longDate(inv.date) : '–'}</td>
+                  <td className="r num">{inv ? inv.lines.length : '–'}</td>
+                  <td className="r num">{inv ? money2(numIn(inv.total)) : '–'}</td>
+                  <td>{inv && <>{mismatchOf(inv) ? <span className="pill bad">totals differ</span> : <span className="pill ok">totals ✓</span>}{x.meta?.duplicate && <span className="pill bad">already saved?</span>}{!inv.date && <span className="pill bad">no date</span>}</>}</td>
+                  <td>{(x.status === 'ready' || x.status === 'saved') && <button className="btn small" onClick={() => setOpen(open === x.id ? null : x.id)}>{open === x.id ? 'Close' : x.status === 'saved' ? 'View' : 'Check'}</button>}
+                    {x.status !== 'saving' && x.status !== 'reading' && <button className="btn small ghost" onClick={() => { setQueue((q) => q.filter((y) => y.id !== x.id)); if (open === x.id) setOpen(null); }} aria-label="Remove from the list">✕</button>}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+
+          {current?.invoice && <Review it={current} cats={cats} accounts={accounts} items={items} defaults={defaults} upd={upd} readOnly={current.status === 'saved'}
+            onSave={() => saveChecked([current])} busy={busy} />}
+
+          {ready.length > 0 && (
+            <div className="bulk-bar">
+              <b>Save {toSave.length} of {ready.length} ready invoice{ready.length === 1 ? '' : 's'}</b>
+              <label className="field"><span>Category (for all; change one in “Check”)</span><select value={defaults.category_id} onChange={(e) => setDefaults({ ...defaults, category_id: e.target.value })}><option value="">Choose…</option>{cats.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+              <label className="field"><span>Payment</span><select value={defaults.status} onChange={(e) => setDefaults({ ...defaults, status: e.target.value })}><option value="paid">Paid (on the invoice date)</option><option value="scheduled">To be paid (on the invoice date)</option><option value="unpaid">Unpaid, no date yet</option></select></label>
+              {defaults.status === 'paid' && <label className="field"><span>Paid from</span><select value={defaults.account_id} onChange={(e) => setDefaults({ ...defaults, account_id: e.target.value })}><option value="">Choose…</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
+              <button className="btn primary" disabled={!toSave.length || !!busy || missingCat || (defaults.status === 'paid' && !defaults.account_id && toSave.some((x) => !x.pay?.account_id))} onClick={() => saveChecked(toSave)}>{busy || `Save ${toSave.length} invoice${toSave.length === 1 ? '' : 's'}`}</button>
+              {missingCat && <small className="muted">Choose a category first.</small>}
+              {toSave.some((x) => mismatchOf(x.invoice)) && <small style={{ color: 'var(--bad-text)' }}>Some invoices’ lines don’t add up to their total: check them first.</small>}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Review and correct one read invoice. */
+function Review({ it, cats, accounts, items, defaults, upd, onSave, busy, readOnly }) {
+  const inv = it.invoice;
+  const pay = { ...defaults, ...(it.pay || {}) };
+  const set = (patch) => upd(it.id, (x) => ({ invoice: { ...x.invoice, ...patch } }));
+  const setPay = (patch) => upd(it.id, (x) => ({ pay: { ...(x.pay || {}), ...patch } }));
+  const setLine = (k, patch) => upd(it.id, (x) => ({ invoice: { ...x.invoice, lines: x.invoice.lines.map((l) => {
     if (l.key !== k) return l;
     const n = { ...l, ...patch };
     if ('qty' in patch || 'unit_price' in patch) n.total = r2(numIn(n.qty) * numIn(n.unit_price));
     return n;
-  }) }));
-  const linesSum = inv ? r2(inv.lines.reduce((t, l) => t + numIn(l.total), 0)) : 0;
-  const expected = inv ? r2(numIn(inv.total) - numIn(inv.tax)) : 0;
-  const mismatch = inv && Math.abs(linesSum - expected) > 0.05 && Math.abs(linesSum - numIn(inv.total)) > 0.05;
-
-  async function save() {
-    setErr(''); setBusy('Saving…');
-    try {
-      let receipt = null;
-      if (pages[0]) receipt = (await api('receipts', { method: 'POST', raw: await dataUrlToBlob(pages[0]), type: 'image/jpeg' })).receipt;
-      const body = {
-        invoice: { ...inv, total: numIn(inv.total), tax: numIn(inv.tax), subtotal: numIn(inv.subtotal), lines: inv.lines.map((l) => ({ ...l, qty: numIn(l.qty), unit_price: numIn(l.unit_price), total: numIn(l.total) })) },
-        ...pay, category_id: Number(pay.category_id) || null, account_id: Number(pay.account_id) || null, receipt, raw: { by: meta?.by },
-      };
-      await api('invoices', { method: 'POST', body });
-      setInv(null); setPages([]); setMeta(null);
-      onDone?.(`Saved: ${inv.supplier || 'invoice'} · ${money2(numIn(inv.total))} · ${inv.lines.length} items.`);
-    } catch (x) { setErr(x.message); } finally { setBusy(''); }
-  }
-
+  }) } }));
+  const linesSum = linesSumOf(inv);
+  const mismatch = mismatchOf(inv);
   return (
-    <div className="card">
-      <div className="card-head"><div><h2>📷 Scan an invoice</h2><p>Take a photo of a supplier invoice or receipt (or upload a PDF). The AI reads the supplier, date, every line, the amounts and VAT, in Turkish, Arabic or English, and writes the items in English. Check it, then save.</p></div></div>
-      {!inv && (
-        <label className="scan-drop">
-          <input type="file" accept="image/*,application/pdf" multiple onChange={pick} disabled={!!busy} />
-          <span className="scan-ic" aria-hidden="true">📷</span>
-          <b>{busy || 'Take a photo or choose a file'}</b>
-          <small>Photo (JPG/PNG) or PDF · up to 4 pages · flat, straight and well lit</small>
-        </label>
-      )}
-      {err && <div className="banner bad" role="alert"><span>{err}</span></div>}
-      {inv && (
-        <div className="stack" style={{ gap: 14 }}>
-          {meta?.duplicate && <div className="banner bad"><span>⚠ This looks like an invoice already saved: {inv.supplier} {meta.duplicate.invoice_no ? `#${meta.duplicate.invoice_no}` : ''} on {longDate(meta.duplicate.date)} for {money2(meta.duplicate.total)}. Check before saving it twice.</span></div>}
-          <div className="scan-grid">
-            {pages.length > 0 && <div className="scan-pages">{pages.map((p, i) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} alt={`Page ${i + 1}`} /></a>)}</div>}
-            <div className="form-grid">
-              <label className="field"><span>Supplier</span><input value={inv.supplier} onChange={(e) => set({ supplier: e.target.value })} /></label>
-              <label className="field"><span>Invoice number</span><input value={inv.invoice_no} onChange={(e) => set({ invoice_no: e.target.value })} /></label>
-              <label className="field"><span>Invoice date</span><input type="date" value={inv.date} onChange={(e) => set({ date: e.target.value })} /></label>
-              <label className="field"><span>Currency</span><input value={inv.currency} onChange={(e) => set({ currency: e.target.value.toUpperCase().slice(0, 3) })} /></label>
-            </div>
-          </div>
-          <div className="table-wrap"><table className="inv-lines">
-            <thead><tr><th>Item (English)</th><th>On the invoice</th><th className="r">Qty</th><th>Unit</th><th className="r">Unit price</th><th className="r">Line total</th><th /></tr></thead>
-            <tbody>{inv.lines.map((l) => (
-              <tr key={l.key}>
-                <td><input className="cell-input" list="inv-items" value={l.item} onChange={(e) => setLine(l.key, { item: e.target.value })} /></td>
-                <td className="orig" dir="auto">{l.desc_orig}</td>
-                <td className="r"><input className="cell-input num" inputMode="decimal" value={l.qty} onChange={(e) => setLine(l.key, { qty: e.target.value })} style={{ width: 70 }} /></td>
-                <td><input className="cell-input" value={l.unit} onChange={(e) => setLine(l.key, { unit: e.target.value })} style={{ width: 70 }} /></td>
-                <td className="r"><input className="cell-input num" inputMode="decimal" value={l.unit_price} onChange={(e) => setLine(l.key, { unit_price: e.target.value })} style={{ width: 90 }} /></td>
-                <td className="r"><input className="cell-input num" inputMode="decimal" value={l.total} onChange={(e) => setLine(l.key, { total: e.target.value })} style={{ width: 100 }} /></td>
-                <td><button className="btn small ghost" onClick={() => setInv((v) => ({ ...v, lines: v.lines.filter((x) => x.key !== l.key) }))} aria-label="Remove line">✕</button></td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-          <datalist id="inv-items">{items.map((n) => <option key={n} value={n} />)}</datalist>
-          <div><button className="btn small" onClick={() => setInv((v) => ({ ...v, lines: [...v.lines, { key: Date.now(), item: '', desc_orig: '', qty: 1, unit: '', unit_price: 0, total: 0 }] }))}>＋ Add a line</button></div>
-          <div className="form-grid">
-            <label className="field"><span>VAT (KDV)</span><input inputMode="decimal" value={inv.tax} onChange={(e) => set({ tax: e.target.value })} /></label>
-            <label className="field"><span>Invoice total (to pay)</span><input inputMode="decimal" value={inv.total} onChange={(e) => set({ total: e.target.value })} /></label>
-          </div>
-          <p className={'banner ' + (mismatch ? 'bad' : 'ok')} style={{ margin: 0 }}><span>Lines add up to <b>{money2(linesSum)}</b>{numIn(inv.tax) ? ` + VAT ${money2(numIn(inv.tax))} = ${money2(r2(linesSum + numIn(inv.tax)))}` : ''}. Invoice total: <b>{money2(numIn(inv.total))}</b>. {mismatch ? 'They do not match: check the lines against the photo.' : 'They match ✓'}</span></p>
-          {inv.notes && <p className="muted" style={{ margin: 0 }}>AI note: {inv.notes}</p>}
-          <div className="form-grid">
-            <label className="field"><span>Category</span><select value={pay.category_id} onChange={(e) => setPay({ ...pay, category_id: e.target.value })}><option value="">Choose…</option>{cats.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-            <label className="field"><span>Payment</span><select value={pay.status} onChange={(e) => setPay({ ...pay, status: e.target.value })}><option value="paid">Paid</option><option value="scheduled">To be paid on a date</option><option value="unpaid">Unpaid, no date yet</option></select></label>
-            {pay.status === 'paid' && <label className="field"><span>Paid from</span><select value={pay.account_id} onChange={(e) => setPay({ ...pay, account_id: e.target.value })}><option value="">Choose…</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
-            {pay.status === 'paid' && <label className="field"><span>Payment date</span><input type="date" value={pay.paid_date} onChange={(e) => setPay({ ...pay, paid_date: e.target.value })} /></label>}
-            {pay.status === 'scheduled' && <label className="field"><span>Due date</span><input type="date" value={pay.due_date} onChange={(e) => setPay({ ...pay, due_date: e.target.value })} /></label>}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn primary" onClick={save} disabled={!!busy}>{busy || 'Save invoice'}</button>
-            <button className="btn ghost" onClick={() => { setInv(null); setPages([]); setMeta(null); }}>Cancel</button>
-            <span className="faint" style={{ fontSize: 12.5 }}>Read by {meta?.by}. It becomes one accounting record (the total) with its lines kept for Item costs.</span>
-          </div>
+    <fieldset className="review" disabled={readOnly}>
+      <legend>{inv.supplier || it.name}</legend>
+      {it.meta?.duplicate && <div className="banner bad"><span>⚠ This looks like an invoice already saved: {inv.supplier} {it.meta.duplicate.invoice_no ? `#${it.meta.duplicate.invoice_no}` : ''} on {longDate(it.meta.duplicate.date)} for {money2(it.meta.duplicate.total)}. It is unticked so it is not saved twice.</span></div>}
+      <div className="scan-grid">
+        {it.pages.length > 0 && <div className="scan-pages">{it.pages.map((p, i) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} alt={`Page ${i + 1}`} /></a>)}</div>}
+        <div className="form-grid">
+          <label className="field"><span>Supplier</span><input value={inv.supplier} onChange={(e) => set({ supplier: e.target.value })} /></label>
+          <label className="field"><span>Invoice number</span><input value={inv.invoice_no} onChange={(e) => set({ invoice_no: e.target.value })} /></label>
+          <label className="field"><span>Invoice date</span><input type="date" value={inv.date} onChange={(e) => set({ date: e.target.value })} /></label>
+          <label className="field"><span>Currency</span><input value={inv.currency} onChange={(e) => set({ currency: e.target.value.toUpperCase().slice(0, 3) })} /></label>
         </div>
-      )}
-    </div>
+      </div>
+      <div className="table-wrap"><table className="inv-lines">
+        <thead><tr><th>Item (English)</th><th>On the invoice</th><th className="r">Qty</th><th>Unit</th><th className="r">Unit price</th><th className="r">Line total</th><th /></tr></thead>
+        <tbody>{inv.lines.map((l) => (
+          <tr key={l.key}>
+            <td><input className="cell-input" list="inv-items" value={l.item} onChange={(e) => setLine(l.key, { item: e.target.value })} /></td>
+            <td className="orig" dir="auto">{l.desc_orig}</td>
+            <td className="r"><input className="cell-input num" inputMode="decimal" value={l.qty} onChange={(e) => setLine(l.key, { qty: e.target.value })} style={{ width: 70 }} /></td>
+            <td><input className="cell-input" value={l.unit} onChange={(e) => setLine(l.key, { unit: e.target.value })} style={{ width: 70 }} /></td>
+            <td className="r"><input className="cell-input num" inputMode="decimal" value={l.unit_price} onChange={(e) => setLine(l.key, { unit_price: e.target.value })} style={{ width: 90 }} /></td>
+            <td className="r"><input className="cell-input num" inputMode="decimal" value={l.total} onChange={(e) => setLine(l.key, { total: e.target.value })} style={{ width: 100 }} /></td>
+            <td><button className="btn small ghost" onClick={() => set({ lines: inv.lines.filter((x) => x.key !== l.key) })} aria-label="Remove line">✕</button></td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+      <datalist id="inv-items">{items.map((n) => <option key={n} value={n} />)}</datalist>
+      <div><button className="btn small" onClick={() => set({ lines: [...inv.lines, { key: Date.now(), item: '', desc_orig: '', qty: 1, unit: '', unit_price: 0, total: 0 }] })}>＋ Add a line</button></div>
+      <div className="form-grid">
+        <label className="field"><span>VAT (KDV)</span><input inputMode="decimal" value={inv.tax} onChange={(e) => set({ tax: e.target.value })} /></label>
+        <label className="field"><span>Invoice total (to pay)</span><input inputMode="decimal" value={inv.total} onChange={(e) => set({ total: e.target.value })} /></label>
+      </div>
+      <p className={'banner ' + (mismatch ? 'bad' : 'ok')} style={{ margin: 0 }}><span>Lines add up to <b>{money2(linesSum)}</b>{numIn(inv.tax) ? ` + VAT ${money2(numIn(inv.tax))} = ${money2(r2(linesSum + numIn(inv.tax)))}` : ''}. Invoice total: <b>{money2(numIn(inv.total))}</b>. {mismatch ? 'They do not match: check the lines against the photo.' : 'They match ✓'}</span></p>
+      {inv.notes && <p className="muted" style={{ margin: 0 }}>AI note: {inv.notes}</p>}
+      <div className="form-grid">
+        <label className="field"><span>Category</span><select value={pay.category_id} onChange={(e) => setPay({ category_id: e.target.value })}><option value="">Choose…</option>{cats.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label className="field"><span>Payment</span><select value={pay.status} onChange={(e) => setPay({ status: e.target.value })}><option value="paid">Paid</option><option value="scheduled">To be paid on a date</option><option value="unpaid">Unpaid, no date yet</option></select></label>
+        {pay.status === 'paid' && <label className="field"><span>Paid from</span><select value={pay.account_id} onChange={(e) => setPay({ account_id: e.target.value })}><option value="">Choose…</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
+        {pay.status === 'paid' && <label className="field"><span>Payment date</span><input type="date" value={pay.paid_date || inv.date} onChange={(e) => setPay({ paid_date: e.target.value })} /></label>}
+        {pay.status === 'scheduled' && <label className="field"><span>Due date</span><input type="date" value={pay.due_date || inv.date} onChange={(e) => setPay({ due_date: e.target.value })} /></label>}
+      </div>
+      {!readOnly && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn primary" onClick={onSave} disabled={!!busy || !pay.category_id}>{busy || 'Save this invoice'}</button>
+        <span className="faint" style={{ fontSize: 12.5 }}>Read by {it.meta?.by}. Saved as one accounting record (the total, with the photo) plus its lines for Item costs.</span>
+      </div>}
+    </fieldset>
   );
 }
 

@@ -200,20 +200,6 @@ async function route(request, env, url, ctx) {
     if (!value) return new Response('This download link has expired. Ask for a new one.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     return new Response(value, { headers: { 'content-type': metadata?.type || 'application/octet-stream', 'content-disposition': `attachment; filename="${metadata?.name || 'download'}"`, 'cache-control': 'no-store' } });
   }
-  // TEMPORARY (removed after use): email the POS uploader to one staff member (upload password)
-  if (path === '/api/send-uploader' && request.method === 'POST') {
-    if (!(await passwordOk(env, request.headers.get('x-upload-password') || ''))) return json({ error: 'Wrong password.' }, 401);
-    const b = await request.json();
-    const user = await env.DB.prepare('SELECT * FROM users WHERE username = ? AND active = 1').bind(String(b.username || '').toLowerCase()).first();
-    if (!user || !user.email) return json({ error: 'No active user with an email address.' }, 400);
-    const id = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('');
-    const zip = Uint8Array.from(atob(b.zip), (c) => c.charCodeAt(0));
-    await env.DATA.put('dl:' + id, zip, { expirationTtl: 14 * 86400, metadata: { type: 'application/zip', name: 'MariamCoffee-POS-uploader.zip' } });
-    const link = `https://${SITE_HOST}/dl/${id}/MariamCoffee-POS-uploader.zip`;
-    const { sendUploaderMail } = await import('./email.js');
-    const mailId = await sendUploaderMail(env, user, link, b.pdf);
-    return json({ ok: true, to: user.name, mailId, linkWorks: true });
-  }
   if (path === '/api/media' || (path.startsWith('/media/') && request.method === 'GET')) return handleMedia(request, env, path);
   if (path === '/api/auth' && request.method === 'POST') {
     return (await allowed(request, env))
