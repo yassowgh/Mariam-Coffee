@@ -66,7 +66,8 @@ function parseJson(text) {
 }
 
 // Workers AI vision models, best first; each is tried until one answers with usable JSON.
-const CF_VISION = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/google/gemma-3-12b-it', '@cf/meta/llama-3.2-11b-vision-instruct'];
+// tested on Turkish and Arabic invoices: Llama 4 Scout read both perfectly; Mistral misread Arabic digits
+const CF_VISION = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/meta/llama-3.2-11b-vision-instruct'];
 const CF_TEXT = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 async function readWithWorkersAI(env, { images, text }) {
@@ -205,19 +206,3 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
 
 export const INVOICE_ROUTES = ['invoices', 'invoice-lines'];
 
-/** TEMPORARY: runs every Workers AI vision model on one image and reports what each answered. */
-export async function testInvoiceAI(env, { images, text, model }) {
-  const out = {};
-  const models = text ? [CF_TEXT] : (model ? [model] : CF_VISION);
-  for (const mdl of models) {
-    const t0 = Date.now();
-    try {
-      const r = text ? await readWithWorkersAI(env, { text }) : await (async () => {
-        const save = CF_VISION.slice(); CF_VISION.length = 0; CF_VISION.push(mdl);
-        try { return await readWithWorkersAI(env, { images }); } finally { CF_VISION.length = 0; CF_VISION.push(...save); }
-      })();
-      out[mdl] = { ms: Date.now() - t0, invoice: clean(r.out) };
-    } catch (e) { out[mdl] = { ms: Date.now() - t0, error: e.message, tried: e.tried }; }
-  }
-  return out;
-}

@@ -494,3 +494,19 @@ table.schedule .today { background: rgba(128,128,128,.14); background: color-mix
 .tz-switch.tz-off { border-color: var(--warn); background: rgba(237,161,0,.12); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 600px) { .tz-switch select { max-width: 120px; } }
+
+/* invoice scan */
+.scan-drop { display: grid; justify-items: center; gap: 4px; padding: 28px 16px; border: 2px dashed var(--border); border-radius: 14px; cursor: pointer; text-align: center; background: var(--surface-2); }
+.scan-drop:hover { border-color: var(--accent); }
+.scan-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.scan-ic { font-size: 34px; }
+.scan-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .scan-grid { grid-template-columns: 220px minmax(0, 1fr); } }
+.scan-pages { display: flex; gap: 6px; flex-wrap: wrap; }
+.scan-pages img { width: 100%; max-width: 220px; border: 1px solid var(--border); border-radius: 8px; }
+.inv-lines td.orig { font-size: 12.5px; color: var(--text-2); max-width: 220px; }
+.inv-lines .cell-input { width: 100%; min-width: 140px; }
+.inv-lines td.r .cell-input { min-width: 0; text-align: right; }
+tr.row-open > td { background: var(--surface-2); }
+td.hist { background: var(--surface-2); padding: 10px 14px; }
+table.inner { width: 100%; font-size: 13px; }

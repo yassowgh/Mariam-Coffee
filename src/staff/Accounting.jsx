@@ -3,6 +3,7 @@ import { addDaysLocal, api, compressPhoto, todayLocal } from '../lib/api.js';
 import { isNotionExport, notionRecords } from '../lib/notionImport.js';
 import FileImport from './FileImport.jsx';
 import { CostApprovals } from './DayCosts.jsx';
+import { InvoiceScan, ItemCosts } from './Invoices.jsx';
 import DataTable from '../components/DataTable.jsx';
 import { int, longDate, money, money2, monthLabel } from '../format.js';
 
@@ -40,6 +41,7 @@ export function useAccountingData(user) {
 export default function Accounting({ user, go }) {
   const [view, setView] = useState('add');
   const [editing, setEditing] = useState(null); // a record being edited, or a prefilled new one
+  const [scanMsg, setScanMsg] = useState('');
   const { loaded, error, ctx: base } = useAccountingData(user);
   const records = base.records;
   const open = records.filter((r) => r.status !== 'paid');
@@ -47,6 +49,8 @@ export default function Accounting({ user, go }) {
   const ctx = { ...base, edit: (r) => { setEditing(r); setView('add'); window.scrollTo(0, 0); } };
   const tabs = [
     ['add', editing?.id ? 'Edit record' : '＋ New record'],
+    ['scan', '📷 Scan invoice'],
+    ['items', 'Item costs'],
     ['records', `Records${records.length ? ` (${records.length})` : ''}`],
     ['accounts', 'Accounts & categories'],
     ['import', 'Upload files'],
@@ -64,6 +68,9 @@ export default function Accounting({ user, go }) {
           {view === 'costs' ? <CostApprovals ctx={ctx} onChange={() => base.reload()} /> : <CostApprovals ctx={ctx} compact onChange={() => base.reload()} />}
           {view === 'add' && <RecordForm ctx={ctx} initial={editing} onDone={(rec) => { setEditing(null); base.reload(); if (rec) setView('records'); }} onCancel={editing ? () => { setEditing(null); setView('records'); } : null} />}
           {view === 'records' && <Records ctx={ctx} />}
+          {view === 'scan' && <InvoiceScan ctx={ctx} onDone={(text) => { base.reload(); setScanMsg(text); }} />}
+          {view === 'scan' && scanMsg && <div className="banner ok" role="status"><span>{scanMsg} It is in Records, and its items are in Item costs.</span><button className="btn small ghost" onClick={() => setScanMsg('')}>✕</button></div>}
+          {view === 'items' && <ItemCosts />}
           {view === 'accounts' && <AccountsSetup ctx={ctx} />}
           {view === 'import' && <><FileImport ctx={ctx} onDone={() => base.reload()} /><Import ctx={ctx} onDone={() => { base.reload(); setView('records'); }} /></>}
         </>
