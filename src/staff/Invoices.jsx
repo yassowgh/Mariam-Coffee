@@ -165,7 +165,11 @@ export function InvoiceScan({ ctx, onDone }) {
     let ok = 0, total = 0;
     for (const it of list) {
       upd(it.id, { status: 'saving' });
-      try { await saveOne(it); upd(it.id, { status: 'saved', checked: false }); ok++; total += numIn(it.invoice.total); } catch (x) { upd(it.id, { status: 'ready', error: x.message }); }
+      try { await saveOne(it); upd(it.id, { status: 'saved', checked: false, error: '' }); ok++; total += numIn(it.invoice.total); } catch (x) {
+        // the server already has this one (e.g. saved before an error): mark it saved, never save it twice
+        if (x.status === 409) upd(it.id, { status: 'saved', checked: false, error: '', step: 'Was already saved, not saved again.' });
+        else upd(it.id, { status: 'ready', error: x.message });
+      }
     }
     setBusy(''); setOpen(null);
     if (ok) onDone?.(`Saved ${ok} invoice${ok === 1 ? '' : 's'} · ${money2(total)}.`);
@@ -196,7 +200,7 @@ export function InvoiceScan({ ctx, onDone }) {
       {queue.length > 0 && (
         <>
           <div className="table-wrap" style={{ marginTop: 12 }}><table>
-            <thead><tr><th><input type="checkbox" aria-label="Select all ready" checked={ready.length > 0 && ready.every((x) => x.checked)} onChange={(e) => setQueue((q) => q.map((x) => (x.status === 'ready' ? { ...x, checked: e.target.checked } : x)))} /></th><th>File</th><th>Status</th><th>Supplier / paid to</th><th>Date</th><th className="r">Lines</th><th className="r">Total</th><th>Category</th><th>Check</th><th /></tr></thead>
+            <thead><tr><th><input type="checkbox" aria-label="Select all ready" checked={ready.length > 0 && ready.every((x) => x.checked)} onChange={(e) => setQueue((q) => q.map((x) => (x.status === 'ready' ? { ...x, checked: e.target.checked } : x)))} /></th><th>File</th><th>Status</th><th>Supplier / paid to</th><th>Date</th><th className="r">Lines</th><th className="r">Total</th><th>Category</th><th>Payment</th><th>Check</th><th /></tr></thead>
             <tbody>{queue.map((x) => {
               const inv = x.invoice;
               return (
@@ -213,6 +217,15 @@ export function InvoiceScan({ ctx, onDone }) {
                       <option value="">Choose…</option>{cats.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
                       {x.catFrom && x.catFrom !== 'you' && <><br /><small className="muted">{x.catFrom === 'last time' ? 'as last time' : 'AI suggestion'}</small></>}</>
                   ) : '–'}</td>
+                  <td>{inv && x.status !== 'saved' ? (() => {
+                    const p = { ...defaults, ...(x.pay || {}) };
+                    return (<>
+                      <select className="cell-input" style={{ minWidth: 120 }} value={p.status} onChange={(e) => upd(x.id, (y) => ({ pay: { ...(y.pay || {}), status: e.target.value } }))} aria-label="Payment">
+                        <option value="paid">Paid</option><option value="scheduled">To be paid</option><option value="unpaid">Unpaid</option></select>
+                      {p.status === 'paid' && <><br /><select className="cell-input" style={{ minWidth: 120, marginTop: 4 }} value={p.account_id || ''} onChange={(e) => upd(x.id, (y) => ({ pay: { ...(y.pay || {}), account_id: e.target.value } }))} aria-label="Paid from">
+                        <option value="">Paid from…</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
+                    </>);
+                  })() : '–'}</td>
                   <td>{inv && <>{!inv.lines.length ? <span className="pill">payment slip</span> : mismatchOf(inv) ? <span className="pill bad">totals differ</span> : <span className="pill ok">totals ✓</span>}{x.meta?.duplicate && <span className="pill bad">already saved?</span>}{x.meta?.twin && <span className="pill bad">same as {x.meta.twin}?</span>}{!inv.date && <span className="pill bad">no date</span>}</>}</td>
                   <td>{(x.status === 'ready' || x.status === 'saved') && <button className="btn small" onClick={() => setOpen(open === x.id ? null : x.id)}>{open === x.id ? 'Close' : x.status === 'saved' ? 'View' : 'Check'}</button>}
                     {x.status !== 'saving' && x.status !== 'reading' && <button className="btn small ghost" onClick={() => { setQueue((q) => q.filter((y) => y.id !== x.id)); if (open === x.id) setOpen(null); }} aria-label="Remove from the list">✕</button>}</td>
@@ -231,8 +244,8 @@ export function InvoiceScan({ ctx, onDone }) {
             <div className="bulk-bar">
               <b>Save {toSave.length} of {ready.length} ready invoice{ready.length === 1 ? '' : 's'}</b>
               <label className="field"><span>Category for rows without one</span><select value={defaults.category_id} onChange={(e) => setDefaults({ ...defaults, category_id: e.target.value })}><option value="">Choose…</option>{cats.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-              <label className="field"><span>Payment</span><select value={defaults.status} onChange={(e) => setDefaults({ ...defaults, status: e.target.value })}><option value="paid">Paid (on the invoice date)</option><option value="scheduled">To be paid (on the invoice date)</option><option value="unpaid">Unpaid, no date yet</option></select></label>
-              {defaults.status === 'paid' && <label className="field"><span>Paid from</span><select value={defaults.account_id} onChange={(e) => setDefaults({ ...defaults, account_id: e.target.value })}><option value="">Choose…</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
+              <label className="field"><span>Payment for rows you didn’t set</span><select value={defaults.status} onChange={(e) => setDefaults({ ...defaults, status: e.target.value })}><option value="paid">Paid (on the invoice date)</option><option value="scheduled">To be paid (on the invoice date)</option><option value="unpaid">Unpaid, no date yet</option></select></label>
+              {defaults.status === 'paid' && <label className="field"><span>Paid from (rows you didn’t set)</span><select value={defaults.account_id} onChange={(e) => setDefaults({ ...defaults, account_id: e.target.value })}><option value="">Choose…</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
               <button className="btn primary" disabled={!toSave.length || !!busy || missingCat || missingAcc} onClick={() => saveChecked(toSave)}>{busy || `Save ${toSave.length} invoice${toSave.length === 1 ? '' : 's'}`}</button>
               {missingCat && <small className="muted">Choose a category for every ticked row.</small>}
               {missingAcc && <small className="muted">Choose “Paid from” for the paid ones (in Check, or here).</small>}

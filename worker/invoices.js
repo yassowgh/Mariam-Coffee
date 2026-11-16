@@ -154,16 +154,33 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
       ? `Payment to ${inv.supplier || 'payee'}${inv.description ? ' · ' + inv.description : ''}`
       : `Invoice ${inv.supplier || 'supplier'}${inv.invoice_no ? ' #' + inv.invoice_no : ''}`).slice(0, 160);
     const reason = [inv.lines.length ? `${inv.lines.length} lines` : (inv.doc_type === 'payment' ? 'bank / payment slip' : ''), inv.invoice_no && inv.doc_type === 'payment' ? `ref ${inv.invoice_no}` : '', inv.tax ? `VAT ${inv.tax}` : '', inv.currency !== 'TRY' ? `currency ${inv.currency}` : '', inv.notes].filter(Boolean).join(' · ');
-    const ex = await db.prepare(`INSERT INTO expenses (name, category_id, amount, date, status, paid_date, due_date, account_id, payee, payee_type, reason, receipt, kind, created_at, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'company', ?, ?, 'regular', ?, ?)`)
-      .bind(name, cat.id, inv.total, inv.date, status, paid_date, due_date, account_id, inv.supplier || null, reason, receipt, now, me.id).run();
-    const expenseId = ex.meta.last_row_id;
-    const iv = await db.prepare(`INSERT INTO invoices (expense_id, supplier, invoice_no, date, currency, subtotal, tax, total, lang, raw, created_at, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(expenseId, inv.supplier, inv.invoice_no, inv.date, inv.currency, inv.subtotal || null, inv.tax || null, inv.total, inv.lang, JSON.stringify(b.raw || null).slice(0, 20000), now, me.id).run();
-    const invoiceId = iv.meta.last_row_id;
-    await db.batch(inv.lines.map((l) => db.prepare('INSERT INTO invoice_lines (invoice_id, item, desc_orig, qty, unit, unit_price, total, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(invoiceId, l.item || l.desc_orig, l.desc_orig, l.qty, l.unit, l.unit_price, l.total, cat.id)));
+    // already saved (same payee, date, amount and reference)? then do not save it twice
+    const same = await db.prepare(`SELECT i.id, i.expense_id FROM invoices i JOIN expenses e ON e.id = i.expense_id
+      WHERE e.deleted = 0 AND lower(coalesce(i.supplier, '')) = lower(?) AND i.date = ? AND abs(i.total - ?) < 0.01 AND coalesce(i.invoice_no, '') = ? LIMIT 1`)
+      .bind(inv.supplier || '', inv.date, inv.total, inv.invoice_no || '').first();
+    if (same && !b.force) return json(h, { error: 'This was already saved.', already: true, invoice_id: same.id, expense_id: same.expense_id }, 409);
+    let expenseId = null, invoiceId = null;
+    try {
+      const ex = await db.prepare(`INSERT INTO expenses (name, category_id, amount, date, status, paid_date, due_date, account_id, payee, payee_type, reason, receipt, kind, created_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'company', ?, ?, 'regular', ?, ?)`)
+        .bind(name, cat.id, inv.total, inv.date, status, paid_date, due_date, account_id, inv.supplier || null, reason, receipt, now, me.id).run();
+      expenseId = ex.meta.last_row_id;
+      const iv = await db.prepare(`INSERT INTO invoices (expense_id, supplier, invoice_no, date, currency, subtotal, tax, total, lang, raw, created_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(expenseId, inv.supplier, inv.invoice_no, inv.date, inv.currency, inv.subtotal || null, inv.tax || null, inv.total, inv.lang, JSON.stringify(b.raw || null).slice(0, 20000), now, me.id).run();
+      invoiceId = iv.meta.last_row_id;
+      // a bank / payment slip has no item lines (an empty batch is an error in D1)
+      if (inv.lines.length) {
+        await db.batch(inv.lines.map((l) => db.prepare('INSERT INTO invoice_lines (invoice_id, item, desc_orig, qty, unit, unit_price, total, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(invoiceId, l.item || l.desc_orig, l.desc_orig, l.qty, l.unit, l.unit_price, l.total, cat.id)));
+      }
+    } catch (e) {
+      // all or nothing: remove what was written before the error
+      if (invoiceId) await db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').bind(invoiceId).run().catch(() => {});
+      if (invoiceId) await db.prepare('DELETE FROM invoices WHERE id = ?').bind(invoiceId).run().catch(() => {});
+      if (expenseId) await db.prepare('DELETE FROM expenses WHERE id = ?').bind(expenseId).run().catch(() => {});
+      throw e;
+    }
     await h.audit(db, me, 'invoice.save', { invoice: invoiceId, expense: expenseId, total: inv.total, lines: inv.lines.length });
     return json(h, { ok: true, invoice_id: invoiceId, expense_id: expenseId });
   }
