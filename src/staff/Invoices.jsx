@@ -108,6 +108,11 @@ export function InvoiceScan({ ctx, onDone }) {
           }
           upd(it.id, { step: body?.ocr ? 'Sorting the lines (AI)…' : 'The AI is reading the photo…' });
           let r = await api('invoices/read', { method: 'POST', body: body || { images: images.slice(0, 4) } });
+          // OCR misread only the VAT (e.g. 3 read as 8): lines are fine, so VAT = total − lines
+          if (body?.ocr && r.invoice.lines.length && mismatchOf(r.invoice)) {
+            const sum = linesSumOf(r.invoice), t = r2(numIn(r.invoice.total) - sum);
+            if (t >= 0 && t <= sum * 0.3) r = { ...r, invoice: { ...r.invoice, tax: t, notes: [r.invoice.notes, `VAT set to ${t} (total − lines); please check it on the photo.`].filter(Boolean).join(' ') } };
+          }
           // the text route did not give a clean result (no lines, or lines ≠ total): read the photo instead
           if (body?.ocr && (!r.invoice.lines.length || mismatchOf(r.invoice))) {
             upd(it.id, { step: 'Checking again from the photo (AI)…' });
