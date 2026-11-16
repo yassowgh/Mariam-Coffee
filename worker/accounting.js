@@ -1,5 +1,5 @@
 import { INVOICE_ROUTES, INVOICE_SCHEMA, handleInvoices } from './invoices.js';
-import { handleAiProviders } from './ai.js';
+import { aiChat, handleAiProviders, parseJson } from './ai.js';
 import { ADMIN_EMAIL, appUrl, notify, sendMany } from './email.js';
 // Accounting records (expenses and bills), money accounts, loans, receipts and salary data.
 //
@@ -361,7 +361,6 @@ async function extract({ request, env, me, h }) {
   const b = await h.body(request);
   const text = String(b.text || '').slice(0, 24000);
   if (!text.trim()) h.fail(400, 'The file has no text.');
-  if (!env.AI) h.fail(501, 'No AI is connected, so free text cannot be read.');
   const cats = (await env.DB.prepare('SELECT name FROM categories WHERE active = 1').all()).results.map((c) => c.name);
   const prompt = `Extract every expense / payment from this document of a café in Istanbul (amounts in Turkish lira).
 For each one give: name (what it was for, short), date (YYYY-MM-DD, or "" if not shown; dates like 03/04/2026 are day/month/year),
@@ -374,14 +373,11 @@ Document:
 ${text}`;
   let out = null;
   try {
-    const res = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_schema', json_schema: { type: 'object', required: ['records'], properties: { records: { type: 'array', items: { type: 'object', required: ['name', 'date', 'amount', 'category', 'payee', 'status'], properties: { name: { type: 'string' }, date: { type: 'string' }, amount: { type: 'number' }, category: { type: 'string' }, payee: { type: 'string' }, status: { type: 'string' } } } } } } },
-      max_tokens: 4000, temperature: 0,
-    });
-    out = res?.response;
-    if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
-  } catch (e) { console.error('extract', e); h.fail(503, 'The AI could not read the file right now. Try again, or use an Excel/CSV file.'); }
+    const r = await aiChat(env, env.DB, { system: 'You extract expenses from documents. Answer with JSON only.', text: prompt, maxTokens: 4000,
+      schema: { type: 'object', required: ['records'], properties: { records: { type: 'array', items: { type: 'object', required: ['name', 'date', 'amount', 'category', 'payee', 'status'], properties: { name: { type: 'string' }, date: { type: 'string' }, amount: { type: 'number' }, category: { type: 'string' }, payee: { type: 'string' }, status: { type: 'string' } } } } } },
+      accept: (o) => Array.isArray(parseJson(o)?.records) });
+    out = parseJson(r.out);
+  } catch (e) { console.error('extract', e); h.fail(503, `${e.message} Or use an Excel/CSV file.`); }
   if (!out || !Array.isArray(out.records)) h.fail(502, 'The AI answer could not be read. Try again.');
   const records = out.records.map((r) => ({
     name: h.str(r.name, 160) || 'Expense', amount: Math.abs(Number(r.amount) || 0), date: h.isDate(r.date) ? r.date : '',
@@ -451,21 +447,15 @@ ${JSON.stringify(b.summary).slice(0, 6000)}
 Write exactly 5 short, concrete recommendations to reduce costs, pay bills on time or improve profit, based only on these figures.
 Each one sentence or two, plain words, mention the category or bill and the amount when useful. Do not invent figures.
 ${lang === 'ar' ? 'Write them in Arabic.' : 'Write them in English.'} Answer with JSON: {"recommendations": ["...", "...", "...", "...", "..."]}`;
-  let recs = null;
+  let recs = null, by = 'AI';
   try {
-    if (env.AI) {
-      const res = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_schema', json_schema: { type: 'object', required: ['recommendations'], properties: { recommendations: { type: 'array', items: { type: 'string' } } } } },
-        max_tokens: 1200, temperature: 0.3,
-      });
-      let out = res?.response;
-      if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
-      recs = Array.isArray(out?.recommendations) ? out.recommendations.map(String).filter(Boolean).slice(0, 5) : null;
-    }
+    const r = await aiChat(env, db, { system: 'You are a careful financial adviser for a small café. Answer with JSON only.', text: prompt, maxTokens: 1200, temperature: 0.3,
+      schema: { type: 'object', required: ['recommendations'], properties: { recommendations: { type: 'array', items: { type: 'string' } } } },
+      accept: (o) => Array.isArray(parseJson(o)?.recommendations) });
+    recs = parseJson(r.out).recommendations.map(String).filter(Boolean).slice(0, 5); by = r.by;
   } catch (e) { console.error('advice', e); }
   if (!recs || !recs.length) h.fail(503, 'The AI could not write recommendations right now. The key figures above are still correct.');
-  const result = { month: b.month, recommendations: recs, sig, at: h.nowIso(), by: 'Cloudflare AI' };
+  const result = { month: b.month, recommendations: recs, sig, at: h.nowIso(), by };
   await h.setSetting(db, key, result);
   await h.audit(db, me, 'finance.advice', { month: b.month });
   return h.json(result);

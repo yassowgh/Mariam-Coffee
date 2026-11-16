@@ -8,7 +8,7 @@
 //
 // AI: Claude when ANTHROPIC_API_KEY is set (best for Arabic handwriting), otherwise Cloudflare Workers AI
 // (free allowance): several vision models are tried in turn.
-import { aiChat } from './ai.js';
+import { aiChat, parseJson } from './ai.js';
 
 export const INVOICE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER, supplier TEXT, invoice_no TEXT,
@@ -19,9 +19,11 @@ export const INVOICE_SCHEMA = [
   'CREATE INDEX IF NOT EXISTS invoice_lines_item ON invoice_lines (item)',
 ];
 
-export const INVOICE_PROMPT = `You read supplier invoices and receipts for a café in Istanbul. The document can be in Turkish, Arabic or English (or mixed), printed or handwritten.
+export const INVOICE_PROMPT = `You read supplier invoices, receipts and bank payment slips for MARIAM COFFEE, a café in Istanbul. The document can be in Turkish, Arabic or English (or mixed), printed or handwritten.
 Return JSON only, with this shape:
-{"supplier": string, "invoice_no": string, "date": "YYYY-MM-DD" or "", "currency": "TRY" | "USD" | "EUR" | other ISO code,
+{"doc_type": "invoice" | "payment",
+ "supplier": string, "invoice_no": string, "date": "YYYY-MM-DD" or "", "currency": "TRY" | "USD" | "EUR" | other ISO code,
+ "category": string, "paid_from": string, "description": string,
  "lang": "tr" | "ar" | "en" | "mixed",
  "lines": [{"desc_orig": string, "item": string, "qty": number, "unit": string, "unit_price": number, "total": number}],
  "subtotal": number, "tax": number, "total": number, "notes": string}
@@ -33,7 +35,15 @@ Rules:
 - "total" of a line = qty × unit_price as printed (after line discount). Use 0 when something is not on the invoice.
 - "tax" = total VAT/KDV. "total" = the amount to pay (genel toplam / الإجمالي).
 - Dates: Turkish invoices use DD.MM.YYYY. Write the date as YYYY-MM-DD.
-- "notes": anything unclear, in English (e.g. "line 3 partly unreadable").`;
+- "notes": anything unclear, in English (e.g. "line 3 partly unreadable").
+- doc_type "invoice" = a bill / invoice / shop receipt with products. doc_type "payment" = a bank transfer or payment slip
+  (dekont, havale/EFT, "Alıcı", receipt from a bank): it usually has NO product lines; then "lines" is [] and "total" is the amount sent.
+- "supplier" = who RECEIVED the money or SOLD the goods. Mariam Coffee (any spelling, e.g. "MAR İ AM COFFEE", "Mariam Kahve") is the
+  customer/sender and is NEVER the supplier. On a bank slip it is the receiver ("Alıcı", "Alıcı Adı", "Receiver"), never the bank itself.
+- "paid_from": on a bank slip, the sender's bank (e.g. "Kuveyt Türk", "Ziraat"); otherwise "".
+- "description": what it was for, in English, from the slip's explanation ("Açıklama") or the products (e.g. "October rent", "Salary Essa").
+- "date" = the transaction / invoice date ("İşlem Tarihi", "Fatura Tarihi"), not the print date.
+- "category": choose the single best one from the category list given with the document, written exactly as in the list; "" if unsure.`;
 
 const json = (h, obj, status) => h.json(obj, status);
 const num = (v) => {
@@ -52,18 +62,15 @@ const clean = (o) => {
     qty: num(l.qty ?? l.quantity) || 1, unit: str(l.unit, 20), unit_price: num(l.unit_price ?? l.price), total: num(l.total ?? l.amount),
   })).map((l) => ({ ...l, total: l.total || Math.round(l.qty * l.unit_price * 100) / 100, unit_price: l.unit_price || (l.qty ? Math.round((l.total / l.qty) * 100) / 100 : 0) }))
     .filter((l) => l.item || l.desc_orig);
+  let supplier = str(o?.supplier, 160);
+  if (/m\s*a\s*r\s*[iİı]?\s*a\s*m\s*(coffee|kahve|cafe|café)/i.test(supplier)) supplier = ''; // the café itself is never the supplier
+  const docType = o?.doc_type === 'payment' || (!lines.length && o?.doc_type !== 'invoice') ? 'payment' : 'invoice';
   return {
-    supplier: str(o?.supplier, 160), invoice_no: str(o?.invoice_no, 60), date, currency: str(o?.currency || 'TRY', 6).toUpperCase() || 'TRY',
+    doc_type: docType, category: str(o?.category, 80), paid_from: str(o?.paid_from, 80), description: str(o?.description, 160),
+    supplier, invoice_no: str(o?.invoice_no, 60), date, currency: str(o?.currency || 'TRY', 6).toUpperCase() || 'TRY',
     lang: str(o?.lang, 10), lines, subtotal: num(o?.subtotal), tax: num(o?.tax), total: num(o?.total) || lines.reduce((t, l) => t + l.total, 0), notes: str(o?.notes, 500),
   };
 };
-function parseJson(text) {
-  if (text && typeof text === 'object') return text;
-  const s = String(text || '');
-  const a = s.indexOf('{'), b = s.lastIndexOf('}');
-  if (a < 0 || b <= a) return null;
-  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
-}
 
 export async function handleInvoices({ head, sub, request, env, me, h }) {
   const db = env.DB;
@@ -75,13 +82,15 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
     const text = typeof b.text === 'string' ? b.text.slice(0, 30000) : '';
     if (!images.length && text.trim().length < 20) h.fail(400, 'Add a photo or PDF of the invoice.');
     if (images.reduce((t, u) => t + u.length, 0) > 9 * 1024 * 1024) h.fail(413, 'The photos are too large. Try fewer pages.');
+    const cats = (await db.prepare('SELECT id, name FROM categories WHERE active = 1').all()).results;
+    const ctxText = `Category list: ${cats.map((c) => c.name).join(' | ')}\n\n`;
     let r;
     try {
       r = await aiChat(env, db, {
         system: INVOICE_PROMPT,
-        text: text ? `Invoice text${b.ocr ? ' (from OCR, may contain small reading mistakes; fix obvious ones)' : ''}:\n${text}` : `Read this invoice${images.length > 1 ? ` (${images.length} pages, in order)` : ''}. Answer with the JSON only.`,
+        text: ctxText + (text ? `Invoice text${b.ocr ? ' (from OCR, may contain small reading mistakes; fix obvious ones)' : ''}:\n${text}` : `Read this invoice${images.length > 1 ? ` (${images.length} pages, in order)` : ''}. Answer with the JSON only.`),
         images: text ? [] : images, maxTokens: 4000,
-        accept: (o) => { const j = parseJson(o); return !!j && (Array.isArray(j.lines) && j.lines.length > 0 || Number(j.total) > 0); },
+        accept: (o) => { const j = parseJson(o); return !!j && ((Array.isArray(j.lines) && j.lines.length > 0) || num(j.total) > 0); },
       });
       r.out = parseJson(r.out);
     } catch (e) {
@@ -92,8 +101,24 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
     const dup = inv.supplier ? await db.prepare(`SELECT i.id, i.date, i.total, i.invoice_no FROM invoices i JOIN expenses e ON e.id = i.expense_id
       WHERE e.deleted = 0 AND lower(i.supplier) = lower(?) AND ((? <> '' AND i.invoice_no = ?) OR (i.date = ? AND abs(i.total - ?) < 0.01)) LIMIT 1`)
       .bind(inv.supplier, inv.invoice_no, inv.invoice_no, inv.date, inv.total).first() : null;
-    await h.audit(db, me, 'invoice.read', { lines: inv.lines.length, by: r.by });
-    return json(h, { invoice: inv, by: r.by, duplicate: dup || null });
+    // suggestions: the category used last time for this supplier (your own choice) wins over the AI's guess
+    const suggest = { category_id: null, category_from: null, status: inv.doc_type === 'payment' ? 'paid' : null, account_id: null };
+    if (inv.supplier) {
+      const prev = await db.prepare(`SELECT category_id FROM expenses WHERE deleted = 0 AND lower(payee) = lower(?) ORDER BY id DESC LIMIT 1`).bind(inv.supplier).first();
+      if (prev?.category_id) { suggest.category_id = prev.category_id; suggest.category_from = 'last time'; }
+    }
+    if (!suggest.category_id && inv.category) {
+      const c = cats.find((x) => x.name.toLowerCase() === inv.category.toLowerCase()) || cats.find((x) => x.name.toLowerCase().includes(inv.category.toLowerCase()) || inv.category.toLowerCase().includes(x.name.toLowerCase()));
+      if (c) { suggest.category_id = c.id; suggest.category_from = 'AI'; }
+    }
+    if (inv.paid_from) {
+      const words = inv.paid_from.toLowerCase().split(/[^a-zçğıöşü0-9]+/).filter((w) => w.length >= 4 && !['bank', 'bankası', 'katılım', 'katilim'].includes(w));
+      const accs = (await db.prepare("SELECT id, name FROM money_accounts WHERE active = 1 AND type = 'bank'").all()).results;
+      const hit = accs.filter((a) => words.some((w) => a.name.toLowerCase().includes(w)));
+      if (hit.length === 1) suggest.account_id = hit[0].id;
+    }
+    await h.audit(db, me, 'invoice.read', { lines: inv.lines.length, by: r.by, type: inv.doc_type });
+    return json(h, { invoice: inv, by: r.by, duplicate: dup || null, suggest });
   }
 
   if (head === 'invoices' && !sub && m === 'GET') {
@@ -108,7 +133,7 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
   if (head === 'invoices' && !sub && m === 'POST') {
     const b = await h.body(request);
     const inv = clean(b.invoice || {});
-    if (!inv.lines.length) h.fail(400, 'The invoice has no lines.');
+    if (!inv.lines.length && inv.doc_type === 'invoice' && !b.allow_no_lines) h.fail(400, 'The invoice has no lines.');
     if (!(inv.total > 0)) h.fail(400, 'The invoice total is missing.');
     if (!inv.date) h.fail(400, 'Choose the invoice date.');
     const cat = await db.prepare('SELECT id FROM categories WHERE id = ?').bind(Number(b.category_id)).first();
@@ -125,8 +150,10 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
     }
     const receipt = b.receipt && /^r_[a-f0-9]{32}$/.test(b.receipt) ? b.receipt : null;
     const now = h.nowIso();
-    const name = `Invoice ${inv.supplier || 'supplier'}${inv.invoice_no ? ' #' + inv.invoice_no : ''}`.slice(0, 160);
-    const reason = [`${inv.lines.length} lines`, inv.tax ? `VAT ${inv.tax}` : '', inv.currency !== 'TRY' ? `currency ${inv.currency}` : '', inv.notes].filter(Boolean).join(' · ');
+    const name = (inv.doc_type === 'payment'
+      ? `Payment to ${inv.supplier || 'payee'}${inv.description ? ' · ' + inv.description : ''}`
+      : `Invoice ${inv.supplier || 'supplier'}${inv.invoice_no ? ' #' + inv.invoice_no : ''}`).slice(0, 160);
+    const reason = [inv.lines.length ? `${inv.lines.length} lines` : (inv.doc_type === 'payment' ? 'bank / payment slip' : ''), inv.invoice_no && inv.doc_type === 'payment' ? `ref ${inv.invoice_no}` : '', inv.tax ? `VAT ${inv.tax}` : '', inv.currency !== 'TRY' ? `currency ${inv.currency}` : '', inv.notes].filter(Boolean).join(' · ');
     const ex = await db.prepare(`INSERT INTO expenses (name, category_id, amount, date, status, paid_date, due_date, account_id, payee, payee_type, reason, receipt, kind, created_at, user_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'company', ?, ?, 'regular', ?, ?)`)
       .bind(name, cat.id, inv.total, inv.date, status, paid_date, due_date, account_id, inv.supplier || null, reason, receipt, now, me.id).run();

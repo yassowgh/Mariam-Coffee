@@ -16,6 +16,15 @@ export const PROVIDERS = {
 const CF_VISION = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/meta/llama-3.2-11b-vision-instruct'];
 const CF_TEXT = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
+/** First {...} block of an AI answer, parsed. */
+export function parseJson(text) {
+  if (text && typeof text === 'object') return text;
+  const s = String(text || '');
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 async function getS(db, key) { const r = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first(); return r ? JSON.parse(r.value) : null; }
 async function setS(db, key, value) { await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, JSON.stringify(value)).run(); }
@@ -47,9 +56,9 @@ async function openAICompatible(p, key, model, { system, text, images, maxTokens
   return Array.isArray(out) ? out.map((x) => x.text || '').join('') : String(out || '');
 }
 
-async function workersAI(env, { system, text, images, maxTokens }) {
+async function workersAI(env, { system, text, images, maxTokens, schema, temperature = 0 }) {
   if (!images?.length) {
-    const r = await env.AI.run(CF_TEXT, { messages: [{ role: 'system', content: system }, { role: 'user', content: text }], max_tokens: maxTokens, temperature: 0 });
+    const r = await env.AI.run(CF_TEXT, { messages: [{ role: 'system', content: system }, { role: 'user', content: text }], max_tokens: maxTokens, temperature, ...(schema ? { response_format: { type: 'json_schema', json_schema: schema } } : {}) });
     return { out: typeof r?.response === 'string' ? r.response : JSON.stringify(r?.response ?? ''), model: CF_TEXT };
   }
   let last;
@@ -74,7 +83,7 @@ async function workersAI(env, { system, text, images, maxTokens }) {
  * Ask the AI. Returns { out (text), by (who answered), tried: [...] }.
  * accept(out) decides if an answer is usable (else the next provider is tried).
  */
-export async function aiChat(env, db, { system, text, images = [], maxTokens = 4000, accept = (o) => !!o }) {
+export async function aiChat(env, db, { system, text, images = [], maxTokens = 4000, accept = (o) => !!o, schema = null, temperature = 0 }) {
   const tried = [];
   const usage = await aiUsage(db);
   const cfg = await aiConfig(db);
@@ -93,7 +102,7 @@ export async function aiChat(env, db, { system, text, images = [], maxTokens = 4
         const msg = await client.messages.create({ model: 'claude-opus-5-5', max_tokens: maxTokens, system, messages: [{ role: 'user', content }] });
         out = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join(''); label = 'Claude';
       } else if (name === 'workers') {
-        const r = await workersAI(env, { system, text, images, maxTokens });
+        const r = await workersAI(env, { system, text, images, maxTokens, schema, temperature });
         out = r.out; label = `Cloudflare AI (${r.model.split('/').pop()})`;
       } else {
         const p = PROVIDERS[name];

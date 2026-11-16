@@ -4,7 +4,7 @@
 //   GET/PUT /api/plan-rules?week=  the conditions written for one week
 //   POST    /api/plan-parse        sentences the built-in reader could not read -> rules, with Claude
 //                                  (if ANTHROPIC_API_KEY is set) or Cloudflare Workers AI (binding AI, free allowance)
-import Anthropic from '@anthropic-ai/sdk';
+import { aiChat, parseJson } from './ai.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const NUL = (type) => ({ anyOf: [{ type }, { type: 'null' }] });
@@ -102,8 +102,7 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
     return json({ ok: true });
   }
   if (head === 'plan-parse' && request.method === 'POST') {
-    // Claude when an Anthropic key is set, otherwise Cloudflare Workers AI (free allowance on the Cloudflare account)
-    if (!env.ANTHROPIC_API_KEY && !env.AI) fail(501, 'No AI is connected to the website, so only the built-in reader is used. Rephrase like the examples, or add these with “Add a condition”.');
+    // the AI rotation: Claude (if a key is set), Cloudflare AI, then the free keys in Settings → AI providers
     const b = await request.json().catch(() => null);
     const text = String(b?.text || '').trim().slice(0, 4000);
     if (!text) fail(400, 'Write the conditions first.');
@@ -119,7 +118,12 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
       'Conditions written by the manager:',
       text,
     ].join('\n');
-    const parsed = env.ANTHROPIC_API_KEY ? await withClaude(env, context, fail) : await withWorkersAI(env, context, fail);
+    let parsed, by;
+    try {
+      const r = await aiChat(env, db, { system: SYSTEM + CF_RULES, text: context, schema: CF_SCHEMA, maxTokens: 2048,
+        accept: (o) => Array.isArray(parseJson(o)?.rules) });
+      parsed = normalize(parseJson(r.out)); by = r.by;
+    } catch (e) { fail(503, `${e.message} You can still add the conditions with “Add a condition”.`); }
     // "off" with a time means "not during those hours": keep the rest of the day open
     for (const r of parsed.rules) {
       if (r.type === 'off' && (r.from || r.to)) {
@@ -131,36 +135,12 @@ export async function handlePlanner({ request, env, head, me, need, isOwner, pas
     const rules = [];
     for (const r of parsed.rules) {
       if (!['minStaff', 'maxStaff', 'hours'].includes(r.type) && !(r.person && known.has(r.person.toLowerCase()))) { unclear.push(`${r.text || r.person}: no barista with that name`); continue; }
-      rules.push({ ...r, person: ['minStaff', 'maxStaff', 'hours'].includes(r.type) ? null : r.person.toLowerCase(), source: env.ANTHROPIC_API_KEY ? 'claude' : 'cloudflare-ai' });
+      rules.push({ ...r, person: ['minStaff', 'maxStaff', 'hours'].includes(r.type) ? null : r.person.toLowerCase(), source: /claude/i.test(by) ? 'claude' : 'ai' });
     }
-    await audit(db, me, 'plan.parse', { rules: rules.length, unclear: unclear.length, by: env.ANTHROPIC_API_KEY ? 'claude' : 'workers-ai' });
-    return json({ rules, unclear, by: env.ANTHROPIC_API_KEY ? 'Claude' : 'Cloudflare AI' });
+    await audit(db, me, 'plan.parse', { rules: rules.length, unclear: unclear.length, by });
+    return json({ rules, unclear, by: by.replace(/ \(.*\)$/, '') });
   }
   fail(405, 'Not allowed.');
-}
-
-async function withClaude(env, context, fail) {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  let res;
-  try {
-    res = await client.beta.messages.create({
-      model: 'claude-opus-5-5',
-      max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: RULES_SCHEMA } },
-      system: SYSTEM,
-      messages: [{ role: 'user', content: context }],
-    });
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) fail(502, 'The Anthropic API key on the website is not valid.');
-    if (e instanceof Anthropic.RateLimitError) fail(503, 'Too many requests to Claude right now. Try again in a minute.');
-    if (e instanceof Anthropic.APIError) fail(502, `Claude could not read the conditions (error ${e.status}). Try again.`);
-    throw e;
-  }
-  if (res.stop_reason === 'refusal') fail(422, 'Claude declined to read these conditions. Please rephrase them.');
-  const out = res.content.find((c) => c.type === 'text');
-  try { return JSON.parse(out?.text || ''); } catch { return fail(502, 'Claude’s answer could not be read. Try again.'); }
 }
 
 // Workers AI: a simpler schema (no null types), "" / 0 mean "not given".
@@ -190,25 +170,8 @@ const CF_SCHEMA = {
 };
 const CF_RULES = '\nAnswer with JSON only. Use "" for a missing person, from or to, and 0 for a missing number.';
 
-async function withWorkersAI(env, context, fail) {
-  let res;
-  try {
-    res = await env.AI.run(CF_MODEL, {
-      messages: [{ role: 'system', content: SYSTEM + CF_RULES }, { role: 'user', content: context }],
-      response_format: { type: 'json_schema', json_schema: CF_SCHEMA },
-      max_tokens: 2048,
-      temperature: 0,
-    });
-  } catch (e) {
-    console.error('workers ai', e);
-    const m = String(e?.message || e);
-    if (/limit|quota|neurons|429/i.test(m)) fail(503, 'The free Cloudflare AI allowance for today is used up. Try again tomorrow, or add the conditions with “Add a condition”.');
-    if (/not enabled|authorized|10000|permission/i.test(m)) fail(503, 'Cloudflare AI is not switched on for this account yet (Cloudflare dashboard → AI → Workers AI).');
-    fail(502, 'Cloudflare AI could not read the conditions. Try again, or add them with “Add a condition”.');
-  }
-  let out = res?.response;
-  if (typeof out === 'string') { try { out = JSON.parse(out); } catch { out = null; } }
-  if (!out || !Array.isArray(out.rules)) fail(502, 'Cloudflare AI gave an answer that could not be read. Try again, or add the conditions by hand.');
+/** The AI's rules, cleaned: "" / 0 mean not given; unknown types dropped. */
+function normalize(out) {
   const time = (t) => (typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : null);
   const TYPES = ['off', 'available', 'fixed', 'maxHours', 'minHours', 'maxDays', 'minStaff', 'maxStaff', 'hours'];
   return {
