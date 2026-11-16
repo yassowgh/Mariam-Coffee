@@ -206,6 +206,23 @@ async function route(request, env, url, ctx) {
       ? new Response(null, { status: 204 })
       : json({ error: 'Wrong password.' }, 401);
   }
+  // TEMPORARY (removed after use): list / soft-delete duplicate payment records; upload password only
+  if (path === '/api/tmp-dupes') {
+    if (!(await allowed(request, env))) return json({ error: 'Wrong password.' }, 401);
+    const db = env.DB;
+    if (request.method === 'GET') {
+      const r = await db.prepare(`SELECT e.id AS expense_id, e.name, e.amount, e.date, e.status, e.payee, e.created_at, e.deleted, e.account_id, e.category_id,
+        i.id AS invoice_id, i.supplier, i.invoice_no, i.total, i.created_at AS inv_created FROM invoices i JOIN expenses e ON e.id = i.expense_id
+        ORDER BY i.id DESC LIMIT 80`).all();
+      return json({ rows: r.results });
+    }
+    if (request.method === 'POST') {
+      const b = await request.json();
+      const ids = (b.expense_ids || []).map(Number).filter(Boolean);
+      for (const id of ids) await db.prepare('UPDATE expenses SET deleted = 1 WHERE id = ?').bind(id).run();
+      return json({ ok: true, deleted: ids });
+    }
+  }
   const head = path.split('/')[2];
   if (path.startsWith('/api/') && STAFF_ROUTES.includes(head)) return handleStaff(request, env, path, passwordOk);
   if (path.startsWith('/api/')) return json({ error: 'Not found' }, 404);
