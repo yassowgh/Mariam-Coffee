@@ -13,6 +13,7 @@
 
 import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
 import { safeEqual, sha256Hex } from './auth.js';
+import { salesRange } from './dataset.js';
 import { handleMenu, refreshMenuPrices } from './menu.js';
 import { handleContent, handleMedia, withContent } from './content.js';
 
@@ -76,6 +77,22 @@ async function handleData(request, env, ctx) {
       to: String(meta.to || '').slice(0, 10),
       bytes: body.byteLength,
     };
+    // never replace newer sales with an older copy of the till database
+    const range = await salesRange(body);
+    const cur = await env.DATA.getWithMetadata(KEY, { type: 'arrayBuffer' });
+    let curTo = cur.metadata?.salesTo || null;
+    if (cur.value && !curTo) curTo = (await salesRange(cur.value))?.to || null;
+    if (range && curTo && range.to < curTo && request.headers.get('x-replace-newer') !== 'yes') {
+      return json({ error: `Not saved: this data ends on ${range.to}, but the website already has sales up to ${curTo}. The computer is probably reading an old copy of the ASEAL database.`, older: true, uploadTo: range.to, savedTo: curTo }, 409);
+    }
+    if (range) { metadata.salesFrom = range.from; metadata.salesTo = range.to; }
+    // keep what is replaced: the previous upload, and one copy per day for 60 days
+    if (cur.value) {
+      const prevMeta = { ...(cur.metadata || {}), salesTo: curTo || cur.metadata?.salesTo };
+      await env.DATA.put('dataset-prev', cur.value, { metadata: prevMeta });
+      const day = 'dataset-bak:' + new Date().toISOString().slice(0, 10);
+      if (!(await env.DATA.getWithMetadata(day)).metadata) await env.DATA.put(day, cur.value, { metadata: prevMeta, expirationTtl: 60 * 86400 });
+    }
     await env.DATA.put(KEY, body, { metadata });
     // update the website menu prices from the new POS item list
     if (ctx) ctx.waitUntil(refreshMenuPrices(env, body, metadata.uploadedAt));
@@ -161,6 +178,13 @@ export default {
     }
     // The app moved to another Cloudflare account. The old deployment forwards every API call
     // (POS uploader, old links) to the new one, so nothing is written to the old database any more.
+    // TEMPORARY: read the old account's own saved copy of the POS data (to recover it)
+    if (url.hostname === OLD_HOST && url.pathname === '/api/old-dataset') {
+      if (!(await allowed(request, env))) return json({ error: 'Wrong password.' }, 401);
+      const { value, metadata } = await env.DATA.getWithMetadata(KEY, { type: 'arrayBuffer' });
+      if (!value) return json({ error: 'none', metadata }, 404);
+      return new Response(request.method === 'HEAD' ? null : value, { headers: { 'content-type': 'application/zip', 'x-meta': encodeURIComponent(JSON.stringify(metadata || {})), 'cache-control': 'no-store' } });
+    }
     if (url.hostname === OLD_HOST && url.pathname.startsWith('/api/')) {
       return fetch(new Request(`https://${SITE_HOST}${url.pathname}${url.search}`, request));
     }
