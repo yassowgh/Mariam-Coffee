@@ -178,13 +178,6 @@ export default {
     }
     // The app moved to another Cloudflare account. The old deployment forwards every API call
     // (POS uploader, old links) to the new one, so nothing is written to the old database any more.
-    // TEMPORARY: read the old account's own saved copy of the POS data (to recover it)
-    if (url.hostname === OLD_HOST && url.pathname === '/api/old-dataset') {
-      if (!(await allowed(request, env))) return json({ error: 'Wrong password.' }, 401);
-      const { value, metadata } = await env.DATA.getWithMetadata(KEY, { type: 'arrayBuffer' });
-      if (!value) return json({ error: 'none', metadata }, 404);
-      return new Response(request.method === 'HEAD' ? null : value, { headers: { 'content-type': 'application/zip', 'x-meta': encodeURIComponent(JSON.stringify(metadata || {})), 'cache-control': 'no-store' } });
-    }
     if (url.hostname === OLD_HOST && url.pathname.startsWith('/api/')) {
       return fetch(new Request(`https://${SITE_HOST}${url.pathname}${url.search}`, request));
     }

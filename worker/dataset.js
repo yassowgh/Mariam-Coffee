@@ -13,7 +13,7 @@ export async function salesRange(zipBytes) {
     let from = '', to = '';
     for (const r of rows) {
       const d = r.Date ? String(r.Date).slice(0, 10) : '';
-      if (!/^\d{4}-\d\d-\d\d$/.test(d)) continue;
+      if (!/^\d{4}-\d\d-\d\d$/.test(d) || d < '2000') continue; // empty dates read as 1899
       if (!from || d < from) from = d;
       if (d > to) to = d;
     }

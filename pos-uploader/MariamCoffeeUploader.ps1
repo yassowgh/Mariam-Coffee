@@ -30,15 +30,16 @@ function Log([string]$m) {
 
 $cfg = Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-function Find-DbFolder {
-  # the folder that holds Invoices.DB (ASEAL); look in the usual places first
-  $roots = @('C:\', 'D:\', 'E:\') | Where-Object { Test-Path $_ }
+function Find-DbFolders {
+  # every folder on this computer that holds Invoices.DB (ASEAL), newest first.
+  # There can be old copies / backups; the one the till uses now is the one changed most recently.
+  $roots = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object { $_.Root -and (Test-Path $_.Root) } | ForEach-Object { $_.Root }
+  $hits = @()
   foreach ($r in $roots) {
-    try { $hit = Get-ChildItem -Path $r -Filter 'Invoices.DB' -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -First 1 }
-    catch { $hit = Get-ChildItem -Path $r -Filter 'Invoices.DB' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 } # older PowerShell
-    if ($hit) { return $hit.DirectoryName }
+    try { $hits += Get-ChildItem -Path $r -Filter 'Invoices.DB' -Recurse -Depth 7 -File -ErrorAction SilentlyContinue }
+    catch { $hits += Get-ChildItem -Path $r -Filter 'Invoices.DB' -Recurse -File -ErrorAction SilentlyContinue } # older PowerShell
   }
-  return $null
+  return $hits | Where-Object { $_.FullName -notmatch '\\(\$Recycle\.Bin|Windows|AppData\\Local\\Temp)\\' -and $_.FullName -notmatch 'mc-upload-' } | Sort-Object LastWriteTime -Descending
 }
 
 function Save-Config { $cfg | ConvertTo-Json | Set-Content $configPath -Encoding UTF8 }
@@ -52,17 +53,30 @@ if ($Uninstall) {
 if ($Install) {
   Write-Host 'Mariam Coffee - POS uploader setup'
   Write-Host ''
-  if (-not $cfg.dbFolder -or -not (Test-Path (Join-Path $cfg.dbFolder 'Invoices.DB'))) {
-    Write-Host 'Looking for the ASEAL database (Invoices.DB)... this can take a minute.'
-    $found = Find-DbFolder
-    if ($found) {
-      $ans = Read-Host "Found: $found  - use this folder? (Y/N)"
-      if ($ans -notmatch '^[Yy]') { $found = $null }
+  # always choose again on install (an old copy may have been chosen before)
+  if ($true) {
+    Write-Host 'Looking for the ASEAL database (Invoices.DB) on all drives... this can take a few minutes.'
+    $list = @(Find-DbFolders)
+    $found = $null
+    if ($list.Count -gt 0) {
+      Write-Host ''
+      Write-Host 'Found these ASEAL databases (newest first). The till uses the one changed TODAY:'
+      $i = 1
+      foreach ($h in $list) { Write-Host ("  [{0}]  last changed {1}   {2}" -f $i, $h.LastWriteTime.ToString('dd MMM yyyy HH:mm'), $h.DirectoryName); $i++ }
+      Write-Host ''
+      $ans = Read-Host 'Type the number to use and press Enter (just Enter = 1)'
+      if (-not $ans) { $ans = '1' }
+      if ($ans -match '^\d+$' -and [int]$ans -ge 1 -and [int]$ans -le $list.Count) { $found = $list[[int]$ans - 1].DirectoryName }
+      if ($found -and ((Get-Date) - (Get-Item (Join-Path $found 'Invoices.DB')).LastWriteTime).TotalDays -gt 2) {
+        Write-Host 'WARNING: this database was not changed in the last 2 days, so it is probably an old copy.'
+        $ok = Read-Host 'Use it anyway? (Y/N)'
+        if ($ok -notmatch '^[Yy]') { $found = $null }
+      }
     }
     if (-not $found) {
       Add-Type -AssemblyName System.Windows.Forms
       $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-      $dlg.Description = 'Choose the ASEAL database folder (the one with Invoices.DB)'
+      $dlg.Description = 'Choose the ASEAL database folder the till uses now (the one with Invoices.DB)'
       if ($dlg.ShowDialog() -eq 'OK') { $found = $dlg.SelectedPath }
     }
     if (-not $found -or -not (Test-Path (Join-Path $found 'Invoices.DB'))) {
@@ -78,12 +92,14 @@ if ($Install) {
   schtasks /Create /TN $taskName /SC MINUTE /MO $minutes /TR $tr /F | Out-Null
   Write-Host "Scheduled: upload every $minutes minutes (only when the sales changed)."
   $Now = $true
+  if (Test-Path $statePath) { Remove-Item $statePath -Force }
 }
 
 # ---------- upload ----------
 try {
   if (-not $cfg.dbFolder -or -not (Test-Path $cfg.dbFolder)) { throw 'The ASEAL folder is not set or not found. Run install.bat again.' }
-  $files = Get-ChildItem -Path $cfg.dbFolder -Recurse -File -ErrorAction SilentlyContinue |
+  # only the folder itself: a backup copy in a sub-folder must not be mixed in
+  $files = Get-ChildItem -Path $cfg.dbFolder -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -ieq '.DB' -and $tables -contains $_.BaseName }
   if (-not $files) { throw "No sales tables (Invoices.DB ...) found in $($cfg.dbFolder)." }
 
