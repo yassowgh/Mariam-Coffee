@@ -217,21 +217,6 @@ async function route(request, env, url, ctx) {
     if (!value) return new Response('This download link has expired. Ask for a new one.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     return new Response(value, { headers: { 'content-type': metadata?.type || 'application/octet-stream', 'content-disposition': `attachment; filename="${metadata?.name || 'download'}"`, 'cache-control': 'no-store' } });
   }
-  // TEMPORARY (removed after use): email the new POS uploader to one staff member (upload password)
-  if (path === '/api/send-uploader' && request.method === 'POST') {
-    if (!(await allowed(request, env))) return json({ error: 'Wrong password.' }, 401);
-    const b = await request.json();
-    const users = (await env.DB.prepare("SELECT id, name, username, email, roles FROM users WHERE active = 1 AND lower(name || ' ' || username) LIKE ?").bind('%' + String(b.who || '').toLowerCase() + '%').all()).results;
-    if (b.dry) return json({ users: users.map((u) => ({ name: u.name, username: u.username, roles: u.roles, hasEmail: !!u.email })) });
-    if (users.length !== 1 || !users[0].email) return json({ error: 'Need exactly one active user with an email.', n: users.length }, 400);
-    const id = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('');
-    const name = 'MariamCoffee-POS-uploader-v2.zip';
-    await env.DATA.put('dl:' + id, Uint8Array.from(atob(b.zip), (c) => c.charCodeAt(0)), { expirationTtl: 14 * 86400, metadata: { type: 'application/zip', name } });
-    const link = `https://${SITE_HOST}/dl/${id}/${name}`;
-    const { sendUploaderMail } = await import('./email.js');
-    const mailId = await sendUploaderMail(env, users[0], link, b.pdf, true);
-    return json({ ok: true, to: users[0].name, mailId, link });
-  }
   if (path === '/api/media' || (path.startsWith('/media/') && request.method === 'GET')) return handleMedia(request, env, path);
   if (path === '/api/auth' && request.method === 'POST') {
     return (await allowed(request, env))
