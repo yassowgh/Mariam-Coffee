@@ -487,33 +487,56 @@ function guideEmail(u, site, setLink) {
 }
 
 /** The POS uploader for the café computer: a download link (Gmail blocks zips with programs) + the guide as a PDF. */
-export async function sendUploaderMail(env, user, link, guidePdfB64) {
+export async function sendUploaderMail(env, user, link, guidePdfB64, update = false) {
   const h = { getSetting: async (db, key) => { const r = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first(); return r ? JSON.parse(r.value) : null; } };
   const cfg = await config(env, h, env.DB);
   if (!cfg.key) throw new Error('Email is not set up.');
   const first = String(user.name || '').split(' ')[0];
-  const steps = [
+  const file = update ? 'MariamCoffee-POS-uploader-v2.zip' : 'MariamCoffee-POS-uploader.zip';
+  const steps = update ? [
     'Open <b>this email on the café computer</b> (the one with the ASEAL till program), not on your phone.',
-    'Click the button <b>Download the program</b>. The file <b>MariamCoffee-POS-uploader.zip</b> goes to the Downloads folder.',
+    'First stop the old version: Downloads → <b>MariamCoffee-POS-uploader</b> → <b>MariamCoffeeUploader</b> → double-click <b>uninstall</b>.',
+    `Click the button <b>Download the program</b>. The file <b>${file}</b> goes to the Downloads folder.`,
+    'Right-click it → Extract All → open the folder → double-click <b>install</b>.',
+    'A numbered list appears: type the number of the one <b>changed today</b> (usually <b>1</b>) and press Enter. The attached guide (PDF) shows every step.',
+    'When you see “Website answered 200”, it is done. Do not delete the new folder.',
+  ] : [
+    'Open <b>this email on the café computer</b> (the one with the ASEAL till program), not on your phone.',
+    `Click the button <b>Download the program</b>. The file <b>${file}</b> goes to the Downloads folder.`,
     'Then follow the attached guide (PDF) from <b>step 2</b>: right-click the file → Extract All → open the folder → double-click <b>install</b> → type <b>Y</b> and press Enter.',
     'When you see “Website answered 200”, it is done. Do not delete the folder.',
   ];
-  const stepsAr = [
+  const stepsAr = update ? [
     'افتح <b>هذا البريد على كمبيوتر المقهى</b> (الذي عليه برنامج الكاشير ASEAL) وليس على هاتفك.',
-    'اضغط زر <b>تحميل البرنامج</b>. سيُحفظ الملف <b dir="ltr">MariamCoffee-POS-uploader.zip</b> في مجلد التنزيلات.',
+    'أوقف النسخة القديمة أولاً: <span dir="ltr">Downloads → MariamCoffee-POS-uploader → MariamCoffeeUploader</span> ← اضغط مرتين على <b dir="ltr">uninstall</b>.',
+    `اضغط زر <b>تحميل البرنامج</b>. سيُحفظ الملف <b dir="ltr">${file}</b> في مجلد التنزيلات.`,
+    'زر أيمن على الملف ← Extract All ← افتح المجلد ← اضغط مرتين على <b dir="ltr">install</b>.',
+    'ستظهر قائمة مرقّمة: اكتب رقم القاعدة التي <b>تغيّرت اليوم</b> (عادةً <b>1</b>) واضغط Enter. الدليل المرفق (PDF) يشرح كل خطوة.',
+    'عندما تظهر عبارة «Website answered 200» يكون قد انتهى. لا تحذف المجلد الجديد.',
+  ] : [
+    'افتح <b>هذا البريد على كمبيوتر المقهى</b> (الذي عليه برنامج الكاشير ASEAL) وليس على هاتفك.',
+    `اضغط زر <b>تحميل البرنامج</b>. سيُحفظ الملف <b dir="ltr">${file}</b> في مجلد التنزيلات.`,
     'ثم اتبع الدليل المرفق (PDF) من <b>الخطوة 2</b>: زر أيمن على الملف ← Extract All ← افتح المجلد ← اضغط مرتين على <b dir="ltr">install</b> ← اكتب <b>Y</b> واضغط Enter.',
     'عندما تظهر عبارة «Website answered 200» يكون قد انتهى. لا تحذف المجلد.',
   ];
   const list = (a, rtl) => `<ol style="padding-${rtl ? 'right' : 'left'}:20px;margin:8px 0 14px">${a.map((t) => `<li style="margin:6px 0">${t}</li>`).join('')}</ol>`;
-  const html = layout('Please install the sales uploader on the café computer', `<p>Hi ${esc(first)},</p>
-    <p>Please install this small program on the café computer. It sends the till's sales to the Mariam Coffee website every 30 minutes by itself. It only reads the ASEAL files; it changes nothing. It takes about 5 minutes.</p>
+  const intro = update
+    ? 'The first version of the sales uploader read an <b>old copy</b> of the till database (from 2025). Please replace it with this new version, which lets you choose the database the till uses today.'
+    : 'Please install this small program on the café computer.';
+  const introAr = update
+    ? 'النسخة الأولى من برنامج رفع المبيعات قرأت <b>نسخة قديمة</b> من قاعدة بيانات الكاشير (من 2025). رجاءً استبدلها بهذه النسخة الجديدة التي تتيح لك اختيار القاعدة التي يستخدمها الكاشير اليوم.'
+    : 'رجاءً ثبّت هذا البرنامج الصغير على كمبيوتر المقهى.';
+  const html = layout(update ? 'Please update the sales uploader on the café computer' : 'Please install the sales uploader on the café computer', `<p>Hi ${esc(first)},</p>
+    <p>${intro} It sends the till's sales to the Mariam Coffee website every 30 minutes by itself. It only reads the ASEAL files; it changes nothing. It takes about 5 minutes.</p>
     ${list(steps)}${button(link, 'Download the program')}
     <p style="color:#52514e;font-size:13px">The download link works for 14 days. Any problem? Take a photo of the screen and send it to <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>
     ${arabic(`<h2 style="font-size:18px;margin:0 0 8px">رجاءً ثبّت برنامج رفع المبيعات على كمبيوتر المقهى</h2><p>مرحباً ${esc(first)}،</p>
-    <p>رجاءً ثبّت هذا البرنامج الصغير على كمبيوتر المقهى. يرسل مبيعات الكاشير إلى موقع مريم كافيه كل 30 دقيقة تلقائياً، ويقرأ ملفات ASEAL فقط ولا يغيّر شيئاً. يستغرق حوالي 5 دقائق.</p>
+    <p>${introAr} يرسل مبيعات الكاشير إلى موقع مريم كافيه كل 30 دقيقة تلقائياً، ويقرأ ملفات ASEAL فقط ولا يغيّر شيئاً. يستغرق حوالي 5 دقائق.</p>
     ${list(stepsAr, true)}${button(link, 'تحميل البرنامج')}
     <p style="color:#52514e;font-size:13px">رابط التحميل صالح لمدة 14 يوماً. أي مشكلة؟ صوّر الشاشة وأرسلها إلى <a href="mailto:${SUPPORT_EMAIL}" dir="ltr">${SUPPORT_EMAIL}</a>.</p>`)}`, appUrl(SITE) + '/staff');
-  const text = `Hi ${first},\n\nPlease install the sales uploader on the café computer (about 5 minutes).\n1. Open this email on the café computer.\n2. Download the program: ${link}\n3. Follow the attached guide from step 2 (Extract All, double-click install, type Y, Enter).\n4. When you see "Website answered 200" it is done.\n\nProblems? Photo of the screen to ${SUPPORT_EMAIL}`;
-  return send(cfg, { to: user.email, subject: 'Mariam Coffee: please install the sales uploader / برنامج رفع المبيعات', html, text,
+  const text = update
+    ? `Hi ${first},\n\nThe first sales uploader read an old copy of the till database. Please update it on the café computer:\n1. Open this email on the café computer.\n2. Old folder MariamCoffeeUploader: double-click uninstall.\n3. Download the new program: ${link}\n4. Extract All, double-click install.\n5. In the numbered list type the number of the one changed today (usually 1), Enter.\n6. When you see "Website answered 200" it is done.\n\nProblems? Photo of the screen to ${SUPPORT_EMAIL}`
+    : `Hi ${first},\n\nPlease install the sales uploader on the café computer (about 5 minutes).\n1. Open this email on the café computer.\n2. Download the program: ${link}\n3. Follow the attached guide from step 2 (Extract All, double-click install, type Y, Enter).\n4. When you see "Website answered 200" it is done.\n\nProblems? Photo of the screen to ${SUPPORT_EMAIL}`;
+  return send(cfg, { to: user.email, subject: update ? 'Mariam Coffee: please update the sales uploader / تحديث برنامج رفع المبيعات' : 'Mariam Coffee: please install the sales uploader / برنامج رفع المبيعات', html, text,
     attachments: guidePdfB64 ? [{ filename: 'Mariam-Coffee-uploader-guide.pdf', content: guidePdfB64 }] : [] });
 }
