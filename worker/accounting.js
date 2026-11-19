@@ -77,6 +77,9 @@ export async function handleAccounting(ctx) {
     case 'finance-advice':
       need(me, 'accountant');
       return financeAdvice(ctx);
+    case 'finance-ask':
+      need(me, 'accountant');
+      return financeAsk(ctx);
     default:
       return fail(404, 'Not found');
   }
@@ -354,7 +357,7 @@ async function salaries({ request, env, me, h }) {
   return h.json({ month, finance: fin, people: list, attendance: rec.results, shifts: sh.results, payments: fin ? pay.results : [] });
 }
 
-export const ACCOUNTING_ROUTES = [...INVOICE_ROUTES, 'ai-providers', 'cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice'];
+export const ACCOUNTING_ROUTES = [...INVOICE_ROUTES, 'ai-providers', 'cost-requests', 'categories', 'money-accounts', 'expenses', 'receipts', 'cost-summary', 'salaries', 'documents', 'finance-advice', 'finance-ask'];
 
 // ---------- expenses from free text (PDF, TXT, Word), read by AI ----------
 async function extract({ request, env, me, h }) {
@@ -459,6 +462,34 @@ ${lang === 'ar' ? 'Write them in Arabic.' : 'Write them in English.'} Answer wit
   await h.setSetting(db, key, result);
   await h.audit(db, me, 'finance.advice', { month: b.month });
   return h.json(result);
+}
+
+/** A question about the figures shown on the page; the AI answers only from those figures. */
+async function financeAsk({ request, env, me, h }) {
+  const db = env.DB;
+  const b = await h.body(request);
+  const question = h.str(b.question, 600);
+  if (!question) h.fail(400, 'Type a question.');
+  const data = JSON.stringify(b.context || {});
+  if (data.length > 60000) h.fail(413, 'Too much data for one question. Choose fewer months.');
+  const arabic = /[\u0600-\u06FF]/.test(question);
+  const history = (Array.isArray(b.history) ? b.history : []).slice(-4).map((x) => `Q: ${h.str(x.q, 600)}\nA: ${h.str(x.a, 1500)}`).join('\n\n');
+  const system = `You are the financial assistant of Mariam Coffee, a small café in Istanbul. All amounts are Turkish lira (TL).
+Answer the owner's question using ONLY the figures in the JSON data below. Never invent numbers; if the data does not contain what is needed, say exactly what is missing.
+Do the arithmetic carefully and show the key numbers you used. Keep it short and clear: a direct answer first, then up to 5 short bullet points if useful.
+${arabic ? 'Answer in Arabic.' : 'Answer in the language of the question.'} Format amounts like 12,345 TL.
+
+How the data is built (explain it if asked): ${h.str(b.notes, 2000) || 'Expenses come from Accounting; sales come from the till (POS).'}
+
+DATA (JSON):
+${data}`;
+  let out = null, by = 'AI';
+  try {
+    const r = await aiChat(env, db, { system, text: (history ? `Earlier in this conversation:\n${history}\n\n` : '') + `Question: ${question}`, maxTokens: 1500, temperature: 0.2, accept: (o) => String(o || '').trim().length > 2 });
+    out = String(r.out).trim(); by = r.by;
+  } catch (e) { h.fail(503, e.message || 'The AI could not answer right now. Try again in a minute.'); }
+  await h.audit(db, me, 'finance.ask', { q: question.slice(0, 120) });
+  return h.json({ answer: out, by });
 }
 
 // ---------- day-to-day costs from baristas (up to BARISTA_COST_LIMIT per purchase, approved by accounting) ----------

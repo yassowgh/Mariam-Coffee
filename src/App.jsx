@@ -10,6 +10,7 @@ import { saveDemand } from './lib/demand.js';
 import Upload from './components/Upload.jsx';
 import Header from './components/Header.jsx';
 import NetProfit from './views/NetProfit.jsx';
+import Statement from './views/Statement.jsx';
 import FilterBar from './components/FilterBar.jsx';
 import ProductPage from './components/ProductPage.jsx';
 import Dashboard from './views/Dashboard.jsx';
@@ -30,6 +31,7 @@ const TABS = [
   ['orders', 'Orders'],
   ['profit', 'Profit & costs'],
   ['net', 'Net profit'],
+  ['statement', 'Financial statement · كشف مالي'],
   ['recon', 'Reconciliation'],
 ];
 
@@ -37,7 +39,7 @@ const TABS = [
 export default function App({ shell }) {
   const owner = !!shell?.user?.roles.includes('owner');
   const finance = owner || !!shell?.user?.roles.includes('accountant');
-  const tabs = finance ? TABS : TABS.filter(([k]) => k !== 'net');
+  const tabs = finance ? TABS : TABS.filter(([k]) => k !== 'net' && k !== 'statement');
   const [stage, setStage] = useState('upload');
   const [progress, setProgress] = useState({ msg: '', frac: 0 });
   const [error, setError] = useState('');
@@ -228,7 +230,7 @@ export default function App({ shell }) {
     );
   }
 
-  const View = { dashboard: Dashboard, monthly: Monthly, daily: Daily, hourly: Hourly, products: Products, orders: Orders, profit: Profit, net: NetProfit, recon: Reconciliation }[tab];
+  const View = { dashboard: Dashboard, monthly: Monthly, daily: Daily, hourly: Hourly, products: Products, orders: Orders, profit: Profit, net: NetProfit, statement: Statement, recon: Reconciliation }[tab];
   return (
     <>
       <Header

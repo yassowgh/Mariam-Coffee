@@ -3,6 +3,7 @@ import { api, todayLocal } from '../lib/api.js';
 import { ACCOUNT_TYPES, Loans, MarkPaid, RecordForm, Tile, total, useAccountingData } from './Accounting.jsx';
 import DataTable from '../components/DataTable.jsx';
 import Insights from './Insights.jsx';
+import FinanceExplained from './FinanceExplained.jsx';
 import { BarLineChart } from '../components/charts.jsx';
 import { longDate, money, money2, monthLabel } from '../format.js';
 
@@ -160,6 +161,8 @@ export default function Finance({ user, go }) {
       </div>
 
       <Insights records={records} month={month} today={today} />
+
+      <FinanceExplained records={records} month={month} />
 
       <div className="card">
         <div className="card-head"><div><h2>Month by month</h2><p>Each payment counts in the month it is due (or, if it had no due date, the month it was paid).</p></div></div>
