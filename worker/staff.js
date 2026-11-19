@@ -503,38 +503,7 @@ export async function handleStaff(request, env, path, passwordOk) {
     const m = request.method;
     if (head === 'login' && m === 'POST') return await login(request, env, passwordOk);
     if (head === 'logout' && m === 'POST') return await logout(request, env);
-    let me = await currentUser(request, env);
-    // TEMPORARY (removed after use): act as the owner with the upload password, for the expenses import
-    if (!me && request.headers.get('x-tmp-owner') === '1' && (await passwordOk(env, request.headers.get('x-upload-password') || ''))) {
-      me = await env.DB.prepare("SELECT * FROM users WHERE active = 1 AND roles LIKE '%owner%' ORDER BY id LIMIT 1").first();
-      if (head === 'tmp-check' && request.method === 'POST') {
-        const b = await request.json();
-        const out = { deleted: [], rents: [] };
-        for (const id of b.del || []) { await env.DB.prepare('UPDATE expenses SET deleted = 1 WHERE id = ?').bind(Number(id)).run(); out.deleted.push(id); }
-        const acc = await env.DB.prepare('SELECT id FROM money_accounts WHERE name = ?').bind(b.rentAccount || '').first();
-        const MON = { march: '03', april: '04', may: '05', june: '06', july: '07', august: '08' };
-        const rows = (await env.DB.prepare("SELECT id, name FROM expenses WHERE deleted = 0 AND date = '' AND name LIKE 'Cafe Rent - % 2026 Debt'").all()).results;
-        for (const r of rows) {
-          const m = /Cafe Rent - (\w+) 2026 Debt/.exec(r.name); const mm = m && MON[m[1].toLowerCase()];
-          if (!mm || !acc) continue;
-          const d = `2026-${mm}-01`;
-          await env.DB.prepare("UPDATE expenses SET date = ?, paid_date = ?, due_date = NULL, status = 'paid', account_id = ? WHERE id = ?").bind(d, d, acc.id, r.id).run();
-          out.rents.push([r.id, r.name, d]);
-        }
-        return json(out);
-      }
-      if (head === 'tmp-check') {
-        const q = async (sql) => (await env.DB.prepare(sql).all()).results;
-        return json({
-          notion: await q("SELECT COUNT(*) n, MIN(date) a, MAX(date) b, SUM(amount) t FROM expenses WHERE deleted = 0 AND import_ref LIKE 'notion:%'"),
-          all: await q("SELECT COUNT(*) n, MIN(date) a, MAX(date) b, SUM(amount) t FROM expenses WHERE deleted = 0"),
-          recent: await q("SELECT e.id, e.date, e.name, e.amount, e.status, c.name cat, a.name acc, e.import_ref IS NOT NULL imported FROM expenses e LEFT JOIN categories c ON c.id = e.category_id LEFT JOIN money_accounts a ON a.id = e.account_id WHERE e.deleted = 0 AND (e.import_ref IS NULL OR e.date >= '2026-11-01') ORDER BY e.date DESC LIMIT 120"),
-          cats: await q('SELECT id, name, stock FROM categories'),
-          refs: await q("SELECT id, import_ref, date, status, amount FROM expenses WHERE deleted = 0 AND import_ref IS NOT NULL"),
-          accs: await q('SELECT id, name, type FROM money_accounts'),
-        });
-      }
-    }
+    const me = await currentUser(request, env);
     const h = { need, has, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken, getSetting, setSetting, hashPassword };
     // no sign-in needed: forgotten password and the link from the email
     if (PUBLIC_EMAIL_ROUTES.includes(head) && m === 'POST') return await handlePublicEmail({ head, request, env, h });
@@ -599,4 +568,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token', 'tmp-check'];
+export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];
