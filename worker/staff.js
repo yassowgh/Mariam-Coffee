@@ -514,6 +514,7 @@ export async function handleStaff(request, env, path, passwordOk) {
           all: await q("SELECT COUNT(*) n, MIN(date) a, MAX(date) b, SUM(amount) t FROM expenses WHERE deleted = 0"),
           recent: await q("SELECT e.id, e.date, e.name, e.amount, e.status, c.name cat, a.name acc, e.import_ref IS NOT NULL imported FROM expenses e LEFT JOIN categories c ON c.id = e.category_id LEFT JOIN money_accounts a ON a.id = e.account_id WHERE e.deleted = 0 AND (e.import_ref IS NULL OR e.date >= '2026-11-01') ORDER BY e.date DESC LIMIT 120"),
           cats: await q('SELECT id, name, stock FROM categories'),
+          refs: await q("SELECT id, import_ref, date, status, amount FROM expenses WHERE deleted = 0 AND import_ref IS NOT NULL"),
           accs: await q('SELECT id, name, type FROM money_accounts'),
         });
       }
