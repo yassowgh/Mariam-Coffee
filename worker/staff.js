@@ -507,6 +507,22 @@ export async function handleStaff(request, env, path, passwordOk) {
     // TEMPORARY (removed after use): act as the owner with the upload password, for the expenses import
     if (!me && request.headers.get('x-tmp-owner') === '1' && (await passwordOk(env, request.headers.get('x-upload-password') || ''))) {
       me = await env.DB.prepare("SELECT * FROM users WHERE active = 1 AND roles LIKE '%owner%' ORDER BY id LIMIT 1").first();
+      if (head === 'tmp-check' && request.method === 'POST') {
+        const b = await request.json();
+        const out = { deleted: [], rents: [] };
+        for (const id of b.del || []) { await env.DB.prepare('UPDATE expenses SET deleted = 1 WHERE id = ?').bind(Number(id)).run(); out.deleted.push(id); }
+        const acc = await env.DB.prepare('SELECT id FROM money_accounts WHERE name = ?').bind(b.rentAccount || '').first();
+        const MON = { march: '03', april: '04', may: '05', june: '06', july: '07', august: '08' };
+        const rows = (await env.DB.prepare("SELECT id, name FROM expenses WHERE deleted = 0 AND date = '' AND name LIKE 'Cafe Rent - % 2026 Debt'").all()).results;
+        for (const r of rows) {
+          const m = /Cafe Rent - (\w+) 2026 Debt/.exec(r.name); const mm = m && MON[m[1].toLowerCase()];
+          if (!mm || !acc) continue;
+          const d = `2026-${mm}-01`;
+          await env.DB.prepare("UPDATE expenses SET date = ?, paid_date = ?, due_date = NULL, status = 'paid', account_id = ? WHERE id = ?").bind(d, d, acc.id, r.id).run();
+          out.rents.push([r.id, r.name, d]);
+        }
+        return json(out);
+      }
       if (head === 'tmp-check') {
         const q = async (sql) => (await env.DB.prepare(sql).all()).results;
         return json({
