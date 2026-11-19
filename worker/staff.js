@@ -582,4 +582,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];
+export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token', 'tmp-check'];
