@@ -541,7 +541,7 @@ fieldset.review legend { font-weight: 650; padding: 0 6px; }
 .share-row b { font-variant-numeric: tabular-nums; font-weight: 600; }
 .stmt table.pl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .stmt table.pl th, .stmt table.pl td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: end; white-space: nowrap; }
-.stmt table.pl th:first-child, .stmt table.pl td:first-child { text-align: start; white-space: normal; }
+.stmt table.pl th:first-child, .stmt table.pl td:first-child { text-align: start; white-space: normal; min-width: 110px; }
 .stmt table.pl tr.sub td:first-child { padding-inline-start: 22px; color: var(--text-2); }
 .stmt table.pl tr.sum td { font-weight: 700; border-top: 2px solid var(--border); }
 .stmt table.pl tr.head td { font-weight: 650; background: var(--surface-2); }
@@ -572,3 +572,11 @@ fieldset.review legend { font-weight: 650; padding: 0 6px; }
 .rep-person { cursor: pointer; }
 .rep-person:hover td { background: var(--surface-2); }
 .rep table.pl tr.detail td { background: var(--surface-2); font-size: 12.5px; }
+@media print {
+  .stmt .table-wrap, .rep .table-wrap { overflow: visible !important; max-width: none !important; border: 0; }
+  .stmt table.pl { font-size: 9.5px; width: 100%; table-layout: auto; }
+  .stmt table.pl th, .stmt table.pl td { padding: 3px 4px; }
+  .stmt table.pl th:first-child, .stmt table.pl td:first-child { min-width: 70px; }
+  .share-row { grid-template-columns: 120px minmax(0, 1fr) auto; font-size: 11px; }
+  .stmt .chart, .stmt svg { max-width: 100%; }
+}

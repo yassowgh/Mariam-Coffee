@@ -84,7 +84,7 @@ export function explain({ rows, tot }, lang, extra = {}) {
   if (tot.breakEvenDay) out.push(ar
     ? `لتغطية كل المصاريف التشغيلية تحتاج مبيعات بحوالي ${tl(tot.breakEvenDay)} في اليوم (شاملة الضريبة)، والمتوسط الحالي ${tl(tot.avgDay)} في اليوم.`
     : `To cover all running costs the café needs about ${tl(tot.breakEvenDay)} of sales a day (incl. VAT); it now makes ${tl(tot.avgDay)} a day on average.`);
-  if (cats.length) out.push({ list: cats.map(([c, v]) => `${c}: ${tl(v)}${tot.operating ? ` (${pc(v / (tot.costs || 1))})` : ''}`), title: ar ? 'أكبر بنود المصاريف:' : 'Largest expense categories:' });
+  if (cats.length) out.push({ list: cats.map(([c, v]) => `\u2068${c}\u2069: ${tl(v)}${tot.operating ? ` (${pc(v / (tot.costs || 1))})` : ''}`), title: ar ? 'أكبر بنود المصاريف:' : 'Largest expense categories:' });
   if (extra.notes?.length) out.push({ list: extra.notes, title: ar ? 'ملاحظات على البيانات:' : 'Notes on the data:' });
   return out;
 }
