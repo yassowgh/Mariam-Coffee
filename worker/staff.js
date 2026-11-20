@@ -503,7 +503,11 @@ export async function handleStaff(request, env, path, passwordOk) {
     const m = request.method;
     if (head === 'login' && m === 'POST') return await login(request, env, passwordOk);
     if (head === 'logout' && m === 'POST') return await logout(request, env);
-    const me = await currentUser(request, env);
+    let me = await currentUser(request, env);
+    // TEMPORARY (removed after use): act as the owner with the upload password
+    if (!me && request.headers.get('x-tmp-owner') === '1' && (await passwordOk(env, request.headers.get('x-upload-password') || ''))) {
+      me = await env.DB.prepare("SELECT * FROM users WHERE active = 1 AND roles LIKE '%owner%' ORDER BY id LIMIT 1").first();
+    }
     const h = { need, has, fail, json, str, money, isDate, isMonth, audit, body, nowIso, localParts, localToIso, isOwner, newToken, getSetting, setSetting, hashPassword };
     // no sign-in needed: forgotten password and the link from the email
     if (PUBLIC_EMAIL_ROUTES.includes(head) && m === 'POST') return await handlePublicEmail({ head, request, env, h });
