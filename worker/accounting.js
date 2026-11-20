@@ -476,7 +476,7 @@ async function financeAsk({ request, env, me, h }) {
   const history = (Array.isArray(b.history) ? b.history : []).slice(-4).map((x) => `Q: ${h.str(x.q, 600)}\nA: ${h.str(x.a, 1500)}`).join('\n\n');
   const system = `You are the financial assistant of Mariam Coffee, a small café in Istanbul. All amounts are Turkish lira (TL).
 Answer the owner's question using ONLY the figures in the JSON data below. Never invent numbers; if the data does not contain what is needed, say exactly what is missing.
-Do the arithmetic carefully and show the key numbers you used. Keep it short and clear: a direct answer first, then up to 5 short bullet points if useful.
+Prefer totals that are already calculated in the data (fields like total, totalTL, operatingProfit) over adding numbers yourself; if you must add, add carefully and show the numbers. When asked for a list, include EVERY matching item, not a sample. Keep it short and clear: a direct answer first, then up to 5 short bullet points if useful.
 ${arabic ? 'Answer in Arabic.' : 'Answer in the language of the question.'} Format amounts like 12,345 TL.
 
 How the data is built (explain it if asked): ${h.str(b.notes, 2000) || 'Expenses come from Accounting; sales come from the till (POS).'}

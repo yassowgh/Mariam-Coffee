@@ -282,7 +282,18 @@ function chatContext(model, records) {
     ...base,
     dailySalesInclVat: [...daily.values()].filter((d) => d.date >= addMonths(thisMonth, -1) + '-01').sort((a, b) => (a.date < b.date ? -1 : 1)).map((d) => [d.date, r0(d.sales), d.orders]),
     salariesPerPersonPerMonth: sal,
-    unpaidOrPlanned: records.filter((r) => r.status !== 'paid').map((r) => [r.date || '', r.name, r0(amt(r)), r.category, r.status, r.due_date || '']),
+    notPaidYet: (() => {
+      const today = todayLocal();
+      const list = records.filter((r) => r.status !== 'paid');
+      const pack = (l) => ({ count: l.length, totalTL: r0(l.reduce((t, r) => t + amt(r), 0)), items: l.map((r) => [r.due_date || r.date || '', r.name, r0(amt(r)), r.category]) });
+      return {
+        note: 'Every record that is not paid yet. totalTL is already calculated: use it, do not add up yourself.',
+        unpaidNoDate: pack(list.filter((r) => r.status === 'unpaid')),
+        plannedLate: pack(list.filter((r) => r.status === 'scheduled' && (r.due_date || r.date) < today)),
+        plannedUpcoming: pack(list.filter((r) => r.status === 'scheduled' && (r.due_date || r.date) >= today)),
+        allTotalTL: r0(list.reduce((t, r) => t + amt(r), 0)),
+      };
+    })(),
     paidOutByAccount: Object.entries(records.reduce((o, r) => { if (r.status === 'paid' && r.date >= since) o[r.account || 'not recorded'] = (o[r.account || 'not recorded'] || 0) + amt(r); return o; }, {})).map(([k, v]) => [k, r0(v)]),
     // every record of the last 6 months: [date, what, amount, category, status, paid to / employee, account]
     records: records.filter((r) => (r.date || '') >= since).sort((a, b) => (a.date < b.date ? -1 : 1))
