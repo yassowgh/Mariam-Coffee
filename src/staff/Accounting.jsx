@@ -188,7 +188,7 @@ export function RecordForm({ ctx, initial, onDone, onCancel }) {
             {f.account_id === NEW && (
               <div className="field wide"><span>New account</span>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <input value={newAcc.name} onChange={(e) => setNewAcc({ ...newAcc, name: e.target.value })} placeholder="e.g. Loan from Yaman, Garanti credit card" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
+                  <input value={newAcc.name} onChange={(e) => setNewAcc({ ...newAcc, name: e.target.value })} placeholder="e.g. Loan from Israa, Garanti credit card" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
                   <select value={newAcc.type} onChange={(e) => setNewAcc({ ...newAcc, type: e.target.value })}>{Object.entries(ACCOUNT_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
                   <button type="button" className="btn" onClick={addAccount}>Add</button>
                 </div></div>
@@ -376,7 +376,7 @@ export function Loans({ ctx, onRepay }) {
             { key: 'owed', label: 'Still owed', align: 'r', fmt: money2, total: 'sum', cls: (r) => (r.owed > 0 ? 'down' : '') },
             { key: 'act', label: '', render: (r) => <button className="btn small" onClick={() => onRepay(r)}>Record a repayment</button>, csv: () => '' },
           ]} />
-      ) : <p className="muted">No loan accounts yet. Add one in “Accounts & categories”, e.g. “Loan from Yaman” (loan from a person).</p>}
+      ) : <p className="muted">No loan accounts yet. Add one in “Accounts & categories”, e.g. “Loan from Israa” (loan from a person).</p>}
     </div>
   );
 }
@@ -409,7 +409,7 @@ function AccountsSetup({ ctx }) {
             </tr>))}</tbody>
         </table></div>
         <div className="table-tools" style={{ marginTop: 12, marginBottom: 0 }}>
-          <label className="field"><span>New account</span><input value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} placeholder="e.g. Loan from Yaman" /></label>
+          <label className="field"><span>New account</span><input value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} placeholder="e.g. Loan from Israa" /></label>
           <label className="field"><span>Kind</span><select value={n.type} onChange={(e) => setN({ ...n, type: e.target.value })}>{Object.entries(ACCOUNT_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           <button className="btn" onClick={add} disabled={!n.name.trim()}>Add</button>
         </div>

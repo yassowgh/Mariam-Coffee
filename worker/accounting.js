@@ -471,7 +471,7 @@ async function financeAsk({ request, env, me, h }) {
   const question = h.str(b.question, 600);
   if (!question) h.fail(400, 'Type a question.');
   const data = JSON.stringify(b.context || {});
-  if (data.length > 60000) h.fail(413, 'Too much data for one question. Choose fewer months.');
+  if (data.length > 120000) h.fail(413, 'Too much data for one question. Choose fewer months.');
   const arabic = /[\u0600-\u06FF]/.test(question);
   const history = (Array.isArray(b.history) ? b.history : []).slice(-4).map((x) => `Q: ${h.str(x.q, 600)}\nA: ${h.str(x.a, 1500)}`).join('\n\n');
   const system = `You are the financial assistant of Mariam Coffee, a small café in Istanbul. All amounts are Turkish lira (TL).

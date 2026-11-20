@@ -559,3 +559,16 @@ fieldset.review legend { font-weight: 650; padding: 0 6px; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .tooltip { display: none !important; }
 }
+@media print {
+  html.print-pl .stmt > .card:not(.pl-part) { display: none !important; }
+  html.print-rep .no-print, html.print-rep .fin-tabs { display: none !important; }
+  html.print-rep main { padding: 0 !important; max-width: none !important; }
+  .rep .print-only { display: block !important; }
+  .rep .card { break-inside: avoid; page-break-inside: avoid; }
+  .rep .card.long { break-inside: auto; page-break-inside: auto; }
+}
+.rep .print-only { display: none; }
+.fin-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.rep-person { cursor: pointer; }
+.rep-person:hover td { background: var(--surface-2); }
+.rep table.pl tr.detail td { background: var(--surface-2); font-size: 12.5px; }

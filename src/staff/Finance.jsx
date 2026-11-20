@@ -4,6 +4,9 @@ import { ACCOUNT_TYPES, Loans, MarkPaid, RecordForm, Tile, total, useAccountingD
 import DataTable from '../components/DataTable.jsx';
 import Insights from './Insights.jsx';
 import FinanceExplained from './FinanceExplained.jsx';
+import { AIChat, PLReport, SalariesReport, UtilitiesReport } from './FinanceReports.jsx';
+
+const FIN_TABS = [['overview', 'Overview'], ['pl', 'P&L report'], ['salaries', 'Salaries per person'], ['utilities', 'Utilities'], ['chat', '🤖 AI chat']];
 import { BarLineChart } from '../components/charts.jsx';
 import { longDate, money, money2, monthLabel } from '../format.js';
 
@@ -21,6 +24,8 @@ const financeMonth = (r) => (r.due_date || (r.status === 'paid' ? r.paid_date ||
 export default function Finance({ user, go }) {
   const { loaded, error, ctx: base } = useAccountingData(user);
   const [month, setMonth] = useState(todayLocal().slice(0, 7));
+  const [tab, setTab] = useState(() => { try { return localStorage.getItem('mc-fin-tab') || 'overview'; } catch { return 'overview'; } });
+  useEffect(() => { try { localStorage.setItem('mc-fin-tab', tab); } catch { /* private mode */ } }, [tab]);
   const [payFor, setPayFor] = useState(null);
   const [editing, setEditing] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -134,8 +139,25 @@ export default function Finance({ user, go }) {
 
   if (error) return <div className="error" role="alert">{error}</div>;
   if (!loaded) return <div className="card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div>;
+  const tabBar = (
+    <nav className="fin-tabs no-print" role="tablist" aria-label="Finance reports">
+      {FIN_TABS.map(([k, l]) => <button key={k} role="tab" className={'btn' + (tab === k ? ' primary' : '')} aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+    </nav>
+  );
+  if (tab !== 'overview') {
+    return (
+      <div className="stack">
+        {tabBar}
+        {tab === 'pl' && <PLReport />}
+        {tab === 'salaries' && <SalariesReport records={records} />}
+        {tab === 'utilities' && <UtilitiesReport records={records} />}
+        {tab === 'chat' && <AIChat records={records} />}
+      </div>
+    );
+  }
   return (
     <div className="stack">
+      {tabBar}
       {editing && <RecordForm ctx={ctx} initial={editing} onDone={() => { setEditing(null); base.reload(); }} onCancel={() => setEditing(null)} />}
       {payFor && <MarkPaid ctx={base} record={payFor} onClose={() => setPayFor(null)} />}
 

@@ -11,7 +11,9 @@ const T = {
   sub: { en: 'Sales, costs and profit, month by month', ar: 'المبيعات والمصاريف والأرباح شهراً بشهر' },
   from: { en: 'From', ar: 'من' }, to: { en: 'To', ar: 'إلى' },
   last6: { en: 'Last 6 months', ar: 'آخر 6 أشهر' },
-  pdf: { en: 'Export PDF', ar: 'تصدير PDF' },
+  pdf: { en: 'Full statement PDF', ar: 'الكشف كاملاً PDF' },
+  plPdf: { en: 'P&L report PDF', ar: 'تقرير الأرباح والخسائر PDF' },
+  plTitle: { en: 'Profit and loss report', ar: 'تقرير الأرباح والخسائر' },
   sales: { en: 'Sales (incl. VAT)', ar: 'المبيعات (شاملة الضريبة)' },
   salesEx: { en: 'Sales without VAT', ar: 'المبيعات بدون الضريبة' },
   vat: { en: 'VAT (10%)', ar: 'ضريبة القيمة المضافة (10%)' },
@@ -51,6 +53,7 @@ export default function Statement({ ctx }) {
   const firstMonth = model.minDate.slice(0, 7);
   const [range, setRange] = useState(() => ({ from: addMonths(lastMonth, -5) < firstMonth ? firstMonth : addMonths(lastMonth, -5), to: lastMonth }));
   const [showDays, setShowDays] = useState(false);
+  const [printMode, setPrintMode] = useState('all');
   const allMonths = useMemo(() => monthsBetween(firstMonth, lastMonth), [firstMonth, lastMonth]);
   const months = useMemo(() => monthsBetween(range.from, range.to), [range]);
 
@@ -81,15 +84,17 @@ export default function Statement({ ctx }) {
     return { ...fig, days, notes, text: explain(fig, lang, { notes }) };
   }, [records, months, invoices, lang]);
 
-  function printPdf() {
+  function printPdf(mode = 'all') {
+    setPrintMode(mode);
     const root = document.documentElement;
     const theme = root.getAttribute('data-theme');
     root.classList.add('print-stmt');
+    if (mode === 'pl') root.classList.add('print-pl');
     root.setAttribute('data-theme', 'light');
-    const done = () => { root.classList.remove('print-stmt'); if (theme == null) root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme); window.removeEventListener('afterprint', done); };
+    const done = () => { root.classList.remove('print-stmt', 'print-pl'); setPrintMode('all'); if (theme == null) root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme); window.removeEventListener('afterprint', done); };
     window.addEventListener('afterprint', done);
     const prevTitle = document.title;
-    document.title = `Mariam Coffee - ${T.title.en} ${range.from} to ${range.to}`;
+    document.title = `Mariam Coffee - ${mode === 'pl' ? T.plTitle.en : T.title.en} ${range.from} to ${range.to}`;
     setTimeout(() => { window.print(); document.title = prevTitle; setTimeout(done, 1500); }, 150);
   }
 
@@ -101,9 +106,9 @@ export default function Statement({ ctx }) {
 
   return (
     <div className="stack stmt" dir={ar ? 'rtl' : 'ltr'} lang={lang}>
-      <div className="card">
+      <div className="card pl-part">
         <div className="print-only" style={{ marginBottom: 8 }}>
-          <b style={{ fontSize: 20 }}>Mariam Coffee · {t('title')}</b><br />
+          <b style={{ fontSize: 20 }}>Mariam Coffee · {printMode === 'pl' ? t('plTitle') : t('title')}</b><br />
           <span>{monthName(range.from, lang)} – {monthName(range.to, lang)} · {t('made')} {dayName(new Date().toISOString().slice(0, 10), lang)}</span>
         </div>
         <div className="card-head no-print">
@@ -116,7 +121,8 @@ export default function Statement({ ctx }) {
               <button aria-pressed={ar} onClick={() => setLang('ar')}>العربية</button>
               <button aria-pressed={!ar} onClick={() => setLang('en')}>English</button>
             </div>
-            <button className="btn primary" onClick={printPdf}>⬇ {t('pdf')}</button>
+            <button className="btn primary" onClick={() => printPdf('pl')}>⬇ {t('plPdf')}</button>
+            <button className="btn" onClick={() => printPdf('all')}>⬇ {t('pdf')}</button>
           </div>
         </div>
         <div className="kpis" style={{ marginBottom: 0 }}>
@@ -129,7 +135,7 @@ export default function Statement({ ctx }) {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card pl-part">
         <div className="card-head"><div><h2>{t('explain')}</h2></div></div>
         <Explain parts={data.text} />
       </div>
@@ -165,7 +171,7 @@ export default function Statement({ ctx }) {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card pl-part">
         <div className="card-head"><div><h2>{t('pl')}</h2></div></div>
         <BarLineChart height={230} barLabel={t('net')} lines={[{ key: 'line', label: t('salesEx'), color: 'var(--series-7)', markers: true }]}
           data={rows.map((r) => ({ key: r.m, label: label(r.m), value: r.net, line: r.salesEx, title: monthName(r.m, lang),
@@ -215,7 +221,7 @@ export default function Statement({ ctx }) {
         </table></div>
       </div>
 
-      <div className="card">
+      <div className="card pl-part">
         <details open>
           <summary style={{ fontWeight: 650, cursor: 'pointer' }}>{t('how')}</summary>
           <div className="explain" style={{ marginTop: 8 }}>

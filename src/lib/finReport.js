@@ -98,7 +98,7 @@ export function aiContext({ rows, tot }, extra = {}) {
       month: r.m, partialMonth: !!r.partial, salesInclVat: r0(r.sales), salesExVat: r0(r.salesEx), orders: r.orders, daysWithSales: r.days,
       costs: Object.fromEntries(GROUPS.map((g) => [g.key, r0(r.costs.groups[g.key])])),
       fixedCosts: Object.fromEntries(FIXED.map((f) => [f.key, r0(r.costs.fixed[f.key])])),
-      byCategory: Object.fromEntries(Object.entries(r.costs.cats).map(([k, v]) => [k, r0(v)])),
+      byCategory: Object.fromEntries(Object.entries(r.costs.cats).filter(([, v]) => v).map(([k, v]) => [k, r0(v)])),
       operatingProfit: r0(r.opProfit), netProfitAfterOneOff: r0(r.net), loanRepaymentsNotCounted: r0(r.costs.notCost),
     })),
     totals: { salesInclVat: r0(tot.sales), salesExVat: r0(tot.salesEx), operatingCosts: r0(tot.operating), oneOff: r0(tot.groups.oneoff), operatingProfit: r0(tot.opProfit), netProfit: r0(tot.net), breakEvenSalesPerDayInclVat: tot.breakEvenDay ? r0(tot.breakEvenDay) : null },
