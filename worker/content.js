@@ -15,7 +15,7 @@ const MAX_IMG = 3 * 1024 * 1024;
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
 let cache = { at: 0, value: null };
-async function load(env) {
+export async function load(env) {
   if (Date.now() - cache.at < 20000 && cache.value) return cache.value;
   const value = (env.DATA && (await env.DATA.get(KEY, 'json'))) || {};
   cache = { at: Date.now(), value };

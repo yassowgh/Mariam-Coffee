@@ -1,5 +1,0 @@
-User-agent: *
-Disallow: /management/
-Disallow: /api/
-
-Sitemap: https://mariamcoffeeshop.com/sitemap.xml

@@ -46,3 +46,24 @@ export async function saveDemand(model, password) {
     });
   } catch { /* not important enough to bother the user */ }
 }
+
+/** Best sellers for the website menu badges: items ordered most often in the last 60 days. Errors are ignored. */
+export async function saveBestSellers(model, password, days = 60) {
+  try {
+    const { addDays: add } = await import('./aggregate.js');
+    const { productStats } = await import('./aggregate.js');
+    const { UNALLOCATED } = await import('./model.js');
+    const v = model.view(model.hasAcc ? 'acc' : 'pos', 'business');
+    const from = add(v.maxDate, -(days - 1));
+    const invs = v.invoices.filter((i) => i.date >= from && i.sign > 0);
+    const { map } = productStats(model, invs, 'net');
+    const items = [...map.values()].filter((p) => p.key !== UNALLOCATED && Number.isFinite(Number(p.key)))
+      .sort((a, b) => b.orderCount - a.orderCount).slice(0, 30).map((p) => Number(p.key));
+    if (!items.length) return;
+    await fetch('/api/best-sellers', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...(password ? { 'x-upload-password': password } : {}) },
+      body: JSON.stringify({ items, days }),
+    });
+  } catch { /* not important enough to bother the user */ }
+}

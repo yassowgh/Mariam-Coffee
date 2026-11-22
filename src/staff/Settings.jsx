@@ -29,10 +29,62 @@ export default function Settings({ go }) {
         </div>
       </div>
       <Site />
+      <GoogleReviews />
       <AiProviders />
       <EmailSetup />
       <PosUploader />
       <Activity />
+    </div>
+  );
+}
+
+/** Live Google reviews on the website: the owner's Google API key (Places API (New)) and the café's Google place. */
+function GoogleReviews() {
+  const [cfg, setCfg] = useState(null);
+  const [key, setKey] = useState('');
+  const [placeId, setPlaceId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const load = () => api('reviews/config').then(setCfg).catch((e) => setMsg({ ok: false, text: e.message }));
+  useEffect(() => { load(); }, []);
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api('reviews/config', { method: 'PUT', body: { key: key.trim() || undefined, placeId: placeId.trim() || undefined } });
+      setMsg({ ok: true, text: `Connected to “${r.name || r.placeId}”${r.address ? `, ${r.address}` : ''}. The latest 5-star reviews now show on the website (updated every 6 hours).` });
+      setKey(''); load();
+    } catch (x) { setMsg({ ok: false, text: x.message }); }
+    setBusy(false);
+  }
+  async function remove() {
+    if (!confirm('Stop showing Google reviews on the website?')) return;
+    await api('reviews/config', { method: 'DELETE' }).catch(() => {});
+    load();
+  }
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>Google reviews on the website</h2>
+        <p>Shows your Google rating and the latest 5-star reviews above “Visit us”. Google gives at most 5 reviews to websites, so the site shows the 5-star ones among them, newest first.</p></div></div>
+      {cfg?.connected && <p className="notice">Connected: <b>{cfg.name || cfg.placeId}</b>{cfg.address ? ` · ${cfg.address}` : ''} · key ending in {cfg.keyEnd}</p>}
+      <details style={{ margin: '8px 0' }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>How to get the key (5 minutes, once)</summary>
+        <ol style={{ fontSize: 14, lineHeight: 1.6 }}>
+          <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">console.cloud.google.com</a> with your Google account and create a project (e.g. “Mariam website”).</li>
+          <li>Billing: add a card. Google gives a free monthly allowance; the website uses about 400 requests a month, well inside it.</li>
+          <li>Search “Places API (New)” → Enable.</li>
+          <li>APIs &amp; Services → Credentials → Create credentials → API key. Restrict it to “Places API (New)”.</li>
+          <li>Paste the key below and press Connect.</li>
+        </ol>
+      </details>
+      <form onSubmit={save} className="form-grid">
+        <label className="field"><span>Google API key{cfg?.connected ? ' (leave empty to keep the current one)' : ''}</span><input value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" placeholder="AIza…" /></label>
+        <label className="field"><span>Google Place ID (optional: found automatically)</span><input value={placeId} onChange={(e) => setPlaceId(e.target.value)} placeholder={cfg?.placeId || 'ChIJ…'} /></label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn primary" disabled={busy || (!key.trim() && !cfg?.connected)}>{busy ? 'Connecting…' : cfg?.connected ? 'Save' : 'Connect'}</button>
+          {cfg?.connected && <button type="button" className="btn ghost" onClick={remove}>Disconnect</button>}
+        </div>
+      </form>
+      {msg && <div className={'banner ' + (msg.ok ? 'ok' : 'bad')} role="status" style={{ marginTop: 8 }}><span>{msg.text}</span></div>}
     </div>
   );
 }

@@ -26,7 +26,13 @@ export function menuData() {
 /** A photo slot (hero, about, visit, sig1…, tableLogo, tableBg): the owner's photo or the default. */
 export const image = (slot, def) => C.images?.[slot] || def;
 
+/** The language of a page address: /ar/…, /tr/… or English. */
+export const pathLang = (p = location.pathname) => (/^\/(ar|tr)(\/|$)/.exec(p) || [])[1] || (p === '/' || p === '/index.html' || p.startsWith('/en') ? 'en' : null);
+export const langPath = (lang) => (lang === 'en' ? '/' : `/${lang}/`);
+
 export function pickLang() {
+  // the main site: the address decides (/ = English, /ar/, /tr/), so every language has its own page
+  if (!location.pathname.startsWith('/t/')) { const p = pathLang(); if (p) return p; }
   const q = new URLSearchParams(location.search).get('lang');
   if (q && LANGS[q]) return q;
   try { const s = localStorage.getItem('mc-lang'); if (s && LANGS[s]) return s; } catch { /* private mode */ }

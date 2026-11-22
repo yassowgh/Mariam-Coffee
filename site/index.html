@@ -3,21 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mariam Coffee · Istanbul</title>
-  <meta name="description" content="Mariam Coffee in Istanbul: Turkish coffee with cardamom, espresso drinks, karak tea, desserts and maamoul. Open every day 08:00–01:00." />
+  <title>Mariam Coffee · Café in Kayaşehir, Başakşehir (Istanbul) · Open until 1 am</title>
+  <meta name="description" content="Mariam Coffee in Park Mavera, Kayabaşı, Başakşehir, near Kayaşehir Merkez metro (M3): Turkish coffee with cardamom, dibek coffee, karak tea, espresso, San Sebastián cheesecake and maamoul. Open every day 08:00–01:00. Free Wi-Fi." />
   <meta name="theme-color" content="#2F6B59" />
   <link rel="icon" type="image/svg+xml" href="/brand/mark.svg" />
   <link rel="canonical" href="https://mariamcoffeeshop.com/" />
-  <link rel="alternate" hreflang="en" href="https://mariamcoffeeshop.com/?lang=en" />
-  <link rel="alternate" hreflang="ar" href="https://mariamcoffeeshop.com/?lang=ar" />
-  <link rel="alternate" hreflang="tr" href="https://mariamcoffeeshop.com/?lang=tr" />
-  <meta property="og:title" content="Mariam Coffee · Istanbul" />
-  <meta property="og:description" content="Turkish coffee with cardamom, espresso drinks, karak tea, desserts and maamoul. Open every day 08:00–01:00." />
+  <link rel="alternate" hreflang="en" href="https://mariamcoffeeshop.com/" />
+  <link rel="alternate" hreflang="ar" href="https://mariamcoffeeshop.com/ar/" />
+  <link rel="alternate" hreflang="tr" href="https://mariamcoffeeshop.com/tr/" />
+  <link rel="alternate" hreflang="x-default" href="https://mariamcoffeeshop.com/" />
+  <meta property="og:site_name" content="Mariam Coffee" />
+  <meta property="og:title" content="Mariam Coffee · Café in Kayaşehir, Başakşehir (Istanbul) · Open until 1 am" />
+  <meta property="og:description" content="Turkish coffee with cardamom, dibek coffee, karak tea, San Sebastián cheesecake and maamoul, near Kayaşehir Merkez metro. Open every day 08:00–01:00." />
   <meta property="og:image" content="https://mariamcoffeeshop.com/photos/front-1280.jpg" />
+  <meta property="og:image:width" content="1280" />
+  <meta property="og:image:height" content="720" />
+  <meta property="og:image:alt" content="Mariam Coffee at night" />
   <meta property="og:url" content="https://mariamcoffeeshop.com/" />
   <meta property="og:type" content="website" />
+  <meta property="og:locale" content="en_GB" />
+  <meta property="og:locale:alternate" content="ar_AR" />
+  <meta property="og:locale:alternate" content="tr_TR" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="alternate" type="text/plain" title="LLM summary" href="/llms.txt" />
   <link rel="preload" as="image" href="/brand/hero-2000.webp" imagesrcset="/brand/hero-1000.webp 1000w, /brand/hero-2000.webp 2000w" imagesizes="100vw" />
-  <script type="application/ld+json">
+  <script type="application/ld+json" id="ld-main">
   {
     "@context": "https://schema.org",
     "@type": "CafeOrCoffeeShop",
@@ -28,7 +38,8 @@
     "servesCuisine": ["Coffee", "Turkish coffee", "Desserts"],
     "priceRange": "₺₺",
     "currenciesAccepted": "TRY",
-    "address": { "@type": "PostalAddress", "addressLocality": "Istanbul", "addressCountry": "TR" },
+    "address": { "@type": "PostalAddress", "streetAddress": "Park Mavera, Veysel Karani Cad. D:4, A2/28", "addressLocality": "Başakşehir", "addressRegion": "İstanbul", "postalCode": "34494", "addressCountry": "TR" },
+    "telephone": "+90 555 184 41 15",
     "geo": { "@type": "GeoCoordinates", "latitude": 41.1236348, "longitude": 28.7777111 },
     "hasMap": "https://www.google.com/maps?q=41.1236348,28.7777111",
     "openingHoursSpecification": [{
@@ -56,9 +67,9 @@
         <a href="#visit" data-t="nav.visit">Visit</a>
       </nav>
       <div class="langs" role="group" aria-label="Language">
-        <button type="button" data-lang="en" lang="en">EN</button>
-        <button type="button" data-lang="ar" lang="ar">عربي</button>
-        <button type="button" data-lang="tr" lang="tr">TR</button>
+        <a href="/" data-lang="en" lang="en" hreflang="en">EN</a>
+        <a href="/ar/" data-lang="ar" lang="ar" hreflang="ar">عربي</a>
+        <a href="/tr/" data-lang="tr" lang="tr" hreflang="tr">TR</a>
       </div>
     </div>
   </header>
@@ -70,7 +81,7 @@
     </picture>
     <div class="wrap hero-in">
       <div class="hero-copy">
-        <p class="eyebrow" data-t="hero.eyebrow">Coffee shop · Istanbul</p>
+        <p class="eyebrow" data-t="hero.eyebrow">Café in Kayaşehir · Başakşehir, Istanbul</p>
         <h1 data-t="hero.title">Slow down. Have a Mariam coffee.</h1>
         <p class="lead" data-t="hero.text">Turkish coffee with cardamom, espresso drinks, karak tea, desserts and maamoul. Open every day from 8 in the morning until 1 at night.</p>
         <div class="cta">
@@ -99,6 +110,7 @@
         <h2 id="menu-title" class="h2" data-t="menu.title">Menu</h2>
         <p class="note" data-t="menu.note">Prices in Turkish lira (TL), including VAT.</p>
       </div>
+      <div class="menu-search"><input type="search" id="menu-q" data-t-ph="menu.search" placeholder="Search the menu" aria-label="Search the menu" autocomplete="off" /></div>
       <div class="tabs" role="tablist" id="tabs"></div>
       <div id="menu-list" class="menu-list"></div>
     </div>
@@ -110,6 +122,7 @@
       <div>
         <h2 id="about-title" class="h2" data-t="about.title">A cup worth sitting down for</h2>
         <p class="lead-dark" data-t="about.text"></p>
+        <p class="about-more" data-t="about.more"></p>
       </div>
     </div>
   </section>
@@ -160,6 +173,17 @@
     <button type="button" class="lb-next" aria-label="Next">›</button>
   </div>
 
+  <section class="reviews" id="reviews" aria-labelledby="rev-title" hidden>
+    <div class="wrap">
+      <div class="rev-head">
+        <h2 id="rev-title" class="h2" data-t="rev.title">What our guests say</h2>
+        <p class="rev-score"><b class="num" id="rev-rating"></b> <span class="stars" id="rev-stars" aria-hidden="true"></span> <span class="num" id="rev-count"></span> <span data-t="rev.on">reviews on Google</span></p>
+      </div>
+      <div class="rev-grid" id="rev-list"></div>
+      <p class="rev-foot"><a id="rev-all" target="_blank" rel="noopener" data-t="rev.all">Read all reviews on Google</a> · <a data-link="google" href="https://g.page/r/CWSMLS5rSzlAEBE/review" target="_blank" rel="noopener" data-t="rev.write">Write a review</a> <span class="powered">Google</span></p>
+    </div>
+  </section>
+
   <section class="visit" id="visit" aria-labelledby="visit-title">
     <div class="wrap visit-in">
       <div class="visit-info">
@@ -168,13 +192,40 @@
           <dt data-t="visit.hours">Opening hours</dt>
           <dd><span data-t="visit.daily">Every day</span> · <span class="num">08:00 – 01:00</span></dd>
           <dt data-t="visit.where">Where</dt>
-          <dd data-t="visit.city">Mariam Coffee, Istanbul</dd>
+          <dd><address data-t="visit.address">Park Mavera, Veysel Karani Cad. D:4, A2/28, Kayabaşı, 34494 Başakşehir, Istanbul, Türkiye</address></dd>
+          <dt data-t="visit.getting">Getting here</dt>
+          <dd data-t="visit.transit">About 1 km (around 12 minutes on foot) from Kayaşehir Merkez metro station, the last stop of the M3 line, in the Kayaşehir area of Başakşehir.</dd>
+          <dt data-t="visit.phone">Phone</dt>
+          <dd><a class="num" href="tel:+905551844115" dir="ltr">+90 555 184 41 15</a></dd>
         </dl>
-        <a class="btn btn-green" href="https://www.google.com/maps/dir/?api=1&amp;destination=41.1236348,28.7777111" target="_blank" rel="noopener" data-t="visit.directions">Get directions</a>
+        <ul class="amen">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1.2"/></svg><span data-t="am.wifi">Free Wi-Fi</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/></svg><span data-t="am.laptop">Power outlets · laptop-friendly</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h18L12 4zM12 10v10M7 20h10M5 14h14"/></svg><span data-t="am.outdoor">Outdoor seating</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="6" r="2.5"/><circle cx="16.5" cy="9" r="2"/><path d="M4 21v-6a4 4 0 0 1 8 0v6M13 21v-4a3.5 3.5 0 0 1 7 0v4"/></svg><span data-t="am.family">Family-friendly</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span data-t="am.late">Open until 1 am</span></li>
+        </ul>
+        <div class="cta">
+          <a class="btn btn-green" href="https://www.google.com/maps/dir/?api=1&amp;destination=41.1236348,28.7777111" target="_blank" rel="noopener" data-t="visit.directions">Get directions</a>
+          <a class="btn btn-line-dark" href="tel:+905551844115" data-t="visit.call">Call us</a>
+        </div>
       </div>
       <div class="map" id="map">
         <img src="/photos/front-640.webp" srcset="/photos/front-640.webp 640w, /photos/front-1280.webp 1280w" sizes="(max-width: 900px) 100vw, 620px" width="640" height="360" loading="lazy" decoding="async" alt="Mariam Coffee from the street" data-t-alt="gal.front" />
-        <button type="button" class="btn btn-cream map-btn" id="map-btn" data-t="visit.map">Show map</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq" id="faq" aria-labelledby="faq-title">
+    <div class="wrap">
+      <h2 id="faq-title" class="h2" data-t="faq.title">Good to know</h2>
+      <div class="faq-list">
+        <details><summary data-t="faq.1.q"></summary><p data-t="faq.1.a"></p></details>
+        <details><summary data-t="faq.2.q"></summary><p data-t="faq.2.a"></p></details>
+        <details><summary data-t="faq.3.q"></summary><p data-t="faq.3.a"></p></details>
+        <details><summary data-t="faq.4.q"></summary><p data-t="faq.4.a"></p></details>
+        <details><summary data-t="faq.5.q"></summary><p data-t="faq.5.a"></p></details>
+        <details><summary data-t="faq.6.q"></summary><p data-t="faq.6.a"></p></details>
       </div>
     </div>
   </section>
@@ -187,7 +238,7 @@
         <a data-link="instagram" href="https://www.instagram.com/mariamcoffee.tr/" target="_blank" rel="noopener">Instagram</a>
         <a data-link="google" href="https://g.page/r/CWSMLS5rSzlAEBE/review" target="_blank" rel="noopener" data-t="foot.review">Google review</a>
       </nav>
-      <a class="staff" href="/management/staff" data-t="foot.staff">Staff</a>
+      <p class="nap"><b>Mariam Coffee</b> · <span data-t="visit.address">Park Mavera, Veysel Karani Cad. D:4, A2/28, Kayabaşı, 34494 Başakşehir, Istanbul, Türkiye</span> · <a href="tel:+905551844115" dir="ltr">+90 555 184 41 15</a></p>
     </div>
   </footer>
   <script type="module" src="/src/main.js"></script>

@@ -2,7 +2,7 @@
 import { loadSaved } from './remote.js';
 import { collectTables } from './archive.js';
 import { buildModel } from './model.js';
-import { saveDemand } from './demand.js';
+import { saveBestSellers, saveDemand } from './demand.js';
 
 let cache = null;
 
@@ -16,6 +16,7 @@ export function loadSalesModel(progress = () => {}) {
       const m = await buildModel(entries, (msg, f) => progress(msg, 0.3 + f * 0.7));
       const v = m.view(m.hasAcc ? 'acc' : 'pos', 'business');
       saveDemand(m); // keeps the monthly sales used elsewhere in Finance up to date
+      saveBestSellers(m); // best-seller badges on the website menu
       return { invoices: v.invoices, allInvoices: v.invoices, minDate: v.minDate, maxDate: v.maxDate, meta: got.meta };
     })().catch((e) => { cache = null; throw e; });
   }

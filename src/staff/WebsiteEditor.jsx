@@ -265,6 +265,13 @@ function MenuEditor({ content, change, setMsg }) {
                     {LANGS.map(([l, label], i) => <label key={l} className="field"><span>Name · {label}</span><input dir={l === 'ar' ? 'rtl' : 'ltr'} value={x.name[i] || ''} onChange={(e) => { const n = [...x.name]; n[i] = e.target.value; setItem(x, { name: n }); }} /></label>)}
                     {LANGS.map(([l, label], i) => <label key={l} className="field"><span>Description · {label} (optional)</span><input dir={l === 'ar' ? 'rtl' : 'ltr'} value={x.d?.[i] || ''} onChange={(e) => { const n = [...(x.d || ['', '', ''])]; n[i] = e.target.value; setItem(x, { d: n.some(Boolean) ? n : undefined }); }} /></label>)}
                   </div>
+                  <div className="menu-badges">
+                    <label className="check"><input type="checkbox" checked={!!x.special} onChange={(e) => setItem(x, { special: e.target.checked || undefined })} /> House specialty badge</label>
+                    <span className="muted" style={{ fontSize: 13 }}>Contains:</span>
+                    {[['nuts', 'Nuts'], ['dairy', 'Dairy'], ['gluten', 'Gluten'], ['egg', 'Egg']].map(([k, l]) => (
+                      <label key={k} className="check"><input type="checkbox" checked={(x.al || []).includes(k)} onChange={(e) => { const a = new Set(x.al || []); if (e.target.checked) a.add(k); else a.delete(k); setItem(x, { al: a.size ? [...a] : undefined }); }} /> {l}</label>
+                    ))}
+                  </div>
                   <div className="menu-edit-foot">
                     <span className="muted" style={{ fontSize: 13 }}>
                       {isPos ? <>Till item #{x.id} · price <b>{live ? `${live.p} TL` : `${x.p} TL (not found in the latest till upload: hidden on the site)`}</b></> : <>Own item · price <input className="cell-input" style={{ width: 80 }} inputMode="decimal" value={x.p ?? ''} onChange={(e) => setItem(x, { p: Number(String(e.target.value).replace(',', '.')) || 0 })} /> TL</>}

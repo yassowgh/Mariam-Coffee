@@ -15,7 +15,8 @@ import { STAFF_ROUTES, currentUser, handleStaff, isOwner } from './staff.js';
 import { safeEqual, sha256Hex } from './auth.js';
 import { salesRange } from './dataset.js';
 import { handleMenu, refreshMenuPrices } from './menu.js';
-import { handleContent, handleMedia, withContent } from './content.js';
+import { handleContent, handleMedia, load as loadContent, withContent } from './content.js';
+import { handleBestSellers, handleReviews, llmsTxt, renderSite, robotsTxt, siteLang, siteMenu, sitemapXml } from './site.js';
 
 const KEY = 'dataset';
 const MAX_BYTES = 24 * 1024 * 1024; // Workers KV value limit is 25 MiB
@@ -139,7 +140,7 @@ const SECURITY_HEADERS = {
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com", // WebAssembly only (RAR reader); no eval of strings; Cloudflare Web Analytics
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    "img-src 'self' data: blob: https://*.googleusercontent.com",
     "font-src 'self' data:",
     "connect-src 'self' https://cloudflareinsights.com",
     "worker-src 'self' blob:",
@@ -207,7 +208,15 @@ async function route(request, env, url, ctx) {
   const path = url.pathname.startsWith(APP + '/api/') ? url.pathname.slice(APP.length) : url.pathname;
   if (path === '/api/data') return handleData(request, env, ctx);
   if (path === '/api/costs') return handleCosts(request, env);
-  if (path === '/api/menu' && request.method === 'GET') return handleMenu(request, env);
+  if (path === '/api/menu' && request.method === 'GET') {
+    // live till prices + the best sellers shown as badges
+    const r = await handleMenu(request, env);
+    const d = await r.json().catch(() => ({ prices: {} }));
+    try { d.best = (await siteMenu(env, await loadContent(env))).best; } catch { d.best = []; }
+    return new Response(JSON.stringify(d), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' } });
+  }
+  if (path === '/api/reviews' || path === '/api/reviews/config') return handleReviews(request, env);
+  if (path === '/api/best-sellers') return handleBestSellers(request, env, passwordOk);
   if (path === '/api/content') return handleContent(request, env);
   // private download links (e.g. the POS uploader sent by email); they expire by themselves
   if (url.pathname.startsWith('/dl/') && request.method === 'GET') {
@@ -229,8 +238,27 @@ async function route(request, env, url, ctx) {
 
   // Pages and files
   if (url.pathname === APP) return Response.redirect(url.origin + APP + '/' + url.search, 301);
+  // for search engines and AI assistants
+  const text = (body, type) => new Response(body, { headers: { 'content-type': type + '; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
+  if (url.pathname === '/robots.txt') return text(robotsTxt(), 'text/plain');
+  if (url.pathname === '/sitemap.xml') return text(await sitemapXml(env), 'application/xml');
+  if (url.pathname === '/llms.txt') return text(await llmsTxt(env, false), 'text/plain');
+  if (url.pathname === '/llms-full.txt') return text(await llmsTxt(env, true), 'text/plain');
+  // one address per language: / (English), /ar/, /tr/; old ?lang= links and /en/ move there for good
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    const q = url.searchParams.get('lang');
+    if ((url.pathname === '/' || url.pathname === '/index.html') && (q === 'ar' || q === 'tr' || q === 'en')) return Response.redirect(`${url.origin}${q === 'en' ? '/' : `/${q}/`}${url.hash}`, 301);
+    if (/^\/en\/?$/.test(url.pathname)) return Response.redirect(url.origin + '/', 301);
+    if (url.pathname === '/ar' || url.pathname === '/tr') return Response.redirect(url.origin + url.pathname + '/', 301);
+    const lang = siteLang(url.pathname);
+    if (lang) {
+      const page = await env.ASSETS.fetch(new Request(url.origin + '/', { headers: { accept: 'text/html' } }));
+      if (page.status === 200) return renderSite(page, env, lang);
+      return page;
+    }
+  }
   // The website and the table page get the owner's edited content put into the page.
-  if (request.method === 'GET' && ['/', '/index.html', '/t/', '/t/index.html'].includes(url.pathname)) {
+  if (request.method === 'GET' && ['/t/', '/t/index.html'].includes(url.pathname)) {
     const plain = new Request(url.toString(), { headers: { accept: 'text/html' } }); // no If-None-Match: always the full page
     const page = await env.ASSETS.fetch(plain);
     if (page.status === 200) {

@@ -475,6 +475,8 @@ table.schedule .today { background: rgba(128,128,128,.14); background: color-mix
 .menu-edit.is-hidden { opacity: .55; }
 .menu-edit-img { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .menu-edit-img img { width: 120px; height: 90px; object-fit: cover; border-radius: 8px; background: var(--surface-2); }
+.menu-badges { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-top: 8px; font-size: 13.5px; }
+.menu-badges .check { display: inline-flex; gap: 5px; align-items: center; }
 .menu-edit-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 @media (max-width: 640px) { .menu-edit { grid-template-columns: 1fr; } }
 .add-box { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; display: grid; gap: 8px; }

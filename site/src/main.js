@@ -9,14 +9,14 @@ import '@fontsource/montserrat/latin-ext-400.css';
 import '@fontsource/montserrat/latin-600.css';
 import '@fontsource/montserrat/latin-ext-600.css';
 import './style.css';
-import { applyLinks, content, image, pickLang, saveLang, txt } from './content.js';
+import { applyLinks, content, image, langPath, pickLang, saveLang, txt } from './content.js';
 import { createMenu } from './menuview.js';
 import { ART } from './art.js';
 
 applyLinks();
 let lang = pickLang();
 const tr = (k) => txt(k, lang);
-const menu = createMenu({ tabsEl: document.getElementById('tabs'), listEl: document.getElementById('menu-list'), getLang: () => lang });
+const menu = createMenu({ tabsEl: document.getElementById('tabs'), listEl: document.getElementById('menu-list'), getLang: () => lang, searchEl: document.getElementById('menu-q') });
 
 function applyLang() {
   const html = document.documentElement;
@@ -24,7 +24,10 @@ function applyLang() {
   html.dir = lang === 'ar' ? 'rtl' : 'ltr';
   document.querySelectorAll('[data-t]').forEach((el) => { const v = tr(el.dataset.t); if (v) el.textContent = v; });
   document.querySelectorAll('[data-t-alt]').forEach((el) => { const v = tr(el.dataset.tAlt); if (v) { el.alt = v; if (el.parentElement.matches('button')) el.parentElement.setAttribute('aria-label', v); } });
-  document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+  document.querySelectorAll('[data-t-ph]').forEach((el) => { const v = tr(el.dataset.tPh); if (v) { el.placeholder = v; el.setAttribute('aria-label', v); } });
+  document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-current', String(b.dataset.lang === lang)));
+  document.title = tr('seo.title') || document.title;
+  document.querySelector('meta[name="description"]')?.setAttribute('content', tr('seo.desc'));
   menu.render();
 }
 
@@ -79,12 +82,17 @@ function galleryCaptions() {
   });
 }
 
-document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
+document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', (e) => {
+  // each language has its own address (/, /ar/, /tr/); switch in place without reloading
+  e.preventDefault();
   lang = b.dataset.lang;
   saveLang(lang);
+  try { history.pushState({ lang }, '', langPath(lang) + location.hash); } catch { location.href = langPath(lang); return; }
   applyLang();
   galleryCaptions();
+  loadReviews();
 }));
+window.addEventListener('popstate', () => { lang = pickLang(); applyLang(); galleryCaptions(); loadReviews(); });
 document.querySelectorAll('[data-art]').forEach((el) => { el.innerHTML = ART[el.dataset.art]; });
 document.getElementById('year').textContent = String(new Date().getFullYear());
 
@@ -98,11 +106,48 @@ applyLang();
 galleryCaptions();
 setupLightbox();
 
-// The Google map (heavy) loads only when someone asks for it.
-document.getElementById('map-btn')?.addEventListener('click', () => {
+// The Google map (heavy) loads by itself when the visitor gets close to "Visit us".
+(() => {
   const box = document.getElementById('map');
-  box.innerHTML = '<iframe title="Map: Mariam Coffee" src="https://www.google.com/maps?q=41.1236348,28.7777111&amp;z=17&amp;output=embed" referrerpolicy="no-referrer-when-downgrade"></iframe>';
-});
+  if (!box) return;
+  const load = () => { box.innerHTML = '<iframe title="Map: Mariam Coffee" src="https://www.google.com/maps?q=41.1236348,28.7777111&amp;z=16&amp;output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>'; };
+  if (!('IntersectionObserver' in window)) { load(); return; }
+  const io = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) { io.disconnect(); load(); } }, { rootMargin: '400px 0px' });
+  io.observe(box);
+})();
+
+// Google reviews (5-star, newest first), read on the server from Google; hidden when none.
+function stars(n) { return '★★★★★'.slice(0, Math.round(n)) + '☆☆☆☆☆'.slice(0, 5 - Math.round(n)); }
+async function loadReviews() {
+  const sec = document.getElementById('reviews');
+  if (!sec) return;
+  try {
+    const r = await fetch('/api/reviews?lang=' + lang).then((x) => (x.ok ? x.json() : null));
+    if (!r || !r.reviews || !r.reviews.length) { sec.hidden = true; return; }
+    document.getElementById('rev-rating').textContent = r.rating ? r.rating.toFixed(1) : '';
+    document.getElementById('rev-stars').textContent = r.rating ? stars(r.rating) : '';
+    document.getElementById('rev-count').textContent = r.count ? r.count.toLocaleString('en-US') : '';
+    const all = document.getElementById('rev-all');
+    if (r.url) all.href = r.url; else all.remove();
+    const list = document.getElementById('rev-list');
+    list.innerHTML = '';
+    for (const v of r.reviews) {
+      const fig = document.createElement('figure'); fig.className = 'rev';
+      const q = document.createElement('blockquote'); q.textContent = v.text; q.dir = 'auto';
+      const cap = document.createElement('figcaption');
+      if (v.photo) { const im = document.createElement('img'); im.src = v.photo; im.alt = ''; im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; cap.appendChild(im); }
+      const who = document.createElement(v.profile ? 'a' : 'span');
+      if (v.profile) { who.href = v.profile; who.target = '_blank'; who.rel = 'noopener'; }
+      const b = document.createElement('b'); b.textContent = v.author; who.appendChild(b);
+      const when = document.createElement('span'); when.textContent = `${'★★★★★'} · ${v.when || ''}`; who.appendChild(when);
+      cap.appendChild(who);
+      fig.append(q, cap);
+      list.appendChild(fig);
+    }
+    sec.hidden = false;
+  } catch { sec.hidden = true; }
+}
+loadReviews();
 
 // Full-screen photo viewer: arrows, swipe, Esc, click outside to close.
 function setupLightbox() {
