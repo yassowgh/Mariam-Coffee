@@ -58,7 +58,9 @@ export async function siteMenu(env, content) {
   // best sellers: the till's top items that are on the website menu (at most 8)
   const bs = (env.DATA && (await env.DATA.get('best-sellers', 'json'))) || {};
   const onMenu = new Set(items.map((x) => Number(x.id)));
-  const best = (bs.items || []).map(Number).filter((id) => onMenu.has(id)).slice(0, 8);
+  // basic drinks (water, soda, cola, energy drinks) never get a "Best seller" badge
+  const basic = new Set(items.filter((x) => /^(water|soda|cola|red bull)/i.test(String(x.name?.[0] || ''))).map((x) => Number(x.id)));
+  const best = (bs.items || []).map(Number).filter((id) => onMenu.has(id) && !basic.has(id)).slice(0, 8);
   return { cats, items, extras: m.extras.filter(shown).map((x) => ({ ...x, price: price(x) })), best, pricesAt: cache.uploadedAt || null };
 }
 
