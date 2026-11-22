@@ -11,6 +11,9 @@
 // A count sets the level; purchase adds; waste subtracts; adjust sets with a reason.
 // Use per day = what went down between counts (plus waste), over the last 30 days.
 
+import { SALES_SCHEMA, SALES_START, applySales, seedSales } from './inventorySales.js';
+import { ITEMS as MENU_ITEMS, EXTRAS as MENU_EXTRAS } from '../site/src/menu.js';
+
 export const INVENTORY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS inventory_items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category TEXT NOT NULL,
     unit TEXT NOT NULL, qty REAL NOT NULL DEFAULT 0, min_qty REAL, note TEXT, active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 0,
@@ -18,9 +21,10 @@ export const INVENTORY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS inventory_moves (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, at TEXT NOT NULL,
     kind TEXT NOT NULL, qty REAL NOT NULL, before REAL, after REAL, note TEXT, user_id INTEGER)`,
   `CREATE INDEX IF NOT EXISTS inventory_moves_item ON inventory_moves(item_id, at)`,
+  ...SALES_SCHEMA,
 ];
 
-export const INVENTORY_ROUTES = ['inventory', 'inventory-moves', 'inventory-low'];
+export const INVENTORY_ROUTES = ['inventory', 'inventory-moves', 'inventory-low', 'inventory-recipes', 'inventory-sync', 'inventory-diff'];
 const KINDS = ['count', 'purchase', 'waste', 'adjust'];
 
 // The stock list the owner gave on 22 Nov 2026 (units agreed: litres, bottles, cans, pieces, packs, bunches, boxes, grams).
@@ -72,7 +76,7 @@ const isLow = (it) => it.active && (it.qty <= 0 || (it.min_qty != null && it.qty
 /** Use per day over the last 30 days: decreases at counts and waste (purchases do not count). */
 async function usePerDay(db) {
   const since = new Date(Date.now() - 30 * 86400e3).toISOString();
-  const { results } = await db.prepare(`SELECT item_id, SUM(CASE WHEN kind = 'waste' THEN qty WHEN kind IN ('count','adjust') AND before IS NOT NULL AND after < before THEN before - after ELSE 0 END) AS used,
+  const { results } = await db.prepare(`SELECT item_id, SUM(CASE WHEN kind IN ('waste','sale') THEN qty WHEN kind IN ('count','adjust') AND before IS NOT NULL AND after < before THEN before - after ELSE 0 END) AS used,
     MIN(at) AS first, MAX(at) AS last FROM inventory_moves WHERE at >= ? GROUP BY item_id`).bind(since).all();
   const out = {};
   for (const r of results) {
@@ -86,6 +90,7 @@ export async function handleInventory({ head, sub, request, env, me, h }) {
   const db = env.DB;
   const m = request.method;
   await seedInventory(db);
+  await seedSales(db, h.getSetting, h.setSetting);
   if (head === 'inventory-low') {
     h.need(me);
     const { results } = await db.prepare('SELECT name, qty, unit, min_qty, active FROM inventory_items WHERE active = 1 ORDER BY category, sort').all();
@@ -110,6 +115,8 @@ export async function handleInventory({ head, sub, request, env, me, h }) {
       if ('min_qty' in o) out.min_qty = o.min_qty === '' || o.min_qty == null ? null : Math.max(0, Number(o.min_qty) || 0);
       if ('note' in o) out.note = h.str(o.note, 300) || null;
       if ('active' in o) out.active = o.active ? 1 : 0;
+      if ('pack_size' in o) out.pack_size = o.pack_size === '' || o.pack_size == null ? null : Math.max(0, Number(o.pack_size) || 0) || null;
+      if ('use_unit' in o) out.use_unit = h.str(o.use_unit, 20) || null;
       return out;
     };
     if (m === 'POST' && !id) {
@@ -167,7 +174,48 @@ export async function handleInventory({ head, sub, request, env, me, h }) {
     await h.audit(db, me, 'inventory.' + kind, { lines: changed });
     return h.json({ ok: true, changed });
   }
+  if (head === 'inventory-recipes') return recipes({ request, db, me, h, now });
+  if (head === 'inventory-sync' && m === 'POST') {
+    // take the latest till upload's new sales off the stock now (it also runs after every upload)
+    const zip = await env.DATA.get('dataset', 'arrayBuffer');
+    if (!zip) h.fail(400, 'No till data uploaded yet.');
+    const r = await applySales(env, zip);
+    await h.audit(db, me, 'inventory.sync', r);
+    return h.json({ ok: true, ...r });
+  }
+  if (head === 'inventory-diff' && m === 'GET') {
+    // each count compared with what the system expected (after sales, deliveries and waste)
+    const { results } = await db.prepare(`SELECT mv.at, mv.before, mv.after, mv.note, i.name, i.unit, i.category, u.name AS user_name FROM inventory_moves mv
+      JOIN inventory_items i ON i.id = mv.item_id LEFT JOIN users u ON u.id = mv.user_id
+      WHERE mv.kind = 'count' AND mv.before IS NOT NULL AND mv.at >= ? ORDER BY mv.at DESC LIMIT 500`).bind(SALES_START).all();
+    return h.json({ since: SALES_START, rows: results.map((r) => ({ ...r, diff: Math.round((r.after - r.before) * 1000) / 1000 })) });
+  }
   return h.fail(404, 'Not found');
+}
+
+/** Recipes: GET every menu item with its recipe and sales; PUT { pos_item, lines: [{ inv_item, qty }] } replaces one recipe. */
+async function recipes({ request, db, me, h, now }) {
+  if (request.method === 'GET') {
+    const lines = (await db.prepare('SELECT pos_item, inv_item, qty, draft FROM inventory_recipes').all()).results;
+    const since = new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
+    const sold = (await db.prepare('SELECT pos_item, SUM(qty) AS qty, MAX(name) AS name FROM inventory_sales WHERE day >= ? GROUP BY pos_item').bind(since).all()).results;
+    const soldMap = new Map(sold.map((x) => [x.pos_item, x]));
+    const menu = [...MENU_ITEMS, ...MENU_EXTRAS].filter((x) => /^\d+$/.test(String(x.id))).map((x) => ({ pos_item: Number(x.id), name: x.name[0], cat: x.cat || 'extras' }));
+    const known = new Set(menu.map((x) => x.pos_item));
+    for (const x of sold) if (!known.has(x.pos_item)) menu.push({ pos_item: x.pos_item, name: x.name || `Till item ${x.pos_item}`, cat: 'other' });
+    const run = await h.getSetting(db, 'inventorySalesRun');
+    return h.json({ since: SALES_START, lastRun: run?.at || null, items: menu.map((x) => ({ ...x, sold30: soldMap.get(x.pos_item)?.qty || 0, lines: lines.filter((l) => l.pos_item === x.pos_item) })) });
+  }
+  if (request.method !== 'PUT') return h.fail(405, 'Not allowed.');
+  const b = await h.body(request);
+  const pos = Number(b.pos_item);
+  if (!(pos > 0)) h.fail(400, 'Choose the menu item.');
+  const ls = (Array.isArray(b.lines) ? b.lines : []).filter((l) => Number(l.inv_item) > 0 && Number(l.qty) > 0).slice(0, 30);
+  const stmts = [db.prepare('DELETE FROM inventory_recipes WHERE pos_item = ?').bind(pos)];
+  for (const l of ls) stmts.push(db.prepare('INSERT OR REPLACE INTO inventory_recipes (pos_item, inv_item, qty, draft, updated_at) VALUES (?, ?, ?, 0, ?)').bind(pos, Number(l.inv_item), Number(l.qty), now));
+  await db.batch(stmts);
+  await h.audit(db, me, 'inventory.recipe', { pos_item: pos, lines: ls.length });
+  return h.json({ ok: true });
 }
 
 /** Daily email to managers (and the owner) listing what is low or out of stock. Only when something is low. */

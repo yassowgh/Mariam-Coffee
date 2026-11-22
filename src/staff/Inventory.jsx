@@ -3,7 +3,7 @@ import { api } from '../lib/api.js';
 import { longDate } from '../format.js';
 
 const UNITS = ['L', 'ml', 'g', 'kg', 'bottles', 'cans', 'pieces', 'packs', 'boxes', 'bunches', 'bags'];
-const TABS = [['stock', 'Stock'], ['count', 'Count'], ['delivery', 'Delivery / waste'], ['order', 'To order'], ['history', 'History']];
+const TABS = [['stock', 'Stock'], ['count', 'Count'], ['delivery', 'Delivery / waste'], ['order', 'To order'], ['recipes', 'Recipes'], ['diff', 'Differences'], ['history', 'History']];
 const n2 = (v) => (v == null || !Number.isFinite(Number(v)) ? '–' : (Math.round(Number(v) * 100) / 100).toLocaleString('en-US'));
 const numIn = (s) => { const t = String(s ?? '').trim().replace(',', '.'); return t === '' ? null : Number(t); };
 
@@ -49,6 +49,8 @@ export default function Inventory() {
       {tab === 'count' && <EntryForm kind="count" groups={groups} onDone={done} />}
       {tab === 'delivery' && <EntryForm kind="purchase" groups={groups} onDone={done} />}
       {tab === 'order' && <OrderList items={lowItems} categories={groups.map((g) => g.cat)} />}
+      {tab === 'recipes' && <Recipes stock={data.items.filter((x) => x.active)} onDone={done} />}
+      {tab === 'diff' && <Differences />}
       {tab === 'history' && <History />}
     </div>
   );
@@ -188,7 +190,7 @@ function OrderList({ items, categories }) {
   );
 }
 
-const KIND = { count: 'Count', purchase: 'Delivery', waste: 'Waste', adjust: 'Correction' };
+const KIND = { count: 'Count', purchase: 'Delivery', waste: 'Waste', adjust: 'Correction', sale: 'Sold (till)' };
 function History({ item, onClose }) {
   const [moves, setMoves] = useState(null);
   useEffect(() => { api('inventory-moves' + (item ? `?item=${item.id}` : '')).then((r) => setMoves(r.moves)).catch(() => setMoves([])); }, [item?.id]);
@@ -203,7 +205,7 @@ function History({ item, onClose }) {
               <td style={{ whiteSpace: 'nowrap' }}>{new Date(m.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</td>
               {!item && <td>{m.name}</td>}
               <td>{KIND[m.kind] || m.kind}</td>
-              <td className="r num">{m.kind === 'purchase' ? '+' : m.kind === 'waste' ? '−' : ''}{n2(m.qty)} {m.unit}</td>
+              <td className="r num">{m.kind === 'purchase' ? '+' : m.kind === 'waste' || m.kind === 'sale' ? '−' : ''}{n2(m.qty)} {m.unit}</td>
               <td className="r num">{m.before == null ? '–' : n2(m.before)} → {n2(m.after)}</td>
               <td>{m.user_name || '–'}</td>
               <td className="wrap-cell">{m.note || ''}</td>
@@ -217,7 +219,7 @@ function History({ item, onClose }) {
 
 function ItemForm({ item, categories, onClose, onSaved }) {
   const isNew = !item.id;
-  const [v, setV] = useState({ name: item.name || '', category: item.category || categories[0] || '', unit: item.unit || 'pieces', min_qty: item.min_qty ?? '', note: item.note || '', qty: '' });
+  const [v, setV] = useState({ name: item.name || '', category: item.category || categories[0] || '', unit: item.unit || 'pieces', min_qty: item.min_qty ?? '', note: item.note || '', qty: '', pack_size: item.pack_size ?? '', use_unit: item.use_unit || '' });
   const [newCat, setNewCat] = useState('');
   const [fix, setFix] = useState({ qty: '', reason: '' });
   const [busy, setBusy] = useState(false);
@@ -227,7 +229,7 @@ function ItemForm({ item, categories, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true); setErr('');
     try {
-      const body = { name: v.name, category: newCat.trim() || v.category, unit: v.unit, min_qty: numIn(v.min_qty), note: v.note };
+      const body = { name: v.name, category: newCat.trim() || v.category, unit: v.unit, min_qty: numIn(v.min_qty), note: v.note, pack_size: numIn(v.pack_size), use_unit: v.use_unit };
       if (isNew) await api('inventory', { method: 'POST', body: { ...body, qty: numIn(v.qty) || 0 } });
       else {
         await api(`inventory/${item.id}`, { method: 'PATCH', body });
@@ -250,6 +252,8 @@ function ItemForm({ item, categories, onClose, onSaved }) {
         <label className="field"><span>…or a new category</span><input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="e.g. Cleaning" maxLength={60} /></label>
         <label className="field"><span>Unit</span><input list="inv-units" value={v.unit} onChange={set('unit')} required maxLength={20} /><datalist id="inv-units">{UNITS.map((u) => <option key={u} value={u} />)}</datalist></label>
         <label className="field"><span>Minimum (warn at or below)</span><input inputMode="decimal" value={v.min_qty} onChange={set('min_qty')} placeholder="e.g. 5" /></label>
+        <label className="field"><span>Recipes use (optional, e.g. ml)</span><input value={v.use_unit} onChange={set('use_unit')} placeholder="ml or g" maxLength={20} /></label>
+        <label className="field"><span>{v.use_unit ? `${v.use_unit} in one ${v.unit.replace(/s$/, '')}` : 'Size of one unit'}</span><input inputMode="decimal" value={v.pack_size} onChange={set('pack_size')} placeholder="e.g. 700" disabled={!v.use_unit} /></label>
         {isNew && <label className="field"><span>In stock now</span><input inputMode="decimal" value={v.qty} onChange={set('qty')} placeholder="0" /></label>}
         <label className="field" style={{ gridColumn: '1 / -1' }}><span>Note (optional, e.g. supplier)</span><input value={v.note} onChange={set('note')} maxLength={300} /></label>
       </div>
@@ -267,6 +271,123 @@ function ItemForm({ item, categories, onClose, onSaved }) {
       </div>
       {err && <div className="banner bad" role="alert" style={{ marginTop: 8 }}><span>{err}</span></div>}
     </form>
+  );
+}
+
+/** Recipes: what one sold menu item takes off the stock. */
+function Recipes({ stock, onDone }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  const [only, setOnly] = useState('sold');
+  const [open, setOpen] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api('inventory-recipes').then(setData).catch((e) => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const byId = useMemo(() => new Map(stock.map((x) => [x.id, x])), [stock]);
+  if (err) return <div className="card"><div className="error" role="alert">{err}</div></div>;
+  if (!data) return <div className="card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div>;
+  const f = q.trim().toLowerCase();
+  const list = data.items.filter((x) => (!f || x.name.toLowerCase().includes(f)) && (only === 'all' || (only === 'none' ? !x.lines.length : only === 'draft' ? x.lines.some((l) => l.draft) : x.sold30 > 0 || x.lines.length)))
+    .sort((a, b) => b.sold30 - a.sold30 || a.name.localeCompare(b.name));
+  const useUnit = (it) => it?.use_unit || it?.unit || '';
+  async function sync() {
+    setBusy(true);
+    try { const r = await api('inventory-sync', { method: 'POST' }); onDone(r.changed ? `Updated from the latest till sales: ${r.changed} stock items went down.` : 'Up to date: no new sales since the last update.'); load(); } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div><h2>Recipes</h2><p>What one sold item takes off the stock. Stock goes down automatically after each till upload (sales from {longDate(data.since)}){data.lastRun ? `; last update ${new Date(data.lastRun).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}. Items marked <span className="pill warn">draft</span> are my first guess: please check them.</p></div>
+        <button className="btn" onClick={sync} disabled={busy}>{busy ? 'Updating…' : 'Update from sales now'}</button>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+        <input className="inv-search" style={{ margin: 0 }} type="search" placeholder="Find a menu item…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a menu item" />
+        <div className="seg" role="group" aria-label="Show">
+          {[['sold', 'Sold or with recipe'], ['draft', 'Drafts to check'], ['none', 'No recipe'], ['all', 'All']].map(([k, l]) => <button key={k} aria-pressed={only === k} onClick={() => setOnly(k)}>{l}</button>)}
+        </div>
+      </div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>Menu item</th><th className="r">Sold, 30 days</th><th>Takes off the stock (per item sold)</th><th /></tr></thead>
+        <tbody>{list.map((x) => (
+          <Fragment key={x.pos_item}>
+            <tr>
+              <td>{x.name} <small className="muted">#{x.pos_item}</small></td>
+              <td className="r num">{x.sold30 ? n2(x.sold30) : '–'}</td>
+              <td>{x.lines.length ? x.lines.map((l) => { const it = byId.get(l.inv_item); return <span key={l.inv_item} className="pill" style={{ marginInlineEnd: 4 }}>{it ? `${it.name}: ${n2(l.qty)} ${useUnit(it)}` : 'removed item'}</span>; }) : <span className="muted">no recipe: not taken off the stock</span>}
+                {x.lines.some((l) => l.draft) && <span className="pill warn">draft</span>}</td>
+              <td><button className="btn small" onClick={() => setOpen(open === x.pos_item ? null : x.pos_item)}>{open === x.pos_item ? 'Close' : x.lines.length ? 'Edit' : 'Add recipe'}</button></td>
+            </tr>
+            {open === x.pos_item && <tr><td colSpan={4}><RecipeEditor item={x} stock={stock} onSaved={() => { setOpen(null); load(); }} /></td></tr>}
+          </Fragment>
+        ))}</tbody>
+      </table></div>
+    </div>
+  );
+}
+
+function RecipeEditor({ item, stock, onSaved }) {
+  const [lines, setLines] = useState(item.lines.length ? item.lines.map((l) => ({ inv_item: String(l.inv_item), qty: String(l.qty) })) : [{ inv_item: '', qty: '' }]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const byId = new Map(stock.map((x) => [String(x.id), x]));
+  const cats = [...new Set(stock.map((x) => x.category))];
+  const set = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  async function save() {
+    setBusy(true); setErr('');
+    try { await api('inventory-recipes', { method: 'PUT', body: { pos_item: item.pos_item, lines: lines.map((l) => ({ inv_item: Number(l.inv_item), qty: numIn(l.qty) })).filter((l) => l.inv_item && l.qty > 0) } }); onSaved(); } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  return (
+    <div className="recipe-edit">
+      <p className="muted" style={{ margin: '0 0 6px' }}>One <b>{item.name}</b> uses:</p>
+      {lines.map((l, i) => { const it = byId.get(l.inv_item); return (
+        <div key={i} className="recipe-line">
+          <select value={l.inv_item} onChange={(e) => set(i, { inv_item: e.target.value })} aria-label="Stock item">
+            <option value="">Choose a stock item…</option>
+            {cats.map((c) => <optgroup key={c} label={c}>{stock.filter((x) => x.category === c).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>)}
+          </select>
+          <input inputMode="decimal" value={l.qty} onChange={(e) => set(i, { qty: e.target.value })} placeholder="0" aria-label="Quantity" />
+          <span className="muted">{it ? (it.use_unit || it.unit) : ''}{it?.pack_size ? ` (1 ${it.unit.replace(/s$/, '')} = ${n2(it.pack_size)} ${it.use_unit})` : ''}</span>
+          <button className="btn small ghost" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} aria-label="Remove line">✕</button>
+        </div>
+      ); })}
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <button className="btn small" onClick={() => setLines((ls) => [...ls, { inv_item: '', qty: '' }])}>＋ Add a stock item</button>
+        <button className="btn small primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save recipe'}</button>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, margin: '6px 0 0' }}>Changes apply to sales from now on; stock already taken off is not recalculated.</p>
+      {err && <div className="banner bad" role="alert" style={{ marginTop: 6 }}><span>{err}</span></div>}
+    </div>
+  );
+}
+
+/** Each count compared with what the system expected after sales, deliveries and waste. */
+function Differences() {
+  const [d, setD] = useState(null);
+  useEffect(() => { api('inventory-diff').then(setD).catch(() => setD({ rows: [] })); }, []);
+  if (!d) return <div className="card"><p className="muted" style={{ margin: 0 }}>Loading…</p></div>;
+  const rows = d.rows.filter((r) => Math.abs(r.diff) > 1e-6);
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>Differences</h2><p>When you count, the counted number becomes the stock. This shows how far it was from what the till sales, deliveries and waste said should be left (from {d.since ? longDate(d.since) : 'the start'}). Minus = less on the shelf than expected: waste not recorded, free drinks, bigger portions than the recipe, or missing stock.</p></div></div>
+      {!rows.length ? <p className="muted">No differences yet. They appear after counts.</p> : (
+        <div className="table-wrap"><table>
+          <thead><tr><th>Counted</th><th>Item</th><th className="r">Expected</th><th className="r">Counted</th><th className="r">Difference</th><th>By</th></tr></thead>
+          <tbody>{rows.map((r, i) => (
+            <tr key={i}>
+              <td style={{ whiteSpace: 'nowrap' }}>{new Date(r.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</td>
+              <td>{r.name}</td>
+              <td className="r num">{n2(r.before)} {r.unit}</td>
+              <td className="r num">{n2(r.after)} {r.unit}</td>
+              <td className={'r num ' + (r.diff < 0 ? 'down' : '')}><b>{r.diff > 0 ? '+' : ''}{n2(r.diff)} {r.unit}</b></td>
+              <td>{r.user_name || '–'}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      )}
+    </div>
   );
 }
 

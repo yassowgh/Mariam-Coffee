@@ -97,6 +97,8 @@ async function handleData(request, env, ctx) {
     await env.DATA.put(KEY, body, { metadata });
     // update the website menu prices from the new POS item list
     if (ctx) ctx.waitUntil(refreshMenuPrices(env, body, metadata.uploadedAt));
+    // take the new sales off the inventory (recipes per menu item; see inventorySales.js)
+    if (ctx && env.DB) ctx.waitUntil(import('./inventorySales.js').then(({ applySales }) => applySales(env, body)).then((r) => console.log('inventory sales', JSON.stringify(r))).catch((e) => console.error('inventory sales', e)));
     return json({ ok: true, metadata });
   }
 

@@ -598,3 +598,8 @@ tr.inv-cat td { background: var(--surface-2); font-weight: 650; font-size: 13px;
 .inv-save { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 12px; position: sticky; bottom: 0; background: var(--surface); padding: 10px 0; border-top: 1px solid var(--border); }
 .inv-order { list-style: none; margin: 0; padding: 0; }
 .inv-order li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
+
+.recipe-edit { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.recipe-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.recipe-line select { min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); min-width: 220px; }
+.recipe-line input { width: 90px; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 0 8px; text-align: end; }
