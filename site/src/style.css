@@ -250,3 +250,7 @@ body.lb-on { overflow: hidden; }
 .allergens { font-size: 12px; color: var(--muted); }
 .ssr-menu h3 { font-size: 22px; margin: 26px 0 6px; }
 @media (max-width: 900px) { .visit .cta .btn { flex: 1; text-align: center; } }
+
+.item-art { display: grid; place-items: center; color: var(--green); border-radius: 50%; }
+.item-art svg { width: 48px; height: 48px; }
+.item-art .fill { fill: var(--brown); opacity: .85; }

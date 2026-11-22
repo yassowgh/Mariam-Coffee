@@ -1,5 +1,6 @@
 // The menu (section tabs + list with prices and optional photos), shared by the website and the table page.
 import { ART } from './art.js';
+import { ITEM_ART } from './itemart.js';
 import { LI, menuData, txt } from './content.js';
 
 const EXTRA_CATS = ['coffee', 'turkish', 'iced', 'fresh'];
@@ -26,11 +27,16 @@ export function createMenu({ tabsEl, listEl, getLang, searchEl }) {
 
   function row(x) {
     const li = document.createElement('li');
-    li.className = 'item' + (x.img ? ' has-img' : '');
+    const art = !x.img && ITEM_ART[x.id];
+    li.className = 'item' + (x.img || art ? ' has-img' : '');
     if (x.img) {
       const im = document.createElement('img');
       im.src = x.img; im.alt = ''; im.loading = 'lazy'; im.decoding = 'async'; im.width = 64; im.height = 64; im.className = 'item-img';
       li.appendChild(im);
+    } else if (art) {
+      // a drawing until a real photo is added in the Website editor
+      const d = document.createElement('span'); d.className = 'item-img item-art'; d.innerHTML = art;
+      li.appendChild(d);
     }
     const name = document.createElement('div');
     name.className = 'item-name';
