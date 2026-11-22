@@ -6,6 +6,7 @@ import { applyLang, chosenHere, getLang, setLangSaver } from './lib/i18n.js';
 import Login, { SetPassword } from './staff/Login.jsx';
 import Accounting from './staff/Accounting.jsx';
 import Finance from './staff/Finance.jsx';
+import Inventory from './staff/Inventory.jsx';
 import Salaries from './staff/Salaries.jsx';
 import Schedule from './staff/Schedule.jsx';
 import Clock from './staff/Clock.jsx';
@@ -21,6 +22,7 @@ const AREAS = [
   ['clock', 'Clock in / out', ['barista']],
   ['accounting', 'Accounting', ['accountant']],
   ['finance', 'Finance', ['accountant']],
+  ['inventory', 'Inventory', ['manager', 'accountant']],
   ['schedule', 'Schedule', ['manager']],
   ['attendance', 'Timesheets', ['manager']],
   ['team', 'Team', ['manager', 'accountant']],
@@ -153,7 +155,7 @@ export default function Root() {
   const shell = { user, areas, account };
   const title = list.find(([k]) => k === area)?.[1] || 'Mariam Coffee';
   if (area === 'reports') return <App shell={shell} />;
-  const View = { clock: Clock, accounting: Accounting, finance: Finance, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, website: WebsiteEditor, settings: Settings }[area];
+  const View = { clock: Clock, accounting: Accounting, finance: Finance, inventory: Inventory, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, website: WebsiteEditor, settings: Settings }[area];
   return (
     <>
       <Header title={`Mariam Coffee · ${title}`} subtitle={`Signed in as ${user.name}`} areas={areas} account={account} />

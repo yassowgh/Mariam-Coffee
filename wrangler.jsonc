@@ -28,6 +28,8 @@
   ],
   // Cloudflare Workers AI (free daily allowance): reads written schedule conditions
   "ai": { "binding": "AI" },
+  // 06:07 UTC = 09:07 in Istanbul: the daily "items to order" email
+  "triggers": { "crons": ["7 6 * * *"] },
   "d1_databases": [
     { "binding": "DB", "database_name": "mariam-coffee-staff" }
   ],

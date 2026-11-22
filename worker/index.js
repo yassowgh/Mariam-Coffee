@@ -164,6 +164,12 @@ const APP = '/management';
 const OLD_HOST = 'mariam-coffee-db-reader.yassow.workers.dev';
 
 export default {
+  // every morning: email managers what is low or out of stock (see inventory.js)
+  async scheduled(event, env, ctx) {
+    const { inventoryEmail } = await import('./inventory.js');
+    const { sendMany } = await import('./email.js');
+    ctx.waitUntil(inventoryEmail(env, sendMany).then((r) => console.log('inventory email', JSON.stringify(r))).catch((e) => console.error('inventory email', e)));
+  },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     // Always use HTTPS: plain http:// links are sent to the https:// address.

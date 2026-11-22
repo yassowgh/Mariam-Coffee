@@ -1,3 +1,4 @@
+import { INVENTORY_ROUTES, INVENTORY_SCHEMA, handleInventory } from './inventory.js';
 // Staff side of the site: accounts and roles, shifts and
 // clock-in / clock-out with a location check. Stored in the D1 database "DB";
 // receipt photos go to the KV namespace "DATA".
@@ -55,7 +56,7 @@ let schemaReady = null;
 function ensureSchema(db) {
   if (!schemaReady) {
     schemaReady = (async () => {
-      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA, ...TEAM_SCHEMA].map((s) => db.prepare(s)));
+      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA, ...TEAM_SCHEMA, ...INVENTORY_SCHEMA].map((s) => db.prepare(s)));
       // columns added after the first release
       const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL', "lang TEXT NOT NULL DEFAULT 'en'"]], ['expenses', EXPENSE_COLUMNS]];
       for (const [table, list] of cols) {
@@ -527,6 +528,7 @@ export async function handleStaff(request, env, path, passwordOk) {
     need(me);
     if (ACCOUNTING_ROUTES.includes(head)) return await handleAccounting({ head, sub, request, env, me, h });
     if (EMAIL_ROUTES.includes(head)) return await handleEmail({ head, request, env, me, h });
+    if (INVENTORY_ROUTES.includes(head)) return await handleInventory({ head, sub, request, env, me, h });
     if (TEAM_ROUTES.includes(head)) {
       const origin = new URL(request.url).origin;
       return await handleTeam({ head, sub, request, env, me, h, notify: (u, subject, text, html) => notify(env, h, origin, u, subject, text, html) });
@@ -568,4 +570,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];
+export const STAFF_ROUTES = [...INVENTORY_ROUTES, ...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];

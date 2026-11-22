@@ -1,3 +1,4 @@
+import { LowStockBanner } from './Inventory.jsx';
 import { useEffect, useState } from 'react';
 import { api, distFmt, dowOf, getLocation, hoursFmt, shiftHours, toLocal } from '../lib/api.js';
 import { longDate } from '../format.js';
@@ -50,6 +51,7 @@ export default function Clock() {
 
   return (
     <div className="stack clock-page">
+      <LowStockBanner />
       <div className={'card clock-card' + (open ? ' on' : '')}>
         <div className="clock-state">
           <span className={'pill ' + (open ? 'ok' : '')}>{open ? 'Clocked in' : 'Not clocked in'}</span>
