@@ -9,6 +9,7 @@
 // AI: Claude when ANTHROPIC_API_KEY is set (best for Arabic handwriting), otherwise Cloudflare Workers AI
 // (free allowance): several vision models are tried in turn.
 import { aiChat, parseJson } from './ai.js';
+import { addInvoiceToStock, suggestStock } from './invoiceStock.js';
 
 export const INVOICE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER, supplier TEXT, invoice_no TEXT,
@@ -60,6 +61,8 @@ const clean = (o) => {
   const lines = (Array.isArray(o?.lines) ? o.lines : []).slice(0, 150).map((l) => ({
     desc_orig: str(l.desc_orig ?? l.description, 300), item: str(l.item ?? l.desc_en ?? l.desc_orig, 120),
     qty: num(l.qty ?? l.quantity) || 1, unit: str(l.unit, 20), unit_price: num(l.unit_price ?? l.price), total: num(l.total ?? l.amount),
+    // the stock item this line goes into (chosen in the invoice check): { inv_item, factor } or { skip: true }
+    stock: l.stock && typeof l.stock === 'object' ? (l.stock.skip ? { skip: true } : { inv_item: Number(l.stock.inv_item) || null, factor: num(l.stock.factor) }) : undefined,
   })).map((l) => ({ ...l, total: l.total || Math.round(l.qty * l.unit_price * 100) / 100, unit_price: l.unit_price || (l.qty ? Math.round((l.total / l.qty) * 100) / 100 : 0) }))
     .filter((l) => l.item || l.desc_orig);
   let supplier = str(o?.supplier, 160);
@@ -118,6 +121,8 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
       if (hit.length === 1) suggest.account_id = hit[0].id;
     }
     await h.audit(db, me, 'invoice.read', { lines: inv.lines.length, by: r.by, type: inv.doc_type });
+    // stock: which inventory item each line goes into (remembered from last time, or matched by name)
+    suggest.stock = await suggestStock(db, inv.lines).catch(() => inv.lines.map(() => ({ inv_item: null, factor: null, from: null })));
     return json(h, { invoice: inv, by: r.by, duplicate: dup || null, suggest });
   }
 
@@ -181,8 +186,14 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
       if (expenseId) await db.prepare('DELETE FROM expenses WHERE id = ?').bind(expenseId).run().catch(() => {});
       throw e;
     }
-    await h.audit(db, me, 'invoice.save', { invoice: invoiceId, expense: expenseId, total: inv.total, lines: inv.lines.length });
-    return json(h, { ok: true, invoice_id: invoiceId, expense_id: expenseId });
+    // the invoice's goods go into the inventory (after the invoice is safely saved; a stock error never undoes the invoice)
+    let stock = { added: [], notLinked: [] };
+    if (inv.doc_type === 'invoice' && inv.lines.length) {
+      try { stock = await addInvoiceToStock(db, me, inv.lines, `Invoice ${inv.supplier || 'supplier'}${inv.invoice_no ? ' #' + inv.invoice_no : ''}`, now); }
+      catch (e) { stock.error = e.message; }
+    }
+    await h.audit(db, me, 'invoice.save', { invoice: invoiceId, expense: expenseId, total: inv.total, lines: inv.lines.length, stock: stock.added.length });
+    return json(h, { ok: true, invoice_id: invoiceId, expense_id: expenseId, stock });
   }
 
   if (head === 'invoice-lines' && sub && m === 'PATCH') {

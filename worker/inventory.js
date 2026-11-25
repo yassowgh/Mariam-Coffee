@@ -12,6 +12,7 @@
 // Use per day = what went down between counts (plus waste), over the last 30 days.
 
 import { SALES_SCHEMA, SALES_START, applySales, seedSales } from './inventorySales.js';
+import { STOCK_LINK_SCHEMA } from './invoiceStock.js';
 import { ITEMS as MENU_ITEMS, EXTRAS as MENU_EXTRAS } from '../site/src/menu.js';
 
 export const INVENTORY_SCHEMA = [
@@ -22,6 +23,7 @@ export const INVENTORY_SCHEMA = [
     kind TEXT NOT NULL, qty REAL NOT NULL, before REAL, after REAL, note TEXT, user_id INTEGER)`,
   `CREATE INDEX IF NOT EXISTS inventory_moves_item ON inventory_moves(item_id, at)`,
   ...SALES_SCHEMA,
+  ...STOCK_LINK_SCHEMA,
 ];
 
 export const INVENTORY_ROUTES = ['inventory', 'inventory-moves', 'inventory-low', 'inventory-recipes', 'inventory-sync', 'inventory-diff'];

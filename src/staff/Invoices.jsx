@@ -73,6 +73,9 @@ export function InvoiceScan({ ctx, onDone }) {
   const [err, setErr] = useState('');
   const [items, setItems] = useState([]);
   useEffect(() => { api('invoices').then((r) => setItems([...new Set(r.invoices.flatMap((i) => i.lines.map((l) => l.item)))].sort())).catch(() => {}); }, []);
+  // stock items, so the invoice's goods can go into the inventory (only managers / accountants see the inventory)
+  const [stockItems, setStockItems] = useState(null);
+  useEffect(() => { api('inventory').then((r) => setStockItems(r.items.filter((x) => x.active))).catch(() => setStockItems([])); }, []);
   const upd = (id, patch) => setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...(typeof patch === 'function' ? patch(x) : patch) } : x)));
 
   async function pick(e) {
@@ -119,8 +122,8 @@ export function InvoiceScan({ ctx, onDone }) {
             upd(it.id, { step: 'Checking again from the photo (AI)…' });
             try { r = await api('invoices/read', { method: 'POST', body: { images: images.slice(0, 4) } }); body = null; } catch { /* keep the text result; the checks show the problem */ }
           }
-          const inv = { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i })) };
           const sg = r.suggest || {};
+          const inv = { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i, stock: stockOf(sg.stock?.[i]) })) };
           const pay = { ...(sg.category_id ? { category_id: String(sg.category_id) } : {}), ...(sg.status ? { status: sg.status } : {}), ...(sg.account_id ? { account_id: String(sg.account_id) } : {}) };
           setQueue((q) => {
             // the same document twice in this batch (same supplier and number, or same supplier, date and amount)
@@ -145,7 +148,7 @@ export function InvoiceScan({ ctx, onDone }) {
     upd(it.id, { status: 'reading', step: 'The AI is reading the photo…', error: '' });
     try {
       const r = await api('invoices/read', { method: 'POST', body: { images: it.pages.slice(0, 4) } });
-      upd(it.id, { status: 'ready', step: '', invoice: { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i })) }, meta: { by: r.by, duplicate: r.duplicate, ocr: false } });
+      upd(it.id, { status: 'ready', step: '', invoice: { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i, stock: stockOf(r.suggest?.stock?.[i]) })) }, meta: { by: r.by, duplicate: r.duplicate, ocr: false } });
     } catch (x) { upd(it.id, { status: 'ready', step: '', error: x.message }); }
   }
 
@@ -154,8 +157,8 @@ export function InvoiceScan({ ctx, onDone }) {
     const inv = it.invoice;
     let receipt = null;
     if (it.pages[0]) receipt = (await api('receipts', { method: 'POST', raw: await dataUrlToBlob(it.pages[0]), type: 'image/jpeg' })).receipt;
-    await api('invoices', { method: 'POST', body: {
-      invoice: { ...inv, total: numIn(inv.total), tax: numIn(inv.tax), subtotal: numIn(inv.subtotal), lines: inv.lines.map((l) => ({ ...l, qty: numIn(l.qty), unit_price: numIn(l.unit_price), total: numIn(l.total) })) },
+    return await api('invoices', { method: 'POST', body: {
+      invoice: { ...inv, total: numIn(inv.total), tax: numIn(inv.tax), subtotal: numIn(inv.subtotal), lines: inv.lines.map((l) => ({ ...l, qty: numIn(l.qty), unit_price: numIn(l.unit_price), total: numIn(l.total), stock: stockOut(l.stock) })) },
       category_id: Number(pay.category_id) || null, status: pay.status, account_id: Number(pay.account_id) || null,
       paid_date: pay.paid_date || inv.date, due_date: pay.due_date || inv.date, receipt, raw: { by: it.meta?.by }, allow_no_lines: !inv.lines.length,
     } });
@@ -163,16 +166,24 @@ export function InvoiceScan({ ctx, onDone }) {
   async function saveChecked(list) {
     setErr(''); setBusy('Saving…');
     let ok = 0, total = 0;
+    const toStock = [], notLinked = [];
     for (const it of list) {
       upd(it.id, { status: 'saving' });
-      try { await saveOne(it); upd(it.id, { status: 'saved', checked: false, error: '' }); ok++; total += numIn(it.invoice.total); } catch (x) {
+      try {
+        const r = await saveOne(it);
+        const st = r?.stock || {};
+        toStock.push(...(st.added || [])); notLinked.push(...(st.notLinked || []));
+        upd(it.id, { status: 'saved', checked: false, error: '', step: st.added?.length ? `Stock: ${st.added.map((a) => `${a.name} +${fmtQ(a.qty)} ${a.unit}`).join(', ')}` : '' });
+        ok++; total += numIn(it.invoice.total);
+      } catch (x) {
         // the server already has this one (e.g. saved before an error): mark it saved, never save it twice
         if (x.status === 409) upd(it.id, { status: 'saved', checked: false, error: '', step: 'Was already saved, not saved again.' });
         else upd(it.id, { status: 'ready', error: x.message });
       }
     }
     setBusy(''); setOpen(null);
-    if (ok) onDone?.(`Saved ${ok} invoice${ok === 1 ? '' : 's'} · ${money2(total)}.`);
+    if (ok) onDone?.(`Saved ${ok} invoice${ok === 1 ? '' : 's'} · ${money2(total)}.` + (toStock.length ? ` Added to stock: ${toStock.map((a) => `${a.name} +${fmtQ(a.qty)} ${a.unit}`).join(', ')}.` : '')
+      + (notLinked.length ? ` Not added to stock (no stock item chosen): ${[...new Set(notLinked)].slice(0, 8).join(', ')}${notLinked.length > 8 ? '…' : ''}.` : ''));
   }
 
   const ready = queue.filter((x) => x.status === 'ready');
@@ -237,7 +248,7 @@ export function InvoiceScan({ ctx, onDone }) {
           {current?.invoice && current.meta?.ocr && current.status === 'ready' && (
             <div style={{ marginTop: 10 }}><button className="btn small" onClick={() => rereadVision(current)}>Something wrong? Read again from the photo (AI)</button></div>
           )}
-          {current?.invoice && <Review it={current} cats={cats} accounts={accounts} items={items} defaults={defaults} upd={upd} readOnly={current.status === 'saved'}
+          {current?.invoice && <Review stockItems={stockItems} it={current} cats={cats} accounts={accounts} items={items} defaults={defaults} upd={upd} readOnly={current.status === 'saved'}
             onSave={() => saveChecked([current])} busy={busy} />}
 
           {ready.length > 0 && (
@@ -259,7 +270,64 @@ export function InvoiceScan({ ctx, onDone }) {
 }
 
 /** Review and correct one read invoice. */
-function Review({ it, cats, accounts, items, defaults, upd, onSave, busy, readOnly }) {
+// --- invoice line → stock item -------------------------------------------------------------------------------
+// stock on a line: { inv_item, factor, from } — from: 'saved' (linked last time), 'match' (name match), 'you', 'skip' (not stock)
+const stockOf = (s) => (s?.from === 'skip' ? { skip: true, from: 'skip' } : s?.inv_item ? { inv_item: s.inv_item, factor: s.factor ?? '', from: s.from } : { inv_item: null, factor: '', from: null });
+const stockOut = (s) => (!s ? undefined : s.skip ? { skip: true } : s.inv_item && numIn(s.factor) > 0 ? { inv_item: s.inv_item, factor: numIn(s.factor) } : undefined);
+const fmtQ = (n) => (Math.round(n * 1000) / 1000).toLocaleString('en-US', { maximumFractionDigits: 3 });
+
+function StockRow({ l, stockItems, onChange }) {
+  const s = l.stock || { inv_item: null, factor: '', from: null };
+  const item = stockItems.find((x) => x.id === s.inv_item);
+  const cats = [...new Set(stockItems.map((x) => x.category))];
+  const qty = numIn(l.qty) * numIn(s.factor);
+  const pick = (v) => {
+    if (v === 'skip') return onChange({ skip: true, from: 'you' });
+    if (!v) return onChange({ inv_item: null, factor: '', from: 'you' });
+    const it = stockItems.find((x) => x.id === Number(v));
+    onChange({ inv_item: it.id, factor: guessFactor(l.unit, it.unit) ?? '', from: 'you' });
+  };
+  return (
+    <tr className="stock-row">
+      <td colSpan={7}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13.5 }}>
+          <span className="muted">↳ Stock:</span>
+          <select className="cell-input" style={{ maxWidth: 260 }} value={s.skip ? 'skip' : s.inv_item || ''} onChange={(e) => pick(e.target.value)} aria-label="Stock item">
+            <option value="">Choose a stock item…</option>
+            <option value="skip">Not a stock item (don’t ask again)</option>
+            {cats.map((c) => <optgroup key={c} label={c}>{stockItems.filter((x) => x.category === c).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.unit})</option>)}</optgroup>)}
+          </select>
+          {item && <>
+            <span className="muted">1 {l.unit || 'unit'} =</span>
+            <input className="cell-input num" inputMode="decimal" value={s.factor} onChange={(e) => onChange({ ...s, factor: e.target.value, from: 'you' })} style={{ width: 70 }} aria-label={`How many ${item.unit} in one ${l.unit || 'unit'}`} />
+            <span className="muted">{item.unit}</span>
+            {qty > 0 ? <b>→ +{fmtQ(qty)} {item.unit}</b> : <span style={{ color: 'var(--bad-text)' }}>enter how many {item.unit} are in one {l.unit || 'unit'}</span>}
+            {s.from === 'saved' && <span className="pill">as last time</span>}
+            {s.from === 'match' && <span className="pill">matched by name: check</span>}
+          </>}
+          {s.skip && <span className="faint">This item is not added to stock.</span>}
+          {!item && !s.skip && <span className="faint">Not added to stock unless you choose an item.</span>}
+        </div>
+      </td>
+    </tr>
+  );
+}
+// the same unit rules as the server: kg→g ×1000, ml→L ×0.001, a piece / bottle → 1; boxes and cases need the number in them
+function guessFactor(lineUnit, invUnit) {
+  const x = String(lineUnit || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i').replace(/[^a-z]/g, '');
+  const a = ['kg', 'kilo', 'kilogram', 'kilograms'].includes(x) ? 'kg' : ['g', 'gr', 'gram', 'grams'].includes(x) ? 'g'
+    : ['l', 'lt', 'ltr', 'litre', 'liter', 'litres', 'liters'].includes(x) ? 'L' : ['ml'].includes(x) ? 'ml'
+    : ['koli', 'case', 'carton', 'cartons', 'cases', 'kutu', 'box', 'boxes', 'pack', 'packs', 'paket', 'package', 'bag', 'bags', 'torba', 'cuval'].includes(x) ? 'case' : 'count';
+  if (invUnit === 'g') return a === 'kg' ? 1000 : a === 'g' ? 1 : null;
+  if (invUnit === 'kg') return a === 'kg' ? 1 : a === 'g' ? 0.001 : null;
+  if (invUnit === 'L') return a === 'L' ? 1 : a === 'ml' ? 0.001 : null;
+  if (invUnit === 'ml') return a === 'L' ? 1000 : a === 'ml' ? 1 : null;
+  if (['boxes', 'packs', 'bags'].includes(invUnit) && a === 'case') return 1;
+  if (['bottles', 'cans', 'pieces', 'packs', 'boxes', 'bunches', 'bags'].includes(invUnit)) return a === 'count' ? 1 : null;
+  return null;
+}
+
+function Review({ it, cats, accounts, items, defaults, upd, onSave, busy, readOnly, stockItems }) {
   const inv = it.invoice;
   const pay = { ...defaults, ...(it.pay || {}) };
   const set = (patch) => upd(it.id, (x) => ({ invoice: { ...x.invoice, ...patch } }));
@@ -289,7 +357,7 @@ function Review({ it, cats, accounts, items, defaults, upd, onSave, busy, readOn
       {inv.doc_type === 'payment' && !inv.lines.length && <p className="muted" style={{ margin: 0 }}>Bank / payment slip{inv.paid_from ? ` from ${inv.paid_from}` : ''}: no item lines, only the amount. It is saved as a paid record.</p>}
       <div className="table-wrap" hidden={inv.doc_type === 'payment' && !inv.lines.length}><table className="inv-lines">
         <thead><tr><th>Item (English)</th><th>On the invoice</th><th className="r">Qty</th><th>Unit</th><th className="r">Unit price</th><th className="r">Line total</th><th /></tr></thead>
-        <tbody>{inv.lines.map((l) => (
+        <tbody>{inv.lines.flatMap((l) => [
           <tr key={l.key}>
             <td><input className="cell-input" list="inv-items" value={l.item} onChange={(e) => setLine(l.key, { item: e.target.value })} /></td>
             <td className="orig" dir="auto">{l.desc_orig}</td>
@@ -298,8 +366,9 @@ function Review({ it, cats, accounts, items, defaults, upd, onSave, busy, readOn
             <td className="r"><input className="cell-input num" inputMode="decimal" value={l.unit_price} onChange={(e) => setLine(l.key, { unit_price: e.target.value })} style={{ width: 90 }} /></td>
             <td className="r"><input className="cell-input num" inputMode="decimal" value={l.total} onChange={(e) => setLine(l.key, { total: e.target.value })} style={{ width: 100 }} /></td>
             <td><button className="btn small ghost" onClick={() => set({ lines: inv.lines.filter((x) => x.key !== l.key) })} aria-label="Remove line">✕</button></td>
-          </tr>
-        ))}</tbody>
+          </tr>,
+          stockItems?.length > 0 && inv.doc_type !== 'payment' && <StockRow key={l.key + '-s'} l={l} stockItems={stockItems} onChange={(stock) => setLine(l.key, { stock })} />,
+        ])}</tbody>
       </table></div>
       <datalist id="inv-items">{items.map((n) => <option key={n} value={n} />)}</datalist>
       <div><button className="btn small" onClick={() => set({ lines: [...inv.lines, { key: Date.now(), item: '', desc_orig: '', qty: 1, unit: '', unit_price: 0, total: 0 }] })}>＋ Add a line</button></div>
@@ -318,7 +387,7 @@ function Review({ it, cats, accounts, items, defaults, upd, onSave, busy, readOn
       </div>
       {!readOnly && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn primary" onClick={onSave} disabled={!!busy || !pay.category_id}>{busy || 'Save this invoice'}</button>
-        <span className="faint" style={{ fontSize: 12.5 }}>Read by {it.meta?.by}. Saved as one accounting record (the total, with the photo) plus its lines for Item costs.</span>
+        <span className="faint" style={{ fontSize: 12.5 }}>Read by {it.meta?.by}. Saved as one accounting record (the total, with the photo) plus its lines for Item costs{stockItems?.length ? '; lines linked to a stock item are added to the inventory' : ''}.</span>
       </div>}
     </fieldset>
   );
