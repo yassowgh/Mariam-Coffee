@@ -25,6 +25,10 @@ export const LOYALTY_SCHEMA = [
     at_order INTEGER, year INTEGER, earned_at TEXT NOT NULL, given_at TEXT, given_by INTEGER)`,
   `CREATE INDEX IF NOT EXISTS customer_gifts_c ON customer_gifts(customer_id)`,
 ];
+import { KVKK_VERSION } from '../src/lib/kvkk.js';
+
+// columns added after the first release
+export const CUSTOMER_COLUMNS = ['kvkk_at TEXT', 'kvkk_ver TEXT', 'offers_at TEXT'];
 export const LOYALTY_ROUTES = ['customers', 'customer-gifts', 'customers-export', 'customers-stats', 'loyalty-settings'];
 
 export const DEFAULT_LOYALTY = {
@@ -32,6 +36,7 @@ export const DEFAULT_LOYALTY = {
   every: { n: 10, gift: 'A free hot drink' },
   birthday: { on: true, gift: 'A free drink and dessert', days: 3 },
   cooldownHours: 2,
+  legalName: 'Mariam Coffee',
 };
 const LANGS = ['ar', 'tr', 'en'];
 
@@ -44,6 +49,7 @@ export function normPhone(v) {
     if (d.length === 11 && d.startsWith('0')) d = '90' + d.slice(1);
     else if (d.length === 10 && d.startsWith('5')) d = '90' + d;
   }
+  if (/^900\d{10}$/.test(d)) d = '90' + d.slice(3); // "+90 0555 …": the 0 after the country code is not part of the number
   return /^\d{10,15}$/.test(d) ? d : null;
 }
 const show = (p) => (p.startsWith('90') && p.length === 12 ? `+90 ${p.slice(2, 5)} ${p.slice(5, 8)} ${p.slice(8, 10)} ${p.slice(10)}` : '+' + p);
@@ -81,6 +87,7 @@ async function view(db, h, cfg, c, me, full) {
     nextGiftIn: cfg.every.n > 0 ? cfg.every.n - (c.orders % cfg.every.n) : null, everyGift: cfg.every.gift, everyN: cfg.every.n,
     pending: gifts.filter((g) => !g.given_at).map((g) => ({ id: g.id, gift: g.gift, kind: g.kind, at_order: g.at_order })),
     birthdayGift: bday ? cfg.birthday.gift : null,
+    kvkk_at: c.kvkk_at || null, kvkk_ver: c.kvkk_ver || null,
   };
   if (full) {
     out.gifts = gifts.map((g) => ({ id: g.id, gift: g.gift, kind: g.kind, at_order: g.at_order, earned_at: g.earned_at, given_at: g.given_at }));
@@ -97,6 +104,7 @@ function cleanFields(h, b, partial) {
   if (!partial || 'offers' in b) { if (typeof b.offers !== 'boolean') h.fail(400, 'Choose whether they accept special offers.'); out.offers = b.offers ? 1 : 0; }
   if (!partial || 'birth' in b) { const v = h.str(b.birth, 5); if (v && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v)) h.fail(400, 'Birthday: choose day and month.'); out.birth = v || null; }
   if ('note' in b) out.note = h.str(b.note, 300) || null;
+  if (!partial && b.kvkk !== true) h.fail(400, 'The customer must agree to the KVKK privacy notice.');
   return out;
 }
 
@@ -121,8 +129,31 @@ async function addOrder(db, h, cfg, c, me, force) {
   return { earned, levelUp: after && before && after.name !== before.name ? after.name : null };
 }
 
+/** Once: numbers saved as "90 0 5xx…" become "90 5xx…"; when that number already exists, the two are merged. */
+async function fixPhones(db, h) {
+  if ((await h.getSetting(db, 'loyaltyPhoneFix'))?.v === 1) return;
+  const bad = (await db.prepare("SELECT * FROM customers WHERE phone LIKE '900%' AND length(phone) = 13").all()).results;
+  for (const c of bad) {
+    const good = normPhone('+' + c.phone);
+    const other = await db.prepare('SELECT * FROM customers WHERE phone = ?').bind(good).first();
+    if (!other) { await db.prepare('UPDATE customers SET phone = ? WHERE id = ?').bind(good, c.id).run(); continue; }
+    // keep the older record; add the other's orders and gifts to it
+    const [keep, drop] = other.created_at <= c.created_at ? [other, c] : [c, other];
+    const last = [keep.last_order_at, drop.last_order_at].filter(Boolean).sort().pop() || null;
+    await db.batch([
+      db.prepare('UPDATE customer_orders SET customer_id = ? WHERE customer_id = ?').bind(keep.id, drop.id),
+      db.prepare('UPDATE customer_gifts SET customer_id = ? WHERE customer_id = ?').bind(keep.id, drop.id),
+      db.prepare('DELETE FROM customers WHERE id = ?').bind(drop.id),
+      db.prepare('UPDATE customers SET phone = ?, orders = orders + ?, last_order_at = ?, name = coalesce(name, ?), birth = coalesce(birth, ?), kvkk_at = coalesce(kvkk_at, ?), kvkk_ver = coalesce(kvkk_ver, ?) WHERE id = ?')
+        .bind(good, drop.orders, last, drop.name, drop.birth, drop.kvkk_at, drop.kvkk_ver, keep.id),
+    ]);
+  }
+  await h.setSetting(db, 'loyaltyPhoneFix', { v: 1, fixed: bad.length });
+}
+
 export async function handleLoyalty({ head, sub, request, env, me, h }) {
   const db = env.DB;
+  await fixPhones(db, h);
   const m = request.method;
   h.need(me);
   const manager = h.has(me, 'manager');
@@ -145,6 +176,7 @@ export async function handleLoyalty({ head, sub, request, env, me, h }) {
       every: { n: Math.max(0, Math.floor(Number(b.every?.n) || 0)), gift: h.str(b.every?.gift, 120) },
       birthday: { on: !!b.birthday?.on, gift: h.str(b.birthday?.gift, 120), days: Math.min(15, Math.max(0, Math.floor(Number(b.birthday?.days) || 0))) },
       cooldownHours: Math.min(24, Math.max(0, Number(b.cooldownHours) || 0)),
+      legalName: h.str(b.legalName, 120) || 'Mariam Coffee',
     };
     await h.setSetting(db, 'loyalty', s);
     await h.audit(db, me, 'loyalty.settings', s);
@@ -166,7 +198,7 @@ export async function handleLoyalty({ head, sub, request, env, me, h }) {
     if (!manager) h.fail(403, 'Only a manager or the owner can export customers.');
     const { results } = await db.prepare('SELECT * FROM customers WHERE offers = 1 ORDER BY lang, name').all();
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const lines = ['Phone,Name,Language,Orders,Level,Birthday,Registered', ...results.map((c) => [show(c.phone), c.name, { ar: 'Arabic', tr: 'Turkish', en: 'English' }[c.lang], c.orders, levelOf(cfg, c.orders)?.name, c.birth, c.created_at.slice(0, 10)].map(esc).join(','))];
+    const lines = ['Phone,Name,Language,Orders,Level,Birthday,Registered,KVKK consent,Offers consent', ...results.map((c) => [show(c.phone), c.name, { ar: 'Arabic', tr: 'Turkish', en: 'English' }[c.lang], c.orders, levelOf(cfg, c.orders)?.name, c.birth, c.created_at.slice(0, 10), (c.kvkk_at || '').slice(0, 10), (c.offers_at || c.created_at || '').slice(0, 10)].map(esc).join(','))];
     await h.audit(db, me, 'loyalty.export', { count: results.length });
     return new Response('﻿' + lines.join('\n'), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="mariam-customers-offers.csv"', 'cache-control': 'no-store' } });
   }
@@ -220,8 +252,8 @@ export async function handleLoyalty({ head, sub, request, env, me, h }) {
       const ex = await db.prepare('SELECT id FROM customers WHERE phone = ?').bind(v.phone).first();
       if (ex) return h.json({ error: 'This number is already registered.', id: ex.id }, 409);
       const now = h.nowIso();
-      const r = await db.prepare('INSERT INTO customers (phone, name, lang, offers, birth, note, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(v.phone, v.name, v.lang, v.offers, v.birth, v.note ?? null, now, me.id).run();
+      const r = await db.prepare('INSERT INTO customers (phone, name, lang, offers, birth, note, created_at, created_by, kvkk_at, kvkk_ver, offers_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(v.phone, v.name, v.lang, v.offers, v.birth, v.note ?? null, now, me.id, now, KVKK_VERSION, now).run();
       let c = await get(r.meta.last_row_id);
       let earned = [];
       if (b.countOrder) { earned = (await addOrder(db, h, cfg, c, me, true)).earned || []; c = await get(c.id); }
@@ -234,7 +266,10 @@ export async function handleLoyalty({ head, sub, request, env, me, h }) {
   if (!action) {
     if (m === 'GET') return h.json({ customer: await view(db, h, cfg, c, me, true), settings: cfg });
     if (m === 'PATCH') {
-      const v = cleanFields(h, await h.body(request), true);
+      const b = await h.body(request);
+      const v = cleanFields(h, b, true);
+      if (b.kvkk === true && !c.kvkk_at) { v.kvkk_at = h.nowIso(); v.kvkk_ver = KVKK_VERSION; }
+      if ('offers' in v && v.offers !== c.offers) v.offers_at = h.nowIso();
       if (v.phone && v.phone !== c.phone && (await db.prepare('SELECT id FROM customers WHERE phone = ?').bind(v.phone).first())) h.fail(409, 'Another customer already has this number.');
       const cols = Object.keys(v);
       if (cols.length) await db.prepare(`UPDATE customers SET ${cols.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`).bind(...cols.map((k) => v[k]), h.nowIso(), id).run();

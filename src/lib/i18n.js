@@ -4,6 +4,10 @@
 // Names, amounts and anything not in the dictionary stay as they are.
 
 const AR = {
+  "Read the privacy notice to the customer and tick that they agree.": "اقرأ إشعار الخصوصية للعميل وضع علامة أنه موافق.",
+  "Record consent": "تسجيل الموافقة",
+  "No KVKK consent recorded for this customer. Read them the privacy notice.": "لا توجد موافقة KVKK مسجلة لهذا العميل. اقرأ له إشعار الخصوصية.",
+  "✓ Consent already recorded.": "✓ الموافقة مسجلة.",
   "Searching…": "جارٍ البحث…",
   "Type the mobile number, its last 4 digits, or any part of it (5 digits or more).": "اكتب رقم الجوال، أو آخر 4 أرقام منه، أو أي جزء منه (5 أرقام أو أكثر).",
   "Type at least 4 digits of the mobile number.": "اكتب 4 أرقام على الأقل من رقم الجوال.",

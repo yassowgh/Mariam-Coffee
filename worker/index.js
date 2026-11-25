@@ -32,6 +32,13 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 });
 
+/** Reading the sales data: signed in as owner, manager or accountant (finance). */
+async function salesReader(request, env) {
+  const me = await currentUser(request, env).catch(() => null);
+  const roles = String(me?.roles || '').split(',');
+  return !!me && (roles.includes('owner') || roles.includes('manager') || roles.includes('accountant'));
+}
+
 /** Saving: owner signed in, the upload password, or the POS computer's upload key. */
 async function allowed(request, env) {
   const me = await currentUser(request, env).catch(() => null);
@@ -49,6 +56,8 @@ async function handleData(request, env, ctx) {
   if (!env.DATA) return json({ error: 'Storage is not configured on this deployment.' }, 503);
 
   if (request.method === 'GET' || request.method === 'HEAD') {
+    // the sales are private: only managers, finance and the owner, signed in
+    if (!(await salesReader(request, env))) return json({ error: 'Sign in as a manager, accountant or owner to see the sales.', signIn: true }, 401);
     const { value, metadata } = await env.DATA.getWithMetadata(KEY, { type: 'arrayBuffer' });
     if (!value) return json({ error: 'No saved data yet.' }, 404);
     return new Response(request.method === 'HEAD' ? null : value, {
@@ -111,6 +120,7 @@ const MAX_COSTS_BYTES = 2 * 1024 * 1024;
 async function handleCosts(request, env) {
   if (!env.DATA) return json({ error: 'Storage is not configured on this deployment.' }, 503);
   if (request.method === 'GET') {
+    if (!(await salesReader(request, env))) return json({ error: 'Sign in as a manager, accountant or owner.', signIn: true }, 401);
     const value = await env.DATA.get(COSTS_KEY);
     if (!value) return json({ error: 'No cost settings saved yet.' }, 404);
     return new Response(value, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });

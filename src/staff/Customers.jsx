@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, hasRole } from '../lib/api.js';
 import { longDate } from '../format.js';
+import { kvkkText } from '../lib/kvkk.js';
 
 const LANGS = [['ar', 'العربية'], ['tr', 'Türkçe'], ['en', 'English']];
 const LANG_NAME = Object.fromEntries(LANGS);
@@ -93,9 +94,9 @@ function Counter({ manager }) {
         </div>
       )}
 
-      {adding && <Register phone={adding.phone} onCancel={() => setAdding(null)} onDone={(r) => { setCur(r.customer); setAdding(null); const e = (r.earned || []).map((g) => g.gift); setMsg({ ok: true, text: `Registered${r.customer.orders ? ' and this order counted' : ''}.${e.length ? ` Gift earned: ${e.join(' + ')}` : ''}`, gift: e.length > 0 }); }} />}
+      {adding && <Register legalName={res?.settings?.legalName} phone={adding.phone} onCancel={() => setAdding(null)} onDone={(r) => { setCur(r.customer); setAdding(null); const e = (r.earned || []).map((g) => g.gift); setMsg({ ok: true, text: `Registered${r.customer.orders ? ' and this order counted' : ''}.${e.length ? ` Gift earned: ${e.join(' + ')}` : ''}`, gift: e.length > 0 }); }} />}
 
-      {cur && <CustomerCard c={cur} manager={manager} busy={busy}
+      {cur && <CustomerCard c={cur} manager={manager} busy={busy} legalName={res?.settings?.legalName}
         onOrder={() => act(`customers/${cur.id}/order`, {}, 'Order counted.')}
         onUndo={() => { if (confirm('Remove the last counted order?')) act(`customers/${cur.id}/undo`, {}, 'Last order removed.'); }}
         onGive={(g) => act(`customer-gifts/${g.id}`, {}, `Gift given: ${g.gift}.`)}
@@ -106,8 +107,8 @@ function Counter({ manager }) {
   );
 }
 
-function Register({ phone, onCancel, onDone, initial, id }) {
-  const [v, setV] = useState({ phone: initial?.phone || phone || '', name: initial?.name || '', lang: initial?.lang || '', offers: initial ? initial.offers : null, bd: initial?.birth?.slice(3) || '', bm: initial?.birth?.slice(0, 2) || '', countOrder: true });
+function Register({ phone, onCancel, onDone, initial, id, legalName }) {
+  const [v, setV] = useState({ phone: initial?.phone || phone || '', name: initial?.name || '', lang: initial?.lang || '', offers: initial ? initial.offers : null, kvkk: !!initial?.kvkk_at, bd: initial?.birth?.slice(3) || '', bm: initial?.birth?.slice(0, 2) || '', countOrder: true });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const edit = !!id;
@@ -116,10 +117,11 @@ function Register({ phone, onCancel, onDone, initial, id }) {
     setErr('');
     if (!v.lang) { setErr('Choose the language.'); return; }
     if (v.offers == null) { setErr('Choose whether they accept special offers.'); return; }
+    if (!v.kvkk) { setErr('Read the privacy notice to the customer and tick that they agree.'); return; }
     if ((v.bd && !v.bm) || (!v.bd && v.bm)) { setErr('Birthday: choose both day and month, or neither.'); return; }
     setBusy(true);
     try {
-      const body = { phone: v.phone, name: v.name, lang: v.lang, offers: v.offers, birth: v.bd && v.bm ? `${v.bm}-${v.bd}` : '' };
+      const body = { phone: v.phone, name: v.name, lang: v.lang, offers: v.offers, kvkk: v.kvkk, birth: v.bd && v.bm ? `${v.bm}-${v.bd}` : '' };
       const r = edit ? await api(`customers/${id}`, { method: 'PATCH', body }) : await api('customers', { method: 'POST', body: { ...body, countOrder: v.countOrder } });
       onDone(r);
     } catch (x) { setErr(x.message); }
@@ -143,6 +145,7 @@ function Register({ phone, onCancel, onDone, initial, id }) {
         <select value={v.bd} onChange={(e) => setV({ ...v, bd: e.target.value })} aria-label="Day"><option value="">Day</option>{DAYS.map((d) => <option key={d} value={d}>{Number(d)}</option>)}</select>
         <select value={v.bm} onChange={(e) => setV({ ...v, bm: e.target.value })} aria-label="Month"><option value="">Month</option>{MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}</select>
       </fieldset>
+      <Kvkk lang={v.lang} name={legalName} checked={v.kvkk} locked={!!initial?.kvkk_at} onChange={(x) => setV({ ...v, kvkk: x })} />
       {!edit && <label className="check" style={{ display: 'flex', gap: 6, margin: '10px 0' }}><input type="checkbox" checked={v.countOrder} onChange={(e) => setV({ ...v, countOrder: e.target.checked })} /> Count this visit as their first order</label>}
       {err && <div className="banner bad" role="alert"><span>{err}</span></div>}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -153,9 +156,27 @@ function Register({ phone, onCancel, onDone, initial, id }) {
   );
 }
 
-function CustomerCard({ c, manager, busy, onOrder, onUndo, onGive, onBirthday, onSaved, onDeleted }) {
+/** The KVKK notice in the customer's language, and the required agreement. */
+function Kvkk({ lang, name, checked, locked, onChange }) {
+  const [other, setOther] = useState('');
+  const show = other || lang || 'tr';
+  const k = kvkkText(show, name);
+  return (
+    <div className="kvkk">
+      <div className="kvkk-head"><b>{k.title}</b>
+        <span className="seg" role="group" aria-label="Notice language">{[['ar', 'ع'], ['tr', 'TR'], ['en', 'EN']].map(([c, l]) => <button type="button" key={c} aria-pressed={show === c} onClick={() => setOther(c)}>{l}</button>)}</span>
+      </div>
+      <p dir={show === 'ar' ? 'rtl' : 'ltr'} lang={show}>{k.text}</p>
+      {locked ? <p className="muted" style={{ margin: 0 }}>✓ Consent already recorded.</p> : (
+        <label className="kvkk-agree" dir={show === 'ar' ? 'rtl' : 'ltr'}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} required /> <span>{k.agree}</span></label>
+      )}
+    </div>
+  );
+}
+
+function CustomerCard({ c, manager, busy, legalName, onOrder, onUndo, onGive, onBirthday, onSaved, onDeleted }) {
   const [editing, setEditing] = useState(false);
-  if (editing) return <Register id={c.id} initial={{ phone: c.phone.startsWith('•') ? '' : c.phone, name: c.name, lang: c.lang, offers: c.offers, birth: c.birth }} onCancel={() => setEditing(false)} onDone={(r) => { setEditing(false); onSaved(r.customer); }} />;
+  if (editing) return <Register id={c.id} legalName={legalName} initial={{ phone: c.phone.startsWith('•') ? '' : c.phone, name: c.name, lang: c.lang, offers: c.offers, birth: c.birth, kvkk_at: c.kvkk_at }} onCancel={() => setEditing(false)} onDone={(r) => { setEditing(false); onSaved(r.customer); }} />;
   const pct = c.nextGiftIn != null && c.everyN ? Math.round(((c.everyN - c.nextGiftIn) / c.everyN) * 100) : 0;
   async function del() {
     if (!confirm(`Delete ${c.name || c.phone} and all their orders and gifts?`)) return;
@@ -166,10 +187,11 @@ function CustomerCard({ c, manager, busy, onOrder, onUndo, onGive, onBirthday, o
       <div className="cust-head">
         <div>
           <h2>{c.name || 'Customer'} <span className={'pill lvl-' + c.level.toLowerCase()}>{c.level}</span></h2>
-          <p className="muted" style={{ margin: 0 }}><span dir="ltr">{c.phone}</span> · {LANG_NAME[c.lang]} · offers: {c.offers ? 'yes' : 'no'}{c.birth ? ` · birthday ${Number(c.birth.slice(3))} ${MONTHS[Number(c.birth.slice(0, 2)) - 1]}` : ''}</p>
+          <p className="muted" style={{ margin: 0 }}><span dir="ltr">{c.phone}</span> · {LANG_NAME[c.lang]} · offers: {c.offers ? 'yes' : 'no'}{c.kvkk_at ? ` · KVKK ✓ ${longDate(c.kvkk_at.slice(0, 10))}` : ''}{c.birth ? ` · birthday ${Number(c.birth.slice(3))} ${MONTHS[Number(c.birth.slice(0, 2)) - 1]}` : ''}</p>
         </div>
         <div className="cust-count"><b>{c.orders}</b><span>orders</span></div>
       </div>
+      {!c.kvkk_at && <div className="banner bad" style={{ display: 'flex' }}><span>No KVKK consent recorded for this customer. Read them the privacy notice.</span><button className="btn small" onClick={() => setEditing(true)}>Record consent</button></div>}
       {c.birthdayGift && <div className="banner warn" style={{ display: 'flex' }}><span>🎂 Birthday week! Gift: <b>{c.birthdayGift}</b></span><button className="btn small primary" disabled={busy} onClick={onBirthday}>Give birthday gift</button></div>}
       {c.pending.length > 0 && (
         <div className="cust-gifts">
@@ -263,6 +285,8 @@ function Rules() {
         <input style={{ width: 260, textAlign: 'start' }} value={s.birthday.gift} onChange={(e) => setS({ ...s, birthday: { ...s.birthday, gift: e.target.value } })} aria-label="Birthday gift" />
         <span className="muted">within</span><input inputMode="numeric" value={s.birthday.days} onChange={(e) => setS({ ...s, birthday: { ...s.birthday, days: e.target.value } })} aria-label="Days" /><span className="muted">days of the birthday</span>
       </div>
+      <h3 style={{ fontSize: 15, marginTop: 16 }}>Business name in the privacy notice (KVKK)</h3>
+      <div className="recipe-line"><input style={{ width: 360, textAlign: 'start' }} value={s.legalName || ''} onChange={(e) => setS({ ...s, legalName: e.target.value })} placeholder="e.g. Mariam Coffee (company legal name)" aria-label="Business name" /><span className="muted">the data controller named in the notice</span></div>
       <h3 style={{ fontSize: 15, marginTop: 16 }}>Stop double counting</h3>
       <div className="recipe-line"><span className="muted">Count at most one order every</span><input inputMode="decimal" value={s.cooldownHours} onChange={(e) => setS({ ...s, cooldownHours: e.target.value })} aria-label="Hours" /><span className="muted">hours per customer (a manager can still count more)</span></div>
       <div style={{ marginTop: 14 }}><button className="btn primary" onClick={save}>Save rules</button></div>

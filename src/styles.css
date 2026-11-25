@@ -634,3 +634,10 @@ tr.inv-cat td { background: var(--surface-2); font-weight: 650; font-size: 13px;
 .spin { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
+
+.kvkk { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 12px; background: var(--surface-2); }
+.kvkk-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kvkk-head .seg button { min-height: 30px; padding: 0 10px; font-size: 12.5px; }
+.kvkk p { font-size: 13.5px; line-height: 1.55; margin: 8px 0; max-height: 9.5em; overflow: auto; }
+.kvkk-agree { display: flex; gap: 8px; align-items: flex-start; font-weight: 600; font-size: 14px; }
+.kvkk-agree input { margin-top: 3px; width: 18px; height: 18px; flex: none; }

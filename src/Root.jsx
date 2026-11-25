@@ -19,7 +19,7 @@ import Account from './staff/Account.jsx';
 
 // [key, label, roles allowed (owner always)]
 const AREAS = [
-  ['reports', 'Sales reports', ['accountant']],
+  ['reports', 'Sales reports', ['manager', 'accountant']],
   ['clock', 'Clock in / out', ['barista']],
   ['customers', 'Customers', ['barista', 'manager', 'accountant']],
   ['accounting', 'Accounting', ['accountant']],

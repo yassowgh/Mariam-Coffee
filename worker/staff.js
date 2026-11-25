@@ -1,4 +1,4 @@
-import { LOYALTY_ROUTES, LOYALTY_SCHEMA, handleLoyalty } from './loyalty.js';
+import { CUSTOMER_COLUMNS, LOYALTY_ROUTES, LOYALTY_SCHEMA, handleLoyalty } from './loyalty.js';
 import { ITEM_COLUMNS } from './inventorySales.js';
 import { INVENTORY_ROUTES, INVENTORY_SCHEMA, handleInventory } from './inventory.js';
 // Staff side of the site: accounts and roles, shifts and
@@ -60,7 +60,7 @@ function ensureSchema(db) {
     schemaReady = (async () => {
       await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA, ...TEAM_SCHEMA, ...INVENTORY_SCHEMA, ...LOYALTY_SCHEMA].map((s) => db.prepare(s)));
       // columns added after the first release
-      const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL', "lang TEXT NOT NULL DEFAULT 'en'"]], ['expenses', EXPENSE_COLUMNS], ['inventory_items', ITEM_COLUMNS]];
+      const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL', "lang TEXT NOT NULL DEFAULT 'en'"]], ['expenses', EXPENSE_COLUMNS], ['inventory_items', ITEM_COLUMNS], ['customers', CUSTOMER_COLUMNS]];
       for (const [table, list] of cols) {
         const have = new Set((await db.prepare(`PRAGMA table_info(${table})`).all()).results.map((c) => c.name));
         for (const col of list) if (!have.has(col.split(' ')[0])) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col}`).run();
