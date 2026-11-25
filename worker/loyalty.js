@@ -194,14 +194,18 @@ export async function handleLoyalty({ head, sub, request, env, me, h }) {
       const digits = q.replace(/\D/g, '');
       let rows;
       if (!manager) {
-        // staff: by number only, at least the last 4 digits
-        if (digits.length < 4) h.fail(400, 'Type at least the last 4 digits of the mobile number.');
+        // staff: by number only: the last 4 digits, or any part of the number from 5 digits on
+        if (digits.length < 4) h.fail(400, 'Type at least 4 digits of the mobile number.');
         const p = normPhone(q);
-        rows = (await db.prepare('SELECT * FROM customers WHERE phone = ? OR phone LIKE ? ORDER BY last_order_at DESC LIMIT 5').bind(p || '-', '%' + digits).all()).results;
+        const part = digits.replace(/^0+/, ''); // "0555 12…" is stored as 90555 12…
+        rows = digits.length === 4
+          ? (await db.prepare('SELECT * FROM customers WHERE phone LIKE ? ORDER BY last_order_at DESC LIMIT 10').bind('%' + digits).all()).results
+          : (await db.prepare('SELECT * FROM customers WHERE phone = ? OR phone LIKE ? OR phone LIKE ? ORDER BY last_order_at DESC LIMIT 10').bind(p || '-', '%' + digits + '%', '%' + (part || digits) + '%').all()).results;
       } else if (q) {
         const p = normPhone(q);
-        rows = (await db.prepare('SELECT * FROM customers WHERE phone = ? OR (? <> \'\' AND phone LIKE ?) OR lower(coalesce(name, \'\')) LIKE ? ORDER BY last_order_at DESC LIMIT 200')
-          .bind(p || '-', digits, '%' + digits + '%', '%' + q.toLowerCase() + '%').all()).results;
+        const part = digits.replace(/^0+/, '');
+        rows = (await db.prepare('SELECT * FROM customers WHERE phone = ? OR (? <> \'\' AND (phone LIKE ? OR phone LIKE ?)) OR lower(coalesce(name, \'\')) LIKE ? ORDER BY last_order_at DESC LIMIT 200')
+          .bind(p || '-', digits, '%' + digits + '%', '%' + (part || digits) + '%', '%' + q.toLowerCase() + '%').all()).results;
       } else {
         rows = (await db.prepare('SELECT * FROM customers ORDER BY coalesce(last_order_at, created_at) DESC LIMIT 1000').all()).results;
       }

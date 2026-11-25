@@ -4,6 +4,9 @@
 // Names, amounts and anything not in the dictionary stay as they are.
 
 const AR = {
+  "Searching…": "جارٍ البحث…",
+  "Type the mobile number, its last 4 digits, or any part of it (5 digits or more).": "اكتب رقم الجوال، أو آخر 4 أرقام منه، أو أي جزء منه (5 أرقام أو أكثر).",
+  "Type at least 4 digits of the mobile number.": "اكتب 4 أرقام على الأقل من رقم الجوال.",
   "Customers": "العملاء",
   "Customer": "العميل",
   "Type the customer's mobile number (or its last 4 digits).": "اكتب رقم جوال العميل (أو آخر 4 أرقام منه).",

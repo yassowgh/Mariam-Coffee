@@ -32,12 +32,14 @@ function Counter({ manager }) {
   const [adding, setAdding] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
   const input = useRef(null);
   const reset = () => { setQ(''); setRes(null); setCur(null); setAdding(null); setMsg(null); input.current?.focus(); };
 
   async function search(e) {
     e?.preventDefault();
-    setMsg(null); setCur(null); setAdding(null);
+    if (searching) return;
+    setMsg(null); setCur(null); setAdding(null); setRes(null); setSearching(true);
     try {
       const r = await api('customers?q=' + encodeURIComponent(q));
       setRes(r);
@@ -45,6 +47,7 @@ function Counter({ manager }) {
       else if (r.customers.length === 1 && q.replace(/\D/g, '').length <= 6) open(r.customers[0].id);
       else if (!r.customers.length && r.normalized) setAdding({ phone: q });
     } catch (x) { setMsg({ ok: false, text: x.message }); }
+    setSearching(false);
   }
   async function open(id) {
     try { const r = await api('customers/' + id); setCur(r.customer); setAdding(null); } catch (x) { setMsg({ ok: false, text: x.message }); }
@@ -67,12 +70,13 @@ function Counter({ manager }) {
     <>
       <form className="card cust-find" onSubmit={search}>
         <h2>Customer</h2>
-        <p className="muted" style={{ margin: '2px 0 10px' }}>Type the customer's mobile number (or its last 4 digits).</p>
+        <p className="muted" style={{ margin: '2px 0 10px' }}>Type the mobile number, its last 4 digits, or any part of it (5 digits or more).</p>
         <div className="cust-row">
           <input ref={input} className="cust-phone" type="tel" inputMode="tel" autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} placeholder="0555 123 45 67" aria-label="Mobile number" autoFocus />
-          <button className="btn primary" disabled={q.replace(/\D/g, '').length < 4}>Find</button>
+          <button className="btn primary" disabled={searching || q.replace(/\D/g, '').length < 4}>{searching ? 'Searching…' : 'Find'}</button>
           {(res || cur || adding) && <button type="button" className="btn ghost" onClick={reset}>Next customer</button>}
         </div>
+        {searching && <div className="cust-searching" role="status" aria-live="polite"><span className="spin" aria-hidden="true" /> Searching…</div>}
         {msg && <div className={'banner ' + (msg.ok ? (msg.gift ? 'warn' : 'ok') : 'bad')} role="status" style={{ marginTop: 10 }}>
           <span>{msg.gift && '🎁 '}{msg.text}</span>
           {msg.force && cur && <button type="button" className="btn small" onClick={() => act(`customers/${cur.id}/order`, { force: true }, 'Order counted.')}>Count anyway</button>}
@@ -85,7 +89,7 @@ function Counter({ manager }) {
             <><h3 style={{ margin: '0 0 8px', fontSize: 15 }}>Found</h3>
               <ul className="cust-list">{res.customers.map((c) => <li key={c.id}><button className="linklike" onClick={() => open(c.id)}><b>{c.name || 'No name'}</b> · {c.phone} · {c.level} · {c.orders} orders</button></li>)}</ul>
               {res.normalized && <button className="btn" onClick={() => setAdding({ phone: q })}>Register {res.normalized} as a new customer</button>}</>
-          ) : res.normalized ? null : <p className="muted" style={{ margin: 0 }}>No customer found. To register a new one, type the full mobile number.</p>}
+          ) : res.normalized ? null : <p className="muted" style={{ margin: 0 }}>No customer found with “{q}”. To register a new one, type the full mobile number.</p>}
         </div>
       )}
 
