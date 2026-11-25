@@ -16,11 +16,12 @@ export default function Customers({ user }) {
     <div className="stack">
       {manager && (
         <nav className="fin-tabs" role="tablist" aria-label="Customers">
-          {[['counter', 'At the counter'], ['list', 'All customers'], ['rules', 'Levels & gifts']].map(([k, l]) => <button key={k} role="tab" className={'btn' + (tab === k ? ' primary' : '')} aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+          {[['counter', 'At the counter'], ['list', 'All customers'], ['staff', 'By employee'], ['rules', 'Levels & gifts']].map(([k, l]) => <button key={k} role="tab" className={'btn' + (tab === k ? ' primary' : '')} aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
         </nav>
       )}
       {tab === 'counter' && <Counter manager={manager} />}
       {tab === 'list' && manager && <AllCustomers />}
+      {tab === 'staff' && manager && <StaffReport />}
       {tab === 'rules' && manager && <Rules />}
     </div>
   );
@@ -250,6 +251,58 @@ function AllCustomers() {
         )}
       </div>
     </>
+  );
+}
+
+// --- registrations per employee, checked against the till ------------------------------------------------------
+const isoDay = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60e3).toISOString().slice(0, 10);
+const STATE = { ok: ['ok', 'on the till'], none: ['bad', 'no till order'], waiting: ['', 'waiting for till data'], nodata: ['', 'before till times were kept'] };
+const hm = (k) => (k ? `${longDate(k.slice(0, 10))} ${k.slice(11)}` : '');
+
+function StaffReport() {
+  const [to, setTo] = useState(() => isoDay(new Date()));
+  const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 29 * 86400e3)));
+  const [r, setR] = useState(null);
+  const [err, setErr] = useState('');
+  const [openId, setOpenId] = useState(null);
+  useEffect(() => { setR(null); setErr(''); api(`customers-staff?from=${from}&to=${to}`).then(setR).catch((e) => setErr(e.message)); }, [from, to]);
+  const warnings = r ? r.rows.reduce((t, x) => t + x.warnings.length, 0) : 0;
+  return (
+    <div className="card">
+      <div className="card-head"><div><h2>Registrations by employee</h2>
+        <p>Each registration and +1 order is checked against the till: there should be a till order within {r?.window ?? 15} minutes of it. Two or more without a till order within an hour get a warning.</p></div></div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end', marginBottom: 10 }}>
+        <label className="field"><span>From</span><input type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} /></label>
+        <label className="field"><span>To</span><input type="date" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} /></label>
+      </div>
+      {err && <div className="banner bad" role="alert"><span>{err}</span></div>}
+      {r && <p className="muted" style={{ marginTop: 0 }}>{r.till?.last
+        ? <>Till orders known up to <b>{hm(r.till.last)}</b> (the till uploads about every 30 minutes; anything after that is “waiting for till data”, not a problem).</>
+        : <>No till times yet: they are saved from the next till upload (about every 30 minutes).</>}</p>}
+      {r && warnings > 0 && <div className="banner bad" role="alert"><span>⚠ {warnings} warning{warnings === 1 ? '' : 's'}: several registrations / orders at a time with no orders on the till. Open the employee below to see them.</span></div>}
+      {!r && !err ? <p className="muted">Loading…</p> : r && !r.rows.length ? <p className="muted">No registrations in this period.</p> : r && (
+        <div className="table-wrap"><table>
+          <thead><tr><th>Employee</th><th className="r">Registered</th><th className="r">… no till order</th><th className="r">+1 orders</th><th className="r">… no till order</th><th className="r">Waiting</th><th>Warnings</th><th /></tr></thead>
+          <tbody>{r.rows.flatMap((x) => [
+            <tr key={x.user_id}>
+              <td><b>{x.name}</b></td>
+              <td className="r num">{x.registered}</td>
+              <td className="r num" style={x.regNoTill ? { color: 'var(--bad-text)', fontWeight: 600 } : null}>{x.regNoTill}</td>
+              <td className="r num">{x.orders}</td>
+              <td className="r num" style={x.ordersNoTill ? { color: 'var(--bad-text)', fontWeight: 600 } : null}>{x.ordersNoTill}</td>
+              <td className="r num">{x.waiting}</td>
+              <td>{x.warnings.length ? <span className="pill bad">⚠ {x.warnings.length}</span> : <span className="pill ok">none</span>}</td>
+              <td><button className="btn small ghost" onClick={() => setOpenId(openId === x.user_id ? null : x.user_id)}>{openId === x.user_id ? 'Hide' : 'Details'}</button></td>
+            </tr>,
+            openId === x.user_id && <tr key={x.user_id + '-d'}><td colSpan={8}>
+              {x.warnings.map((w, i) => <div key={i} className="banner bad" style={{ marginBottom: 6 }}><span>⚠ {w.count} without a till order between {hm(w.from)} and {w.to.slice(11)}{w.registrations ? ` (${w.registrations} registration${w.registrations === 1 ? '' : 's'})` : ''}.</span></div>)}
+              <table><thead><tr><th>When</th><th>What</th><th>Customer</th><th>Till</th></tr></thead>
+                <tbody>{x.events.map((e, i) => <tr key={i}><td>{hm(e.local)}</td><td>{e.kind === 'registration' ? 'Registered' : '+1 order'}</td><td dir="auto">{e.customer}</td><td><span className={'pill ' + STATE[e.state][0]}>{STATE[e.state][1]}</span></td></tr>)}</tbody></table>
+            </td></tr>,
+          ])}</tbody>
+        </table></div>
+      )}
+    </div>
   );
 }
 

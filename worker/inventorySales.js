@@ -5,6 +5,7 @@
 // (e.g. ml for a syrup counted in 700 ml bottles; the stock goes down by QTY / 700 bottles).
 import { unzipSync } from 'fflate';
 import { TABLES } from '../src/lib/tables.js';
+import { savePosOrders } from './staffCustomers.js';
 import { buildModel } from '../src/lib/model.js';
 
 export const SALES_SCHEMA = [
@@ -42,7 +43,7 @@ export async function salesByDay(zipBytes, from = SALES_START) {
       out.set(k, o);
     }
   }
-  return { rows: [...out.values()], maxDate: v.maxDate };
+  return { rows: [...out.values()], maxDate: v.maxDate, invoices: v.invoices };
 }
 
 const perUse = (it) => (it.pack_size > 0 ? 1 / it.pack_size : 1); // stock units per use unit
@@ -53,7 +54,9 @@ export async function applySales(env, zipBytes, from = SALES_START) {
   const getS = async (d, k) => { const r = await d.prepare('SELECT value FROM settings WHERE key = ?').bind(k).first(); return r ? JSON.parse(r.value) : null; };
   const setS = (d, k, v) => d.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(k, JSON.stringify(v)).run();
   await seedSales(db, getS, setS); // the draft recipes must exist before any sales are marked as done
-  const { rows } = await salesByDay(zipBytes, from);
+  const { rows, invoices } = await salesByDay(zipBytes, from);
+  // the minutes with till orders, to check customer registrations against (Customers → Staff report)
+  await savePosOrders(db, invoices).catch((e) => console.log('pos orders', e.message));
   if (!rows.length) return { days: 0, changed: 0 };
   const done = new Map((await db.prepare('SELECT day, pos_item, qty FROM inventory_sales WHERE day >= ?').bind(from).all()).results.map((r) => [`${r.day}|${r.pos_item}`, r.qty]));
   const recipes = (await db.prepare('SELECT r.pos_item, r.inv_item, r.qty, i.pack_size FROM inventory_recipes r JOIN inventory_items i ON i.id = r.inv_item WHERE i.active = 1').all()).results;

@@ -13,6 +13,7 @@
 //   POST   /api/customer-gifts/:id     mark an earned gift as given
 //   GET    /api/customers-export       CSV of customers who accept offers (manager)
 //   GET    /api/customers-stats        numbers for the manager (manager)
+//   GET    /api/customers-staff        registrations per employee, checked against the till (manager)
 //   GET/PUT /api/loyalty-settings      levels, gifts, rules (PUT: manager)
 
 export const LOYALTY_SCHEMA = [
@@ -24,12 +25,14 @@ export const LOYALTY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS customer_gifts (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL, kind TEXT NOT NULL, gift TEXT NOT NULL,
     at_order INTEGER, year INTEGER, earned_at TEXT NOT NULL, given_at TEXT, given_by INTEGER)`,
   `CREATE INDEX IF NOT EXISTS customer_gifts_c ON customer_gifts(customer_id)`,
+  ...POS_ORDERS_SCHEMA,
 ];
 import { KVKK_VERSION } from '../src/lib/kvkk.js';
+import { POS_ORDERS_SCHEMA, staffReport } from './staffCustomers.js';
 
 // columns added after the first release
 export const CUSTOMER_COLUMNS = ['kvkk_at TEXT', 'kvkk_ver TEXT', 'offers_at TEXT'];
-export const LOYALTY_ROUTES = ['customers', 'customer-gifts', 'customers-export', 'customers-stats', 'loyalty-settings'];
+export const LOYALTY_ROUTES = ['customers', 'customer-gifts', 'customers-export', 'customers-stats', 'customers-staff', 'loyalty-settings'];
 
 export const DEFAULT_LOYALTY = {
   levels: [{ name: 'Bronze', min: 0, gift: '' }, { name: 'Silver', min: 10, gift: 'A free dessert' }, { name: 'Gold', min: 30, gift: 'A bag of Mariam Turkish coffee (100 g)' }],
@@ -201,6 +204,12 @@ export async function handleLoyalty({ head, sub, request, env, me, h }) {
     const lines = ['Phone,Name,Language,Orders,Level,Birthday,Registered,KVKK consent,Offers consent', ...results.map((c) => [show(c.phone), c.name, { ar: 'Arabic', tr: 'Turkish', en: 'English' }[c.lang], c.orders, levelOf(cfg, c.orders)?.name, c.birth, c.created_at.slice(0, 10), (c.kvkk_at || '').slice(0, 10), (c.offers_at || c.created_at || '').slice(0, 10)].map(esc).join(','))];
     await h.audit(db, me, 'loyalty.export', { count: results.length });
     return new Response('﻿' + lines.join('\n'), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="mariam-customers-offers.csv"', 'cache-control': 'no-store' } });
+  }
+
+  if (head === 'customers-staff') {
+    // registrations per employee, checked against the till (managers and the owner)
+    if (!manager) h.fail(403, 'Not allowed.');
+    return staffReport(db, h, url);
   }
 
   if (head === 'customers-stats') {
