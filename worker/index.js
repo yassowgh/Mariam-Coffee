@@ -181,6 +181,9 @@ export default {
     const { inventoryEmail } = await import('./inventory.js');
     const { sendMany } = await import('./email.js');
     ctx.waitUntil(inventoryEmail(env, sendMany).then((r) => console.log('inventory email', JSON.stringify(r))).catch((e) => console.error('inventory email', e)));
+    // purchases: remind requesters to send approved invoices, and the owner about requests waiting
+    const { purchaseReminders } = await import('./purchases.js');
+    ctx.waitUntil(purchaseReminders(env).then((r) => console.log('purchase reminders', JSON.stringify(r))).catch((e) => console.error('purchase reminders', e)));
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);

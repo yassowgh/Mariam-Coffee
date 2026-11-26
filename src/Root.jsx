@@ -8,6 +8,7 @@ import Accounting from './staff/Accounting.jsx';
 import Finance from './staff/Finance.jsx';
 import Inventory from './staff/Inventory.jsx';
 import Customers from './staff/Customers.jsx';
+import Purchases from './staff/Purchases.jsx';
 import Salaries from './staff/Salaries.jsx';
 import Schedule from './staff/Schedule.jsx';
 import Clock from './staff/Clock.jsx';
@@ -25,6 +26,7 @@ const AREAS = [
   ['accounting', 'Accounting', ['accountant']],
   ['finance', 'Finance', ['accountant']],
   ['inventory', 'Inventory', ['manager', 'accountant']],
+  ['purchases', 'Purchases', ['barista', 'manager', 'accountant']],
   ['schedule', 'Schedule', ['manager']],
   ['attendance', 'Timesheets', ['manager']],
   ['team', 'Team', ['manager', 'accountant']],
@@ -157,7 +159,7 @@ export default function Root() {
   const shell = { user, areas, account };
   const title = list.find(([k]) => k === area)?.[1] || 'Mariam Coffee';
   if (area === 'reports') return <App shell={shell} />;
-  const View = { clock: Clock, accounting: Accounting, finance: Finance, inventory: Inventory, customers: Customers, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, website: WebsiteEditor, settings: Settings }[area];
+  const View = { clock: Clock, accounting: Accounting, finance: Finance, inventory: Inventory, customers: Customers, purchases: Purchases, salaries: Salaries, schedule: Schedule, attendance: Attendance, team: Team, website: WebsiteEditor, settings: Settings }[area];
   return (
     <>
       <Header title={`Mariam Coffee · ${title}`} subtitle={`Signed in as ${user.name}`} areas={areas} account={account} />

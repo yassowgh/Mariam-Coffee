@@ -1,6 +1,7 @@
 import { CUSTOMER_COLUMNS, LOYALTY_ROUTES, LOYALTY_SCHEMA, handleLoyalty } from './loyalty.js';
 import { ITEM_COLUMNS } from './inventorySales.js';
 import { INVENTORY_ROUTES, INVENTORY_SCHEMA, handleInventory } from './inventory.js';
+import { PURCHASE_ROUTES, PURCHASE_SCHEMA, handlePurchases } from './purchases.js';
 // Staff side of the site: accounts and roles, shifts and
 // clock-in / clock-out with a location check. Stored in the D1 database "DB";
 // receipt photos go to the KV namespace "DATA".
@@ -23,7 +24,7 @@ const MAX_RECEIPT_BYTES = 4 * 1024 * 1024;
 const MAX_OPEN_HOURS = 16; // an open clock-in older than this counts as "forgot to clock out"
 const MAX_GPS_ACCURACY_M = 150;
 
-const SCHEMA = [
+export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
     name TEXT NOT NULL, roles TEXT NOT NULL, pass TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, rate REAL,
     phone TEXT, color TEXT, created_at TEXT NOT NULL)`,
@@ -58,7 +59,7 @@ let schemaReady = null;
 function ensureSchema(db) {
   if (!schemaReady) {
     schemaReady = (async () => {
-      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA, ...TEAM_SCHEMA, ...INVENTORY_SCHEMA, ...LOYALTY_SCHEMA].map((s) => db.prepare(s)));
+      await db.batch([...SCHEMA, ...ACCOUNTING_SCHEMA, ...TEAM_SCHEMA, ...INVENTORY_SCHEMA, ...LOYALTY_SCHEMA, ...PURCHASE_SCHEMA].map((s) => db.prepare(s)));
       // columns added after the first release
       const cols = [['users', ['email TEXT', 'must_change INTEGER NOT NULL DEFAULT 0', 'pay_type TEXT', 'monthly_salary REAL', "lang TEXT NOT NULL DEFAULT 'en'"]], ['expenses', EXPENSE_COLUMNS], ['inventory_items', ITEM_COLUMNS], ['customers', CUSTOMER_COLUMNS]];
       for (const [table, list] of cols) {
@@ -532,6 +533,7 @@ export async function handleStaff(request, env, path, passwordOk) {
     if (EMAIL_ROUTES.includes(head)) return await handleEmail({ head, request, env, me, h });
     if (INVENTORY_ROUTES.includes(head)) return await handleInventory({ head, sub, request, env, me, h });
     if (LOYALTY_ROUTES.includes(head)) return await handleLoyalty({ head, sub, request, env, me, h });
+    if (PURCHASE_ROUTES.includes(head)) return await handlePurchases({ head, sub, request, env, me, h });
     if (TEAM_ROUTES.includes(head)) {
       const origin = new URL(request.url).origin;
       return await handleTeam({ head, sub, request, env, me, h, notify: (u, subject, text, html) => notify(env, h, origin, u, subject, text, html) });
@@ -573,4 +575,4 @@ export async function handleStaff(request, env, path, passwordOk) {
   }
 }
 
-export const STAFF_ROUTES = [...LOYALTY_ROUTES, ...INVENTORY_ROUTES, ...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];
+export const STAFF_ROUTES = [...PURCHASE_ROUTES, ...LOYALTY_ROUTES, ...INVENTORY_ROUTES, ...PLANNER_ROUTES, ...ACCOUNTING_ROUTES, ...EMAIL_ROUTES, ...PUBLIC_EMAIL_ROUTES, ...TEAM_ROUTES, 'login', 'logout', 'me', 'users', 'shifts', 'clock', 'attendance', 'site', 'activity', 'upload-token'];

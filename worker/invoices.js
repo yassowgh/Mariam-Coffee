@@ -10,6 +10,7 @@
 // (free allowance): several vision models are tried in turn.
 import { aiChat, parseJson } from './ai.js';
 import { addInvoiceToStock, suggestStock } from './invoiceStock.js';
+import { purchaseAfterSave, purchaseBeforeSave } from './purchases.js';
 
 export const INVOICE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER, supplier TEXT, invoice_no TEXT,
@@ -137,6 +138,7 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
 
   if (head === 'invoices' && !sub && m === 'POST') {
     const b = await h.body(request);
+    if (!h.has(me, 'accountant') && !(Number(b.purchase_id) > 0)) h.fail(403, 'Only the accountant saves invoices (managers: only purchase request invoices).');
     const inv = clean(b.invoice || {});
     if (!inv.lines.length && inv.doc_type === 'invoice' && !b.allow_no_lines) h.fail(400, 'The invoice has no lines.');
     if (!(inv.total > 0)) h.fail(400, 'The invoice total is missing.');
@@ -164,6 +166,8 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
       WHERE e.deleted = 0 AND lower(coalesce(i.supplier, '')) = lower(?) AND i.date = ? AND abs(i.total - ?) < 0.01 AND coalesce(i.invoice_no, '') = ? LIMIT 1`)
       .bind(inv.supplier || '', inv.date, inv.total, inv.invoice_no || '').first();
     if (same && !b.force) return json(h, { error: 'This was already saved.', already: true, invoice_id: same.id, expense_id: same.expense_id }, 409);
+    // an invoice for an approved purchase request: within the approved amount (+10 %), else back to the owner
+    const purchase = Number(b.purchase_id) > 0 ? await purchaseBeforeSave(env, h, me, request, Number(b.purchase_id), inv.total) : null;
     let expenseId = null, invoiceId = null;
     try {
       const ex = await db.prepare(`INSERT INTO expenses (name, category_id, amount, date, status, paid_date, due_date, account_id, payee, payee_type, reason, receipt, kind, created_at, user_id)
@@ -192,7 +196,8 @@ export async function handleInvoices({ head, sub, request, env, me, h }) {
       try { stock = await addInvoiceToStock(db, me, inv.lines, `Invoice ${inv.supplier || 'supplier'}${inv.invoice_no ? ' #' + inv.invoice_no : ''}`, now); }
       catch (e) { stock.error = e.message; }
     }
-    await h.audit(db, me, 'invoice.save', { invoice: invoiceId, expense: expenseId, total: inv.total, lines: inv.lines.length, stock: stock.added.length });
+    if (purchase) await purchaseAfterSave(db, h, me, purchase, { invoiceId, expenseId, total: inv.total });
+    await h.audit(db, me, 'invoice.save', { invoice: invoiceId, expense: expenseId, total: inv.total, lines: inv.lines.length, stock: stock.added.length, purchase: purchase?.id });
     return json(h, { ok: true, invoice_id: invoiceId, expense_id: expenseId, stock });
   }
 

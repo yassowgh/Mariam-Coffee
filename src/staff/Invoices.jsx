@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Tile } from './Accounting.jsx';
 import { ocrImages } from '../lib/ocr.js';
 import { api, todayLocal } from '../lib/api.js';
@@ -61,7 +61,8 @@ const mismatchOf = (inv) => {
 };
 
 /** Accounting: scan one invoice or upload many (photos or PDFs); the AI reads each, you check, then save. */
-export function InvoiceScan({ ctx, onDone }) {
+// purchase (optional): an approved purchase request whose invoice photos are checked here; payment comes from the approval
+export function InvoiceScan({ ctx, onDone, purchase }) {
   const { cats, accounts } = ctx;
   const [queue, setQueue] = useState([]); // [{ id, name, status, pages, text, invoice, meta, error, pay, checked }]
   const [open, setOpen] = useState(null); // id of the invoice being reviewed
@@ -78,13 +79,34 @@ export function InvoiceScan({ ctx, onDone }) {
   useEffect(() => { api('inventory').then((r) => setStockItems(r.items.filter((x) => x.active))).catch(() => setStockItems([])); }, []);
   const upd = (id, patch) => setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...(typeof patch === 'function' ? patch(x) : patch) } : x)));
 
+  // a purchase request: load its invoice photos as the pages of one invoice
+  const started = useRef(false);
+  useEffect(() => {
+    if (!purchase || started.current) return;
+    started.current = true;
+    (async () => {
+      try {
+        const files = await Promise.all(purchase.photos.map(async (p, i) => {
+          const res = await fetch(import.meta.env.BASE_URL + 'api/purchases/photo/' + p, { credentials: 'same-origin' });
+          if (!res.ok) throw new Error('Could not load the invoice photo.');
+          return new File([await res.blob()], `${purchase.title} ${i + 1}.jpg`, { type: 'image/jpeg' });
+        }));
+        addFiles(files, true);
+      } catch (x) { setErr(x.message); }
+    })();
+  }, [purchase]);
+
   async function pick(e) {
     const files = [...e.target.files]; e.target.value = '';
+    addFiles(files, pagesOfOne);
+  }
+  async function addFiles(files, oneDoc) {
     if (!files.length) return;
     setErr('');
     // several photos of ONE invoice, or one invoice per file
-    const groups = pagesOfOne ? [files.slice(0, 4)] : files.slice(0, 50).map((f) => [f]);
+    const groups = oneDoc ? [files.slice(0, 4)] : files.slice(0, 50).map((f) => [f]);
     const added = groups.map((g, i) => ({ id: Date.now() + i, name: g.map((f) => f.name).join(' + '), files: g, status: 'waiting', pages: [], checked: true, pay: null }));
+    const pagesOfOne = oneDoc;
     setQueue((q) => [...q, ...added]);
     if (files.length > 50 && !pagesOfOne) setErr('Only the first 50 files were added. Add the rest after these are saved.');
     // read two at a time (the AI takes 10–30 seconds per invoice)
@@ -124,13 +146,13 @@ export function InvoiceScan({ ctx, onDone }) {
           }
           const sg = r.suggest || {};
           const inv = { ...r.invoice, lines: r.invoice.lines.map((l, i) => ({ ...l, key: i, stock: stockOf(sg.stock?.[i]) })) };
-          const pay = { ...(sg.category_id ? { category_id: String(sg.category_id) } : {}), ...(sg.status ? { status: sg.status } : {}), ...(sg.account_id ? { account_id: String(sg.account_id) } : {}) };
+          const pay = purchase ? purchasePay(purchase) : { ...(sg.category_id ? { category_id: String(sg.category_id) } : {}), ...(sg.status ? { status: sg.status } : {}), ...(sg.account_id ? { account_id: String(sg.account_id) } : {}) };
           setQueue((q) => {
             // the same document twice in this batch (same supplier and number, or same supplier, date and amount)
             const key = (v) => (v.supplier || '').trim().toLowerCase();
             const twin = q.find((o) => o.id !== it.id && o.invoice && key(o.invoice) === key(inv) && (
               (inv.invoice_no && o.invoice.invoice_no === inv.invoice_no) || (o.invoice.date === inv.date && Math.abs(numIn(o.invoice.total) - numIn(inv.total)) < 0.01)));
-            return q.map((x) => (x.id !== it.id ? x : { ...x, status: 'ready', step: '', invoice: inv, pay, catFrom: sg.category_from,
+            return q.map((x) => (x.id !== it.id ? x : { ...x, status: 'ready', step: '', invoice: inv, pay, catFrom: purchase ? 'purchase' : sg.category_from,
               meta: { by: (body?.ocr ? 'built-in OCR + ' : '') + r.by, duplicate: r.duplicate, ocr: !!body?.ocr, twin: twin ? twin.name : null },
               checked: !r.duplicate && !twin }));
           });
@@ -156,11 +178,13 @@ export function InvoiceScan({ ctx, onDone }) {
     const pay = { ...defaults, ...(it.pay || {}) };
     const inv = it.invoice;
     let receipt = null;
-    if (it.pages[0]) receipt = (await api('receipts', { method: 'POST', raw: await dataUrlToBlob(it.pages[0]), type: 'image/jpeg' })).receipt;
+    if (purchase) receipt = purchase.photos[0] || null; // the requester's photo is already stored
+    else if (it.pages[0]) receipt = (await api('receipts', { method: 'POST', raw: await dataUrlToBlob(it.pages[0]), type: 'image/jpeg' })).receipt;
     return await api('invoices', { method: 'POST', body: {
       invoice: { ...inv, total: numIn(inv.total), tax: numIn(inv.tax), subtotal: numIn(inv.subtotal), lines: inv.lines.map((l) => ({ ...l, qty: numIn(l.qty), unit_price: numIn(l.unit_price), total: numIn(l.total), stock: stockOut(l.stock) })) },
       category_id: Number(pay.category_id) || null, status: pay.status, account_id: Number(pay.account_id) || null,
       paid_date: pay.paid_date || inv.date, due_date: pay.due_date || inv.date, receipt, raw: { by: it.meta?.by }, allow_no_lines: !inv.lines.length,
+      ...(purchase ? { purchase_id: purchase.id } : {}),
     } });
   }
   async function saveChecked(list) {
@@ -177,7 +201,8 @@ export function InvoiceScan({ ctx, onDone }) {
         ok++; total += numIn(it.invoice.total);
       } catch (x) {
         // the server already has this one (e.g. saved before an error): mark it saved, never save it twice
-        if (x.status === 409) upd(it.id, { status: 'saved', checked: false, error: '', step: 'Was already saved, not saved again.' });
+        if (x.status === 409 && !purchase) upd(it.id, { status: 'saved', checked: false, error: '', step: 'Was already saved, not saved again.' });
+        else if (x.status === 428) { upd(it.id, { status: 'ready', error: x.message }); setErr(x.message); onDone?.(null, { reapproval: true }); }
         else upd(it.id, { status: 'ready', error: x.message });
       }
     }
@@ -195,7 +220,9 @@ export function InvoiceScan({ ctx, onDone }) {
 
   return (
     <div className="card">
-      <div className="card-head"><div><h2>📷 Scan invoices</h2><p>Photos or PDFs of supplier invoices or receipts, one or many at once. The AI reads the supplier, date, every line, the amounts and VAT (Turkish, Arabic or English) and writes the items in English. Check, then save.</p></div></div>
+      {purchase ? <div className="card-head"><div><h2>Check the invoice: {purchase.title}</h2><p>Approved {money2(purchase.approved_amount)}{purchase.invoice_total ? ` · the requester wrote ${money2(purchase.invoice_total)}` : ''}. The AI reads the photo; check the lines, the stock links and the payment, then save. It becomes the accounting record, and its goods go into the inventory.</p></div></div>
+        : <div className="card-head"><div><h2>📷 Scan invoices</h2><p>Photos or PDFs of supplier invoices or receipts, one or many at once. The AI reads the supplier, date, every line, the amounts and VAT (Turkish, Arabic or English) and writes the items in English. Check, then save.</p></div></div>}
+      {!purchase && <>
       <label className="scan-drop">
         <input type="file" accept="image/*,application/pdf" multiple onChange={pick} />
         <span className="scan-ic" aria-hidden="true">📷</span>
@@ -206,6 +233,7 @@ export function InvoiceScan({ ctx, onDone }) {
         <label className="check" style={{ display: 'inline-flex', gap: 6, fontSize: 14 }}><input type="checkbox" checked={pagesOfOne} onChange={(e) => setPagesOfOne(e.target.checked)} /> The next photos are pages of one invoice</label>
         <label className="check" style={{ display: 'inline-flex', gap: 6, fontSize: 14 }} title="Reads the text on this device (free, no limit); the AI only sorts it into lines. Uses much less of the free AI allowance."><input type="checkbox" checked={useOcr} onChange={(e) => setUseOcr(e.target.checked)} /> Read the text on this device first (saves AI allowance)</label>
       </div>
+      </>}
       {err && <div className="banner bad" role="alert"><span>{err}</span></div>}
 
       {queue.length > 0 && (
@@ -270,6 +298,13 @@ export function InvoiceScan({ ctx, onDone }) {
 }
 
 /** Review and correct one read invoice. */
+// a purchase request's approved payment: paid already (date reached) from the account, or to be paid on the date
+function purchasePay(p) {
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 10);
+  const paid = p.pay_date && p.pay_date <= today;
+  return { category_id: String(p.category_id || ''), status: paid ? 'paid' : 'scheduled', account_id: String(p.pay_account_id || ''), ...(paid ? { paid_date: p.pay_date } : { due_date: p.pay_date }) };
+}
+
 // --- invoice line → stock item -------------------------------------------------------------------------------
 // stock on a line: { inv_item, factor, from } — from: 'saved' (linked last time), 'match' (name match), 'you', 'skip' (not stock)
 const stockOf = (s) => (s?.from === 'skip' ? { skip: true, from: 'skip' } : s?.inv_item ? { inv_item: s.inv_item, factor: s.factor ?? '', from: s.from } : { inv_item: null, factor: '', from: null });

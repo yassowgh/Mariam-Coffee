@@ -70,7 +70,9 @@ export async function handleAccounting(ctx) {
       return handleAiProviders(ctx);
     case 'invoices':
     case 'invoice-lines':
-      need(me, 'accountant');
+      // managers read and save only invoices of approved purchase requests (checked in invoices.js)
+      if (head === 'invoices' && (sub === 'read' || !sub) && ctx.request.method === 'POST') need(me, 'accountant', 'manager');
+      else need(me, 'accountant');
       return handleInvoices(ctx);
     case 'cost-requests':
       return costRequests(ctx, sub);
